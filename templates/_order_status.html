@@ -1,0 +1,5 @@
+{{ if .HasOrder }}
+<p><strong>Order #{{ .Order.ID }}:</strong> {{ .Order.Status }}{{ if eq .Order.PaymentStatus "unpaid" }} · pay waiter €{{ printf "%.2f" .Order.TotalAmount }} cash{{ end }}</p>
+{{ else }}
+<p style="color: var(--text-muted, #888);">No active order yet.</p>
+{{ end }}

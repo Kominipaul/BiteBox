@@ -1,0 +1,26 @@
+{{ range .Orders }}
+<div class="card">
+  <div class="flex-between">
+    <strong>Table #{{ .TableNumber }} — Order #{{ .ID }}</strong>
+    <span class="badge" style="background:#0d6efd;">{{ .Status }}</span>
+  </div>
+  <ul>
+    {{ range .Items }}
+    <li>{{ .Quantity }}x {{ .Name }}</li>
+    {{ end }}
+  </ul>
+  <div class="flex-between">
+    <span>Total: €{{ printf "%.2f" .TotalAmount }} ({{ .PaymentMethod }}, {{ .PaymentStatus }})</span>
+    <div style="display:flex; gap:0.5rem;">
+      {{ if eq .PaymentStatus "unpaid" }}
+      <button hx-post="/worker/orders/{{ .ID }}/paid" hx-target="#order-feed" style="border-radius: 8px;">Mark Paid</button>
+      {{ end }}
+      {{ if .HasNext }}
+      <button hx-post="/worker/orders/{{ .ID }}/status" hx-vals='{"status": "{{ .NextStatus }}"}' hx-target="#order-feed" style="border-radius: 8px;">{{ .NextLabel }}</button>
+      {{ end }}
+    </div>
+  </div>
+</div>
+{{ else }}
+<p>No active orders.</p>
+{{ end }}

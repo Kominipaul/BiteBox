@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BiteBox - Table #{{ .TableNumber }} Host</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <style>
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .flex-between {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .leave-btn {
+      background-color: #dc3545;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="flex-between">
+    <h2>🍔 Table #{{ .TableNumber }} (Host)</h2>
+    <button 
+      class="leave-btn" 
+      hx-post="/table/{{ .TableNumber }}/leave" 
+      hx-confirm="Are you sure you want to release Table #{{ .TableNumber }}?">
+      🚪 Leave Table
+    </button>
+  </div>
+
+  <hr>
+
+  <h3>Menu</h3>
+  <div id="product-list">
+    {{ range .Products }}
+    <div class="card flex-between">
+      <div>
+        <strong>{{ .Name }}</strong>
+        <div>€{{ .Price }}</div>
+      </div>
+      <div>
+        <button hx-post="/cart/add" hx-vals='{"product_id": "{{ .ID }}"}' hx-target="#cart-summary" style="border-radius: 8px;">+ Add</button>
+      </div>
+    </div>
+    {{ end }}
+  </div>
+
+  <hr>
+
+  <h3>🛒 Your Order</h3>
+  <div id="cart-summary" class="card">
+    {{ if .Cart.Items }}
+      {{ range .Cart.Items }}
+      <div class="flex-between">
+        <span>{{ .Quantity }}x {{ .Name }} (€{{ printf "%.2f" .Price }} each)</span>
+        <button hx-post="/cart/remove" hx-vals='{"product_id": "{{ .ProductID }}"}' hx-target="#cart-summary" style="border-radius: 8px;">-</button>
+      </div>
+      {{ end }}
+      <hr>
+      <div class="flex-between">
+        <strong>Total</strong>
+        <strong>€{{ printf "%.2f" .Cart.TotalAmount }}</strong>
+      </div>
+      <button hx-post="/cart/checkout" hx-confirm="Place this order and pay the waiter cash?" style="border-radius: 8px; width: 100%; margin-top: 0.5rem;">💵 Place Order (Pay Cash)</button>
+    {{ else }}
+      <p>Cart is empty</p>
+    {{ end }}
+  </div>
+
+  <div id="order-status" hx-get="/table/{{ .TableNumber }}/order-status" hx-trigger="load, every 5s" hx-swap="innerHTML"></div>
+
+  <hr>
+
+  <h3>🎵 Request a Song to DJ</h3>
+  <form hx-post="/dj/request" hx-target="#song-status">
+    <label>Song Title & Artist</label>
+    <input type="text" name="song" placeholder="e.g. Starlight - Muse" required>
+    
+    <label>Tip Amount (€)</label>
+    <input type="number" name="tip" value="2.00" step="0.50" min="1.00" required>
+
+    <button type="submit" style="border-radius: 8px; width: 100%;">Send Request & Pay</button>
+  </form>
+  <div id="song-status"></div>
+
+</body>
+</html>

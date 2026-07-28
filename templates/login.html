@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staff Login - BiteBox</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
+  <style>
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 90vh;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      background: var(--background-alt);
+      width: 100%;
+      max-width: 360px;
+    }
+    .error {
+      color: #dc3545;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>🔐 Staff Login</h2>
+    {{ if .Error }}
+    <p class="error">{{ .Error }}</p>
+    {{ end }}
+    <form method="POST" action="/login">
+      <label>Username</label>
+      <input type="text" name="username" required autofocus>
+
+      <label>Password</label>
+      <input type="password" name="password" required>
+
+      <button type="submit" style="border-radius: 8px; width: 100%;">Log In</button>
+    </form>
+  </div>
+
+</body>
+</html>

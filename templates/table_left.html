@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Table Released - BiteBox</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
+  <style>
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 90vh;
+      text-align: center;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      background: var(--background-alt);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>👋 Table #{{ .TableNumber }} Released</h2>
+    <p>Thank you for visiting! Your table session has been closed.</p>
+    <p style="font-size: 0.9rem; color: var(--text-muted);">
+      Table #{{ .TableNumber }} is now available for new guests.
+    </p>
+  </div>
+
+</body>
+</html>

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BiteBox - Worker Dashboard</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <style>
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .flex-between {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .badge {
+      color: white;
+      padding: 0.2rem 0.6rem;
+      border-radius: 12px;
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="flex-between">
+    <h2>👷 Worker Dashboard</h2>
+    <form method="POST" action="/logout"><button style="border-radius: 8px;">Log Out</button></form>
+  </div>
+
+  <hr>
+
+  <h3>📋 Live Order Feed</h3>
+  <div id="order-feed" hx-get="/worker/orders/feed" hx-trigger="load, every 3s" hx-swap="innerHTML">
+    <p>Loading orders...</p>
+  </div>
+
+  <hr>
+
+  <h3>🎵 DJ Request Terminal</h3>
+  <div id="dj-feed" hx-get="/worker/dj/feed" hx-trigger="load, every 5s" hx-swap="innerHTML">
+    <p>Loading requests...</p>
+  </div>
+
+</body>
+</html>

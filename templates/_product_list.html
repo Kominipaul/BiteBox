@@ -1,0 +1,21 @@
+{{ range .Products }}
+<div class="card flex-between" id="product-{{ .ID }}">
+  <form hx-post="/admin/products/{{ .ID }}" hx-target="#product-list" style="display:flex; gap:0.5rem; align-items:center; flex:1;">
+    <input type="text" name="name" value="{{ .Name }}" required style="margin:0;">
+    <input type="number" name="price" value="{{ printf "%.2f" .Price }}" step="0.10" min="0" required style="margin:0; width:6rem;">
+    <button type="submit" style="border-radius: 8px;">Save</button>
+  </form>
+  <div style="display:flex; gap:0.5rem; align-items:center;">
+    {{ if .IsAvailable }}
+      <span class="badge" style="background:#28a745;">Available</span>
+    {{ else }}
+      <span class="badge" style="background:#6c757d;">Hidden</span>
+    {{ end }}
+    <button hx-post="/admin/products/{{ .ID }}/toggle" hx-target="#product-list" style="border-radius: 8px;">
+      {{ if .IsAvailable }}Hide{{ else }}Show{{ end }}
+    </button>
+  </div>
+</div>
+{{ else }}
+<p>No products yet.</p>
+{{ end }}

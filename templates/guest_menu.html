@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Table Occupied - BiteBox</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
+  <style>
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 90vh;
+      text-align: center;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      background: var(--background-alt);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>🔒 Table #{{ .TableNumber }} is Currently Occupied</h2>
+    <p>This table is currently hosted by another guest.</p>
+    <p style="font-size: 0.9rem; color: #666;">
+      To order or take over this table, ask the host to click "Leave Table" or speak with a waiter.
+    </p>
+  </div>
+
+</body>
+</html>

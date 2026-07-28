@@ -1,0 +1,16 @@
+{{ if .Cart.Items }}
+  {{ range .Cart.Items }}
+  <div class="flex-between">
+    <span>{{ .Quantity }}x {{ .Name }} (€{{ printf "%.2f" .Price }} each)</span>
+    <button hx-post="/cart/remove" hx-vals='{"product_id": "{{ .ProductID }}"}' hx-target="#cart-summary" style="border-radius: 8px;">-</button>
+  </div>
+  {{ end }}
+  <hr>
+  <div class="flex-between">
+    <strong>Total</strong>
+    <strong>€{{ printf "%.2f" .Cart.TotalAmount }}</strong>
+  </div>
+  <button hx-post="/cart/checkout" hx-confirm="Place this order and pay the waiter cash?" style="border-radius: 8px; width: 100%; margin-top: 0.5rem;">💵 Place Order (Pay Cash)</button>
+{{ else }}
+  <p>Cart is empty</p>
+{{ end }}

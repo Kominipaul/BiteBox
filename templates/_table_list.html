@@ -1,0 +1,21 @@
+{{ range .Tables }}
+<div class="card flex-between" id="table-{{ .Number }}">
+  <div>
+    <strong>Table #{{ .Number }}</strong>
+    {{ if eq .Status "occupied" }}
+      <span class="badge" style="background:#dc3545;">Occupied</span>
+    {{ else }}
+      <span class="badge" style="background:#28a745;">Available</span>
+    {{ end }}
+  </div>
+  <div style="display:flex; gap:0.5rem;">
+    {{ if eq .Status "occupied" }}
+      <button hx-post="/admin/tables/{{ .Number }}/release" hx-target="#table-list" hx-confirm="Force-release Table #{{ .Number }}?" style="border-radius: 8px;">Force Release</button>
+    {{ else }}
+      <button hx-delete="/admin/tables/{{ .Number }}" hx-target="#table-list" hx-confirm="Remove Table #{{ .Number }}?" style="border-radius: 8px; background-color:#dc3545; color:white; border:none;">Remove</button>
+    {{ end }}
+  </div>
+</div>
+{{ else }}
+<p>No tables yet.</p>
+{{ end }}

@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build *)",
+      "Bash(go env *)",
+      "Bash(go get *)",
+      "Bash(go version *)",
+      "Bash(go run *)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code} -> %{redirect_url}\\\\n\" http://localhost:8080/admin)",
+      "Bash(curl -s -c admin_cookies.txt -o /dev/null -w \"%{http_code}\\\\n\" -X POST http://localhost:8080/login -d \"username=admin&password=admin123\")",
+      "Bash(curl -s -b admin_cookies.txt http://localhost:8080/admin)",
+      "Bash(curl -s -b admin_cookies.txt -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8080/worker)",
+      "Bash(curl -s -c staff_cookies.txt -o /dev/null -w \"%{http_code}\\\\n\" -X POST http://localhost:8080/login -d \"username=staff&password=staff123\")",
+      "Bash(kill %1)",
+      "Bash(pkill -f \"go run ./cmd/server\")",
+      "Bash(jobs)"
+    ]
+  }
+}
