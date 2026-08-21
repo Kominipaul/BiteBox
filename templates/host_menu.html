@@ -7,6 +7,9 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
   <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
     .card {
       border: 1px solid var(--border);
       border-radius: 12px;
@@ -15,8 +18,10 @@
     }
     .flex-between {
       display: flex;
+      flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
+      gap: 0.5rem;
     }
     .leave-btn {
       background-color: #dc3545;
@@ -25,6 +30,11 @@
       border-radius: 8px;
       padding: 0.5rem 1rem;
       cursor: pointer;
+    }
+    @media (max-width: 480px) {
+      .leave-btn {
+        width: 100%;
+      }
     }
   </style>
 </head>

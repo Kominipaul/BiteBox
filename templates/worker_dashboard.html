@@ -7,6 +7,9 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
   <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
     .card {
       border: 1px solid var(--border);
       border-radius: 12px;
@@ -15,8 +18,16 @@
     }
     .flex-between {
       display: flex;
+      flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
+      gap: 0.5rem;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
     }
     .badge {
       color: white;

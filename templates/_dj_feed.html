@@ -1,7 +1,7 @@
 {{ range .Requests }}
 <div class="card flex-between">
   <span>🎵 {{ .SongName }} — €{{ printf "%.2f" .TipAmount }} tip</span>
-  <div style="display:flex; gap:0.5rem;">
+  <div class="row">
     <button hx-post="/worker/dj/{{ .ID }}/accept" hx-target="#dj-feed" style="border-radius: 8px; background-color:#28a745; color:white; border:none;">Accept</button>
     <button hx-post="/worker/dj/{{ .ID }}/reject" hx-target="#dj-feed" style="border-radius: 8px; background-color:#dc3545; color:white; border:none;">Reject</button>
   </div>

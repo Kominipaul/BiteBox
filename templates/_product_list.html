@@ -1,11 +1,11 @@
 {{ range .Products }}
 <div class="card flex-between" id="product-{{ .ID }}">
-  <form hx-post="/admin/products/{{ .ID }}" hx-target="#product-list" style="display:flex; gap:0.5rem; align-items:center; flex:1;">
-    <input type="text" name="name" value="{{ .Name }}" required style="margin:0;">
+  <form hx-post="/admin/products/{{ .ID }}" hx-target="#product-list" class="row edit-form">
+    <input type="text" name="name" value="{{ .Name }}" required style="margin:0; flex:1; min-width:100px;">
     <input type="number" name="price" value="{{ printf "%.2f" .Price }}" step="0.10" min="0" required style="margin:0; width:6rem;">
     <button type="submit" style="border-radius: 8px;">Save</button>
   </form>
-  <div style="display:flex; gap:0.5rem; align-items:center;">
+  <div class="row">
     {{ if .IsAvailable }}
       <span class="badge" style="background:#28a745;">Available</span>
     {{ else }}

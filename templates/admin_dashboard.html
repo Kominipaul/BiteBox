@@ -7,6 +7,9 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
   <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
     .card {
       border: 1px solid var(--border);
       border-radius: 12px;
@@ -15,8 +18,16 @@
     }
     .flex-between {
       display: flex;
+      flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
+      gap: 0.5rem;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
     }
     .badge {
       color: white;
@@ -26,15 +37,25 @@
     }
     .stats {
       display: flex;
+      flex-wrap: wrap;
       gap: 1rem;
     }
     .stat-card {
       flex: 1;
+      min-width: 140px;
       text-align: center;
     }
     .stat-value {
       font-size: 2rem;
       font-weight: bold;
+    }
+    .edit-form {
+      flex: 1 1 220px;
+    }
+    @media (max-width: 480px) {
+      .row > button[type="submit"] {
+        width: 100%;
+      }
     }
   </style>
 </head>
@@ -62,20 +83,20 @@
   <hr>
 
   <h3>🍔 Menu & Inventory</h3>
-  <form hx-post="/admin/products" hx-target="#product-list" style="display:flex; gap:0.5rem; align-items:center; margin-bottom:1rem;">
-    <input type="text" name="name" placeholder="Product name" required style="margin:0;">
+  <form hx-post="/admin/products" hx-target="#product-list" class="row" style="margin-bottom:1rem;">
+    <input type="text" name="name" placeholder="Product name" required style="margin:0; flex:1; min-width:140px;">
     <input type="number" name="price" placeholder="Price" step="0.10" min="0" required style="margin:0; width:8rem;">
     <button type="submit" style="border-radius: 8px;">Add Product</button>
   </form>
   <div id="product-list">
     {{ range .Products }}
     <div class="card flex-between" id="product-{{ .ID }}">
-      <form hx-post="/admin/products/{{ .ID }}" hx-target="#product-list" style="display:flex; gap:0.5rem; align-items:center; flex:1;">
-        <input type="text" name="name" value="{{ .Name }}" required style="margin:0;">
+      <form hx-post="/admin/products/{{ .ID }}" hx-target="#product-list" class="row edit-form">
+        <input type="text" name="name" value="{{ .Name }}" required style="margin:0; flex:1; min-width:100px;">
         <input type="number" name="price" value="{{ printf "%.2f" .Price }}" step="0.10" min="0" required style="margin:0; width:6rem;">
         <button type="submit" style="border-radius: 8px;">Save</button>
       </form>
-      <div style="display:flex; gap:0.5rem; align-items:center;">
+      <div class="row">
         {{ if .IsAvailable }}
           <span class="badge" style="background:#28a745;">Available</span>
         {{ else }}
@@ -94,7 +115,7 @@
   <hr>
 
   <h3>🪑 Table Configuration</h3>
-  <form hx-post="/admin/tables" hx-target="#table-list" style="display:flex; gap:0.5rem; align-items:center; margin-bottom:1rem;">
+  <form hx-post="/admin/tables" hx-target="#table-list" class="row" style="margin-bottom:1rem;">
     <input type="number" name="number" placeholder="Table #" min="1" required style="margin:0; width:8rem;">
     <button type="submit" style="border-radius: 8px;">Add Table</button>
   </form>
@@ -109,7 +130,7 @@
           <span class="badge" style="background:#28a745;">Available</span>
         {{ end }}
       </div>
-      <div style="display:flex; gap:0.5rem;">
+      <div class="row">
         {{ if eq .Status "occupied" }}
           <button hx-post="/admin/tables/{{ .Number }}/release" hx-target="#table-list" hx-confirm="Force-release Table #{{ .Number }}?" style="border-radius: 8px;">Force Release</button>
         {{ else }}

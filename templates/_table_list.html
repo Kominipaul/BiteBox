@@ -8,7 +8,7 @@
       <span class="badge" style="background:#28a745;">Available</span>
     {{ end }}
   </div>
-  <div style="display:flex; gap:0.5rem;">
+  <div class="row">
     {{ if eq .Status "occupied" }}
       <button hx-post="/admin/tables/{{ .Number }}/release" hx-target="#table-list" hx-confirm="Force-release Table #{{ .Number }}?" style="border-radius: 8px;">Force Release</button>
     {{ else }}
