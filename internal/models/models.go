@@ -30,11 +30,12 @@ type Cart struct {
 }
 
 type SongRequest struct {
-	ID        int       `json:"id"`
-	SongName  string    `json:"song_name"`
-	TipAmount float64   `json:"tip_amount"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          int       `json:"id"`
+	SongName    string    `json:"song_name"`
+	TipAmount   float64   `json:"tip_amount"`
+	Status      string    `json:"status"`
+	TableNumber int       `json:"table_number"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 const (

@@ -6,6 +6,7 @@
   <title>BiteBox - Worker Dashboard</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/ws.js"></script>
   <style>
     *, *::before, *::after {
       box-sizing: border-box;
@@ -47,15 +48,19 @@
   <hr>
 
   <h3>📋 Live Order Feed</h3>
-  <div id="order-feed" hx-get="/worker/orders/feed" hx-trigger="load, every 3s" hx-swap="innerHTML">
-    <p>Loading orders...</p>
+  <div hx-ext="ws" ws-connect="/worker/orders/ws">
+    <div id="order-feed">
+      <p>Loading orders...</p>
+    </div>
   </div>
 
   <hr>
 
   <h3>🎵 DJ Request Terminal</h3>
-  <div id="dj-feed" hx-get="/worker/dj/feed" hx-trigger="load, every 5s" hx-swap="innerHTML">
-    <p>Loading requests...</p>
+  <div hx-ext="ws" ws-connect="/worker/dj/ws">
+    <div id="dj-feed">
+      <p>Loading requests...</p>
+    </div>
   </div>
 
 </body>

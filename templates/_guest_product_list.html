@@ -1,0 +1,24 @@
+{{ range .Products }}
+<div class="card flex-between">
+  <div>
+    <strong>{{ .Name }}</strong>
+    <div>€{{ printf "%.2f" .Price }}</div>
+    {{ if eq .Stock 0 }}
+    <div style="color:#dc3545; font-size:0.85rem;">Sold out</div>
+    {{ else if gt .Stock 0 }}
+      {{ if le .Stock 5 }}
+      <div style="color:#dc3545; font-size:0.85rem;">Only {{ .Stock }} left</div>
+      {{ end }}
+    {{ end }}
+  </div>
+  <div>
+    {{ if eq .Stock 0 }}
+    <button disabled style="border-radius: 8px;">Sold Out</button>
+    {{ else }}
+    <button hx-post="/cart/add" hx-vals='{"product_id": "{{ .ID }}"}' hx-target="#cart-summary" style="border-radius: 8px;">+ Add</button>
+    {{ end }}
+  </div>
+</div>
+{{ else }}
+<p>No items on the menu right now.</p>
+{{ end }}

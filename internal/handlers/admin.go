@@ -10,11 +10,16 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// orderHistoryLimit caps the all-time history panel — it's not pagination,
+// just a sane bound so the page doesn't have to load every order ever placed.
+const orderHistoryLimit = 200
+
 func AdminHome(w http.ResponseWriter, r *http.Request) {
 	products, _ := db.GetAllProducts()
 	tables, _ := db.GetAllTables()
 	revenue, _ := db.GetTodayRevenue()
 	orderCount, _ := db.GetTodayOrderCount()
+	history, _ := db.GetOrderHistory(orderHistoryLimit)
 
 	tmpl := template.Must(template.ParseFiles("templates/admin_dashboard.html"))
 	tmpl.Execute(w, map[string]interface{}{
@@ -22,6 +27,7 @@ func AdminHome(w http.ResponseWriter, r *http.Request) {
 		"Tables":     tables,
 		"Revenue":    revenue,
 		"OrderCount": orderCount,
+		"History":    history,
 	})
 }
 
@@ -37,18 +43,35 @@ func renderTableList(w http.ResponseWriter) {
 	tmpl.Execute(w, map[string]interface{}{"Tables": tables})
 }
 
+// parseStock reads the optional "stock" form field: blank means -1
+// (unlimited/untracked, the products.stock column default), anything else
+// must be a non-negative integer.
+func parseStock(r *http.Request) (int, bool) {
+	raw := r.FormValue("stock")
+	if raw == "" {
+		return -1, true
+	}
+	stock, err := strconv.Atoi(raw)
+	if err != nil || stock < -1 {
+		return 0, false
+	}
+	return stock, true
+}
+
 func AdminCreateProduct(w http.ResponseWriter, r *http.Request) {
 	name := r.FormValue("name")
 	price, err := strconv.ParseFloat(r.FormValue("price"), 64)
-	if name == "" || err != nil || price < 0 {
-		http.Error(w, "Invalid product name or price", http.StatusBadRequest)
+	stock, stockOK := parseStock(r)
+	if name == "" || err != nil || price < 0 || !stockOK {
+		http.Error(w, "Invalid product name, price, or stock", http.StatusBadRequest)
 		return
 	}
-	if _, err := db.CreateProduct(name, price); err != nil {
+	if _, err := db.CreateProduct(name, price, stock); err != nil {
 		http.Error(w, "Failed to create product", http.StatusInternalServerError)
 		return
 	}
 	renderProductList(w)
+	BroadcastMenu()
 }
 
 func AdminUpdateProduct(w http.ResponseWriter, r *http.Request) {
@@ -59,15 +82,17 @@ func AdminUpdateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.FormValue("name")
 	price, err := strconv.ParseFloat(r.FormValue("price"), 64)
-	if name == "" || err != nil || price < 0 {
-		http.Error(w, "Invalid product name or price", http.StatusBadRequest)
+	stock, stockOK := parseStock(r)
+	if name == "" || err != nil || price < 0 || !stockOK {
+		http.Error(w, "Invalid product name, price, or stock", http.StatusBadRequest)
 		return
 	}
-	if err := db.UpdateProduct(id, name, price); err != nil {
+	if err := db.UpdateProduct(id, name, price, stock); err != nil {
 		http.Error(w, "Failed to update product", http.StatusInternalServerError)
 		return
 	}
 	renderProductList(w)
+	BroadcastMenu()
 }
 
 func AdminToggleProduct(w http.ResponseWriter, r *http.Request) {
@@ -86,6 +111,7 @@ func AdminToggleProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	renderProductList(w)
+	BroadcastMenu()
 }
 
 func AdminCreateTable(w http.ResponseWriter, r *http.Request) {

@@ -26,7 +26,8 @@
       "Bash(curl -s http://localhost:8080/login)",
       "Bash(curl -s -c /tmp/claude-1000/-home-koma-Code-GO/6f19317f-3527-461d-9120-30fbdc84d839/scratchpad/t1.txt http://localhost:8080/table/1 -o /tmp/claude-1000/-home-koma-Code-GO/6f19317f-3527-461d-9120-30fbdc84d839/scratchpad/table1.html -w \"%{http_code}\\\\n\")",
       "Bash(curl -s -c /tmp/claude-1000/-home-koma-Code-GO/6f19317f-3527-461d-9120-30fbdc84d839/scratchpad/admin.txt -o /dev/null -w \"%{http_code}\\\\n\" -X POST http://localhost:8080/login -d \"username=admin&password=admin123\")",
-      "Bash(curl -s -b /tmp/claude-1000/-home-koma-Code-GO/6f19317f-3527-461d-9120-30fbdc84d839/scratchpad/admin.txt http://localhost:8080/admin -o /tmp/claude-1000/-home-koma-Code-GO/6f19317f-3527-461d-9120-30fbdc84d839/scratchpad/admin.html -w \"%{http_code}\\\\n\")"
+      "Bash(curl -s -b /tmp/claude-1000/-home-koma-Code-GO/6f19317f-3527-461d-9120-30fbdc84d839/scratchpad/admin.txt http://localhost:8080/admin -o /tmp/claude-1000/-home-koma-Code-GO/6f19317f-3527-461d-9120-30fbdc84d839/scratchpad/admin.html -w \"%{http_code}\\\\n\")",
+      "Bash(go mod *)"
     ]
   }
 }

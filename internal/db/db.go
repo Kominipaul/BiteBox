@@ -90,6 +90,13 @@ func InitDB() {
 		log.Fatalf("Failed to migrate orders.payment_status: %v", err)
 	}
 
+	// song_requests predates linking a request back to the table that sent
+	// it; needed so the DJ's accept/reject decision can be pushed live to
+	// the right guest.
+	if err := addColumnIfMissing("song_requests", "table_number", "INTEGER"); err != nil {
+		log.Fatalf("Failed to migrate song_requests.table_number: %v", err)
+	}
+
 	// Seed Table 1 if it doesn't exist
 	DB.Exec(`INSERT OR IGNORE INTO tables (number, status, host_session_id) VALUES (1, 'available', '')`)
 

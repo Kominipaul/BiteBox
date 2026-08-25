@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"html/template"
 	"net/http"
 	"strconv"
@@ -43,10 +44,33 @@ func WorkerHome(w http.ResponseWriter, r *http.Request) {
 	tmpl.Execute(w, nil)
 }
 
-func renderOrderFeed(w http.ResponseWriter) {
-	orders, _ := db.GetActiveOrders()
+func renderOrderFeedHTML() ([]byte, error) {
+	orders, err := db.GetActiveOrders()
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
 	tmpl := template.Must(template.ParseFiles("templates/_order_feed.html"))
-	tmpl.Execute(w, map[string]interface{}{"Orders": buildOrderViews(orders)})
+	if err := tmpl.Execute(&buf, map[string]interface{}{"Orders": buildOrderViews(orders)}); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// BroadcastOrderFeed pushes an already-rendered order feed fragment to every
+// worker dashboard connected over the orders websocket.
+func BroadcastOrderFeed(b []byte) {
+	Hub.Broadcast(topicWorkerOrders, oobWrap("order-feed", b))
+}
+
+func renderOrderFeed(w http.ResponseWriter) {
+	b, err := renderOrderFeedHTML()
+	if err != nil {
+		http.Error(w, "Failed to load orders", http.StatusInternalServerError)
+		return
+	}
+	w.Write(b)
+	BroadcastOrderFeed(b)
 }
 
 func WorkerOrdersFeed(w http.ResponseWriter, r *http.Request) {
@@ -69,6 +93,9 @@ func WorkerUpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	renderOrderFeed(w)
+	if order, err := db.GetOrderByID(id); err == nil {
+		BroadcastTableStatus(order.TableNumber)
+	}
 }
 
 func WorkerMarkPaid(w http.ResponseWriter, r *http.Request) {
@@ -82,12 +109,39 @@ func WorkerMarkPaid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	renderOrderFeed(w)
+	if order, err := db.GetOrderByID(id); err == nil {
+		BroadcastTableStatus(order.TableNumber)
+	}
+	BroadcastAdminStats()
+}
+
+func renderDJFeedHTML() ([]byte, error) {
+	requests, err := db.GetPendingSongRequests()
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	tmpl := template.Must(template.ParseFiles("templates/_dj_feed.html"))
+	if err := tmpl.Execute(&buf, map[string]interface{}{"Requests": requests}); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// BroadcastDJFeed pushes an already-rendered DJ feed fragment to every
+// worker dashboard connected over the DJ websocket.
+func BroadcastDJFeed(b []byte) {
+	Hub.Broadcast(topicWorkerDJ, oobWrap("dj-feed", b))
 }
 
 func renderDJFeed(w http.ResponseWriter) {
-	requests, _ := db.GetPendingSongRequests()
-	tmpl := template.Must(template.ParseFiles("templates/_dj_feed.html"))
-	tmpl.Execute(w, map[string]interface{}{"Requests": requests})
+	b, err := renderDJFeedHTML()
+	if err != nil {
+		http.Error(w, "Failed to load requests", http.StatusInternalServerError)
+		return
+	}
+	w.Write(b)
+	BroadcastDJFeed(b)
 }
 
 func WorkerDJFeed(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +156,9 @@ func WorkerDJAccept(w http.ResponseWriter, r *http.Request) {
 	}
 	db.UpdateSongRequestStatus(id, models.SongRequestStatusAccepted)
 	renderDJFeed(w)
+	if req, err := db.GetSongRequestByID(id); err == nil && req.TableNumber > 0 {
+		BroadcastSongStatus(req.TableNumber)
+	}
 }
 
 func WorkerDJReject(w http.ResponseWriter, r *http.Request) {
@@ -112,4 +169,7 @@ func WorkerDJReject(w http.ResponseWriter, r *http.Request) {
 	}
 	db.UpdateSongRequestStatus(id, models.SongRequestStatusRejected)
 	renderDJFeed(w)
+	if req, err := db.GetSongRequestByID(id); err == nil && req.TableNumber > 0 {
+		BroadcastSongStatus(req.TableNumber)
+	}
 }

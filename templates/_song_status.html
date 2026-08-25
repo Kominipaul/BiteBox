@@ -1,0 +1,9 @@
+{{ if .HasRequest }}
+  {{ if eq .Request.Status "pending" }}
+  <p>🎵 <strong>{{ .Request.SongName }}</strong> — waiting for the DJ to review your request...</p>
+  {{ else if eq .Request.Status "accepted" }}
+  <p style="color: #28a745;">✅ The DJ accepted <strong>{{ .Request.SongName }}</strong>! Pay €{{ printf "%.2f" .Request.TipAmount }} cash to the DJ/waiter.</p>
+  {{ else if eq .Request.Status "rejected" }}
+  <p style="color: #dc3545;">❌ The DJ declined <strong>{{ .Request.SongName }}</strong>. No charge.</p>
+  {{ end }}
+{{ end }}

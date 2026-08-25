@@ -29,11 +29,16 @@ func main() {
 	r.Get("/table/{number}/left", table.Left)
 	r.Post("/table/{number}/leave", table.Leave)
 	r.Get("/table/{number}/order-status", handlers.OrderStatusPoll)
+	r.Get("/table/{number}/ws", handlers.TableStatusWS)
 
 	// Guest cart & checkout
+	r.Get("/cart/summary", cartHandlers.Summary)
 	r.Post("/cart/add", cartHandlers.Add)
 	r.Post("/cart/remove", cartHandlers.Remove)
 	r.Post("/cart/checkout", cartHandlers.Checkout)
+
+	// Guest-facing live menu
+	r.Get("/menu/ws", handlers.MenuWS)
 
 	// DJ song requests
 	r.Post("/dj/request", handlers.DJRequest)
@@ -47,6 +52,7 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(handlers.RequireRole(models.RoleAdmin))
 		r.Get("/admin", handlers.AdminHome)
+		r.Get("/admin/stats/ws", handlers.AdminStatsWS)
 		r.Post("/admin/products", handlers.AdminCreateProduct)
 		r.Post("/admin/products/{id}", handlers.AdminUpdateProduct)
 		r.Post("/admin/products/{id}/toggle", handlers.AdminToggleProduct)
@@ -60,9 +66,11 @@ func main() {
 		r.Use(handlers.RequireRole(models.RoleAdmin, models.RoleWorker))
 		r.Get("/worker", handlers.WorkerHome)
 		r.Get("/worker/orders/feed", handlers.WorkerOrdersFeed)
+		r.Get("/worker/orders/ws", handlers.WorkerOrdersWS)
 		r.Post("/worker/orders/{id}/status", handlers.WorkerUpdateOrderStatus)
 		r.Post("/worker/orders/{id}/paid", handlers.WorkerMarkPaid)
 		r.Get("/worker/dj/feed", handlers.WorkerDJFeed)
+		r.Get("/worker/dj/ws", handlers.WorkerDJWS)
 		r.Post("/worker/dj/{id}/accept", handlers.WorkerDJAccept)
 		r.Post("/worker/dj/{id}/reject", handlers.WorkerDJReject)
 	})

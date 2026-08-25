@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -56,15 +57,10 @@ func (h *TableHandlers) View(w http.ResponseWriter, r *http.Request) {
 		table.HostSessionID = sessionID
 	}
 
-	products, _ := db.GetProducts()
-
 	if table.HostSessionID == sessionID {
-		guestCart := h.Cart.Get(sessionID)
 		tmpl := template.Must(template.ParseFiles("templates/host_menu.html"))
 		tmpl.Execute(w, map[string]interface{}{
 			"TableNumber": tableNum,
-			"Products":    products,
-			"Cart":        guestCart,
 		})
 	} else {
 		tmpl := template.Must(template.ParseFiles("templates/guest_menu.html"))
@@ -104,19 +100,56 @@ func (h *TableHandlers) Leave(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("HX-Redirect", fmt.Sprintf("/table/%d/left", tableNum))
 }
 
-// OrderStatusPoll renders the guest-facing "your order status" widget,
-// polled from host_menu.html.
-func OrderStatusPoll(w http.ResponseWriter, r *http.Request) {
-	tableNum, _ := strconv.Atoi(chi.URLParam(r, "number"))
-
-	order, err := db.GetActiveOrderForTable(tableNum)
+// renderOrderStatusHTML renders the guest-facing "your order status" widget
+// for a table, used both for the plain HTTP fallback and for websocket pushes.
+func renderOrderStatusHTML(tableNumber int) []byte {
+	order, err := db.GetActiveOrderForTable(tableNumber)
 	tmpl := template.Must(template.ParseFiles("templates/_order_status.html"))
+	var buf bytes.Buffer
 	if err != nil {
-		tmpl.Execute(w, map[string]interface{}{"HasOrder": false})
-		return
+		tmpl.Execute(&buf, map[string]interface{}{"HasOrder": false})
+		return buf.Bytes()
 	}
-	tmpl.Execute(w, map[string]interface{}{
+	tmpl.Execute(&buf, map[string]interface{}{
 		"HasOrder": true,
 		"Order":    order,
 	})
+	return buf.Bytes()
+}
+
+// BroadcastTableStatus pushes a fresh order-status fragment to any guest
+// connected over that table's websocket.
+func BroadcastTableStatus(tableNumber int) {
+	Hub.Broadcast(topicTableStatus(tableNumber), oobWrap("order-status", renderOrderStatusHTML(tableNumber)))
+}
+
+// OrderStatusPoll renders the guest-facing "your order status" widget as a
+// plain HTTP response (kept for compatibility; host_menu.html now gets live
+// updates over /table/{number}/ws instead).
+func OrderStatusPoll(w http.ResponseWriter, r *http.Request) {
+	tableNum, _ := strconv.Atoi(chi.URLParam(r, "number"))
+	w.Write(renderOrderStatusHTML(tableNum))
+}
+
+// renderSongStatusHTML renders the guest-facing "DJ decision" widget for a
+// table's most recent song request.
+func renderSongStatusHTML(tableNumber int) []byte {
+	request, err := db.GetLatestSongRequestForTable(tableNumber)
+	tmpl := template.Must(template.ParseFiles("templates/_song_status.html"))
+	var buf bytes.Buffer
+	if err != nil {
+		tmpl.Execute(&buf, map[string]interface{}{"HasRequest": false})
+		return buf.Bytes()
+	}
+	tmpl.Execute(&buf, map[string]interface{}{
+		"HasRequest": true,
+		"Request":    request,
+	})
+	return buf.Bytes()
+}
+
+// BroadcastSongStatus pushes a fresh DJ-decision fragment to any guest
+// connected over that table's websocket.
+func BroadcastSongStatus(tableNumber int) {
+	Hub.Broadcast(topicTableStatus(tableNumber), oobWrap("song-status", renderSongStatusHTML(tableNumber)))
 }

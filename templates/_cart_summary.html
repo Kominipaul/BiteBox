@@ -1,16 +1,25 @@
-{{ if .Cart.Items }}
-  {{ range .Cart.Items }}
+{{ if .Items }}
+  {{ range .Items }}
   <div class="flex-between">
+    {{ if .Unavailable }}
+    <span style="color:#dc3545;">{{ .Quantity }}x {{ .Name }} — no longer available</span>
+    {{ else }}
     <span>{{ .Quantity }}x {{ .Name }} (€{{ printf "%.2f" .Price }} each)</span>
+    {{ end }}
     <button hx-post="/cart/remove" hx-vals='{"product_id": "{{ .ProductID }}"}' hx-target="#cart-summary" style="border-radius: 8px;">-</button>
   </div>
   {{ end }}
   <hr>
   <div class="flex-between">
     <strong>Total</strong>
-    <strong>€{{ printf "%.2f" .Cart.TotalAmount }}</strong>
+    <strong>€{{ printf "%.2f" .Total }}</strong>
   </div>
-  <button hx-post="/cart/checkout" hx-confirm="Place this order and pay the waiter cash?" style="border-radius: 8px; width: 100%; margin-top: 0.5rem;">💵 Place Order (Pay Cash)</button>
+  {{ if .HasUnavailable }}
+    <p style="color:#dc3545;">Remove the unavailable item(s) above to check out.</p>
+    <button disabled style="border-radius: 8px; width: 100%; margin-top: 0.5rem;">💵 Place Order (Pay Cash)</button>
+  {{ else }}
+    <button hx-post="/cart/checkout" hx-confirm="Place this order and pay the waiter cash?" style="border-radius: 8px; width: 100%; margin-top: 0.5rem;">💵 Place Order (Pay Cash)</button>
+  {{ end }}
 {{ else }}
   <p>Cart is empty</p>
 {{ end }}

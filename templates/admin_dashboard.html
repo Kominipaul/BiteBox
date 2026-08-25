@@ -6,6 +6,7 @@
   <title>BiteBox - Admin Dashboard</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/ws.js"></script>
   <style>
     *, *::before, *::after {
       box-sizing: border-box;
@@ -35,7 +36,10 @@
       border-radius: 12px;
       font-size: 0.8rem;
     }
-    .stats {
+    /* targeted by id, not class: the websocket OOB swap replaces the whole
+       #admin-stats div (including its attributes), so the layout rule has
+       to key off the id that always survives, not a class that wouldn't */
+    #admin-stats {
       display: flex;
       flex-wrap: wrap;
       gap: 1rem;
@@ -51,6 +55,14 @@
     }
     .edit-form {
       flex: 1 1 220px;
+    }
+    .scroll-panel {
+      max-height: 420px;
+      overflow-y: auto;
+      padding: 0.25rem;
+    }
+    .scroll-panel .card:last-child {
+      margin-bottom: 0;
     }
     @media (max-width: 480px) {
       .row > button[type="submit"] {
@@ -69,14 +81,16 @@
   <hr>
 
   <h3>📊 Today's Overview</h3>
-  <div class="stats">
-    <div class="card stat-card">
-      <div class="stat-value">€{{ printf "%.2f" .Revenue }}</div>
-      <div>Revenue (paid orders)</div>
-    </div>
-    <div class="card stat-card">
-      <div class="stat-value">{{ .OrderCount }}</div>
-      <div>Orders Today</div>
+  <div hx-ext="ws" ws-connect="/admin/stats/ws">
+    <div id="admin-stats">
+      <div class="card stat-card">
+        <div class="stat-value">€{{ printf "%.2f" .Revenue }}</div>
+        <div>Revenue (paid orders)</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-value">{{ .OrderCount }}</div>
+        <div>Orders Today</div>
+      </div>
     </div>
   </div>
 
@@ -86,6 +100,7 @@
   <form hx-post="/admin/products" hx-target="#product-list" class="row" style="margin-bottom:1rem;">
     <input type="text" name="name" placeholder="Product name" required style="margin:0; flex:1; min-width:140px;">
     <input type="number" name="price" placeholder="Price" step="0.10" min="0" required style="margin:0; width:8rem;">
+    <input type="number" name="stock" placeholder="Stock (blank = unlimited)" min="-1" style="margin:0; width:11rem;">
     <button type="submit" style="border-radius: 8px;">Add Product</button>
   </form>
   <div id="product-list">
@@ -94,9 +109,17 @@
       <form hx-post="/admin/products/{{ .ID }}" hx-target="#product-list" class="row edit-form">
         <input type="text" name="name" value="{{ .Name }}" required style="margin:0; flex:1; min-width:100px;">
         <input type="number" name="price" value="{{ printf "%.2f" .Price }}" step="0.10" min="0" required style="margin:0; width:6rem;">
+        <input type="number" name="stock" value="{{ .Stock }}" min="-1" style="margin:0; width:6rem;" title="-1 = unlimited">
         <button type="submit" style="border-radius: 8px;">Save</button>
       </form>
       <div class="row">
+        {{ if eq .Stock -1 }}
+          <span class="badge" style="background:#0d6efd;">Unlimited</span>
+        {{ else if eq .Stock 0 }}
+          <span class="badge" style="background:#dc3545;">Out of stock</span>
+        {{ else }}
+          <span class="badge" style="background:#0d6efd;">{{ .Stock }} in stock</span>
+        {{ end }}
         {{ if .IsAvailable }}
           <span class="badge" style="background:#28a745;">Available</span>
         {{ else }}
@@ -140,6 +163,38 @@
     </div>
     {{ else }}
     <p>No tables yet.</p>
+    {{ end }}
+  </div>
+
+  <hr>
+
+  <h3>📜 Order History</h3>
+  <div class="scroll-panel">
+    {{ range .History }}
+    <div class="card">
+      <div class="flex-between">
+        <strong>Table #{{ .TableNumber }} — Order #{{ .ID }}</strong>
+        <span>{{ .CreatedAt.Local.Format "2006-01-02 15:04" }}</span>
+      </div>
+      <ul style="margin: 0.5rem 0;">
+        {{ range .Items }}
+        <li>{{ .Quantity }}x {{ .Name }} (€{{ printf "%.2f" .Price }} each)</li>
+        {{ end }}
+      </ul>
+      <div class="flex-between">
+        <div class="row">
+          <span class="badge" style="background:#0d6efd;">{{ .Status }}</span>
+          {{ if eq .PaymentStatus "paid" }}
+            <span class="badge" style="background:#28a745;">paid</span>
+          {{ else }}
+            <span class="badge" style="background:#6c757d;">unpaid</span>
+          {{ end }}
+        </div>
+        <strong>€{{ printf "%.2f" .TotalAmount }}</strong>
+      </div>
+    </div>
+    {{ else }}
+    <p>No orders yet.</p>
     {{ end }}
   </div>
 

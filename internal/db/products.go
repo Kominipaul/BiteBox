@@ -47,8 +47,11 @@ func GetProductByID(id int) (models.Product, error) {
 	return p, err
 }
 
-func CreateProduct(name string, price float64) (int, error) {
-	res, err := DB.Exec("INSERT INTO products (name, price) VALUES (?, ?)", name, price)
+// CreateProduct inserts a product with a stock count, where -1 means
+// unlimited/untracked stock (the column's default, kept for products that
+// never need a count, e.g. drinks poured to order).
+func CreateProduct(name string, price float64, stock int) (int, error) {
+	res, err := DB.Exec("INSERT INTO products (name, price, stock) VALUES (?, ?, ?)", name, price, stock)
 	if err != nil {
 		return 0, err
 	}
@@ -56,8 +59,8 @@ func CreateProduct(name string, price float64) (int, error) {
 	return int(id), err
 }
 
-func UpdateProduct(id int, name string, price float64) error {
-	_, err := DB.Exec("UPDATE products SET name = ?, price = ? WHERE id = ?", name, price, id)
+func UpdateProduct(id int, name string, price float64, stock int) error {
+	_, err := DB.Exec("UPDATE products SET name = ?, price = ?, stock = ? WHERE id = ?", name, price, stock, id)
 	return err
 }
 
