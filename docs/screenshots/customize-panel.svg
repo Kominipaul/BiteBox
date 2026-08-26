@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="860" viewBox="0 0 420 860">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eef1ec"/>
+      <stop offset="1" stop-color="#e2e7de"/>
+    </linearGradient>
+  </defs>
+  <rect width="420" height="860" rx="14" fill="url(#bg)"/>
+  <rect x="16" y="16" width="388" height="828" rx="10" fill="none" stroke="#8f9789" stroke-width="2" stroke-dasharray="7 7"/>
+  <g transform="translate(210, 402)" text-anchor="middle">
+    <circle r="26" fill="none" stroke="#5f6a58" stroke-width="2.5"/>
+    <path d="M -12 -4 L -12 10 L 12 10 L 12 -4 L 7 -4 L 4 -9 L -4 -9 L -7 -4 Z" fill="none" stroke="#5f6a58" stroke-width="2.2" stroke-linejoin="round"/>
+    <circle r="4.5" fill="none" stroke="#5f6a58" stroke-width="2.2"/>
+  </g>
+  <text x="50%" y="464" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#2b322a">Ingredient customization</text>
+  <text x="50%" y="488" text-anchor="middle" font-family="Consolas, Menlo, monospace" font-size="12.5" fill="#6b7264">Screenshot placeholder — see docs/screenshots/README.md</text>
+  <text x="50%" y="508" text-anchor="middle" font-family="Consolas, Menlo, monospace" font-size="11.5" fill="#8b9284">green = included, blue = extra</text>
+</svg>
