@@ -1,0 +1,24 @@
+{{ range .Staff }}
+<div class="staff-row {{ if not .IsActive }}is-inactive{{ end }}" id="staff-{{ .ID }}">
+  <span class="staff-avatar">{{ .Initials }}</span>
+  <div>
+    <div class="staff-name">{{ .Username }}</div>
+    <div class="staff-sub">{{ .SubCaption }}</div>
+  </div>
+  {{ if eq .Role "admin" }}
+  <span class="role-badge role-admin">Admin</span>
+  {{ else }}
+  <span class="role-badge role-worker">Worker</span>
+  {{ end }}
+  <span class="staff-status">{{ if .IsActive }}{{ .StatusLabel }}{{ else }}Deactivated{{ end }}</span>
+  {{ if .IsSelf }}
+  <button class="btn btn-ghost btn-sm" disabled>You</button>
+  {{ else if .IsActive }}
+  <button class="btn btn-ghost btn-sm" hx-post="/admin/staff/{{ .ID }}/deactivate" hx-target="#staff-list" hx-confirm="Deactivate {{ .Username }}? They'll be logged out immediately.">Deactivate</button>
+  {{ else }}
+  <button class="btn btn-ghost btn-sm" hx-post="/admin/staff/{{ .ID }}/activate" hx-target="#staff-list">Activate</button>
+  {{ end }}
+</div>
+{{ else }}
+<p class="empty-note">No staff accounts yet.</p>
+{{ end }}

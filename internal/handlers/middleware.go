@@ -41,8 +41,36 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 				return
 			}
 
+			db.TouchLastSeen(user.ID)
+
 			ctx := context.WithValue(r.Context(), userContextKey, user)
 			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// RequireDepartment restricts a worker route to specific departments (e.g.
+// only "dj" can reach the DJ terminal routes). Must run inside a RequireRole
+// group so a user is already in context. Admins bypass this check entirely —
+// department is a worker-only concept, admins can reach everything.
+func RequireDepartment(departments ...string) func(http.Handler) http.Handler {
+	allowed := make(map[string]bool, len(departments))
+	for _, d := range departments {
+		allowed[d] = true
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			user, ok := UserFromContext(r)
+			if !ok {
+				http.Error(w, "403 Forbidden", http.StatusForbidden)
+				return
+			}
+			if user.Role == models.RoleAdmin || allowed[user.Department] {
+				next.ServeHTTP(w, r)
+				return
+			}
+			http.Error(w, "403 Forbidden: not available to your department", http.StatusForbidden)
 		})
 	}
 }

@@ -4,46 +4,117 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Staff Login - BiteBox</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    *, *::before, *::after {
-      box-sizing: border-box;
+    :root{
+      --bg-base:#14100D; --bg-surface:#1D1712; --bg-raised:#261F18;
+      --border:#332920; --border-soft:#2A2119;
+      --text-primary:#F5EFE6; --text-secondary:#AB9C89; --text-muted:#75695C;
+      --accent:#D9A441; --accent-strong:#E8B85B; --accent-soft:rgba(217,164,65,.13);
+      --danger:#C25B48; --danger-soft:rgba(194,91,72,.15);
+      --radius-lg:16px; --radius-md:12px; --radius-sm:9px;
+      --font-display:'IBM Plex Mono',ui-monospace,monospace;
+      --font-body:'Manrope',system-ui,sans-serif;
     }
+    *, *::before, *::after { box-sizing: border-box; }
     body {
+      margin: 0;
+      background:
+        radial-gradient(1200px 500px at 15% -10%, rgba(217,164,65,.06), transparent 60%),
+        var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      -webkit-font-smoothing: antialiased;
       display: flex;
       justify-content: center;
       align-items: center;
-      min-height: 90vh;
+      min-height: 100vh;
     }
-    .card {
+    button, input { font-family: inherit; }
+    :focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+
+    .login-shell { width: 100%; max-width: 380px; padding: 24px; }
+    .brand { display: flex; align-items: center; gap: 13px; justify-content: center; margin-bottom: 28px; }
+    .brand-mark {
+      width: 40px; height: 40px; flex: none; border-radius: 11px;
+      background: linear-gradient(155deg, var(--bg-raised), var(--bg-surface));
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 2rem;
-      background: var(--background-alt);
-      width: 100%;
-      max-width: 360px;
+      display: flex; align-items: center; justify-content: center; color: var(--accent);
     }
+    .brand-text { display: flex; flex-direction: column; line-height: 1.25; }
+    .brand-eyebrow { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--text-muted); font-weight: 700; }
+    .brand-name { font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
+
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-lg);
+      padding: 28px 26px;
+    }
+    .card h2 { margin: 0 0 22px; font-size: 16px; font-weight: 800; text-align: center; }
+
+    .field { margin-bottom: 16px; }
+    .field label {
+      display: block; font-size: 12px; font-weight: 700; color: var(--text-secondary);
+      text-transform: uppercase; letter-spacing: .05em; margin-bottom: 7px;
+    }
+    .field input {
+      width: 100%; background: var(--bg-raised); border: 1px solid var(--border);
+      color: var(--text-primary); border-radius: var(--radius-sm);
+      padding: 11px 13px; font-size: 14.5px; outline: none;
+    }
+    .field input::placeholder { color: var(--text-muted); }
+    .field input:focus { border-color: var(--accent); }
+
     .error {
-      color: #dc3545;
+      display: flex; align-items: center; gap: 10px;
+      background: var(--danger-soft); border: 1px solid rgba(194,91,72,.3); border-left: 3px solid var(--danger);
+      border-radius: var(--radius-md); padding: 11px 14px; margin-bottom: 18px;
+      color: var(--text-primary); font-size: 13.5px;
     }
+
+    .btn-submit {
+      width: 100%; padding: 13px; font-size: 14.5px; font-weight: 800;
+      border-radius: var(--radius-sm); border: none; cursor: pointer;
+      background: var(--accent); color: #221805;
+      transition: filter .12s ease, transform .05s ease;
+    }
+    .btn-submit:hover { filter: brightness(1.08); }
+    .btn-submit:active { transform: translateY(1px); }
   </style>
 </head>
 <body>
 
-  <div class="card">
-    <h2>🔐 Staff Login</h2>
-    {{ if .Error }}
-    <p class="error">{{ .Error }}</p>
-    {{ end }}
-    <form method="POST" action="/login">
-      <label>Username</label>
-      <input type="text" name="username" required autofocus>
+  <div class="login-shell">
+    <div class="brand">
+      <span class="brand-mark">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l-1.5 8a4.5 4.5 0 0 1-9 0L6 3Z"/><path d="M12 15.5V21"/><path d="M8.5 21h7"/></svg>
+      </span>
+      <div class="brand-text">
+        <span class="brand-eyebrow">BiteBox</span>
+        <span class="brand-name">Staff Login</span>
+      </div>
+    </div>
 
-      <label>Password</label>
-      <input type="password" name="password" required>
-
-      <button type="submit" style="border-radius: 8px; width: 100%;">Log In</button>
-    </form>
+    <div class="card">
+      <h2>Sign in to continue</h2>
+      {{ if .Error }}
+      <div class="error">{{ .Error }}</div>
+      {{ end }}
+      <form method="POST" action="/login">
+        <div class="field">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" required autofocus>
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required>
+        </div>
+        <button type="submit" class="btn-submit">Log in</button>
+      </form>
+    </div>
   </div>
 
 </body>

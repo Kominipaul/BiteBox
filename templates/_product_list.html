@@ -1,29 +1,68 @@
-{{ range .Products }}
-<div class="card flex-between" id="product-{{ .ID }}">
-  <form hx-post="/admin/products/{{ .ID }}" hx-target="#product-list" class="row edit-form">
-    <input type="text" name="name" value="{{ .Name }}" required style="margin:0; flex:1; min-width:100px;">
-    <input type="number" name="price" value="{{ printf "%.2f" .Price }}" step="0.10" min="0" required style="margin:0; width:6rem;">
-    <input type="number" name="stock" value="{{ .Stock }}" min="-1" style="margin:0; width:6rem;" title="-1 = unlimited">
-    <button type="submit" style="border-radius: 8px;">Save</button>
-  </form>
-  <div class="row">
-    {{ if eq .Stock -1 }}
-      <span class="badge" style="background:#0d6efd;">Unlimited</span>
-    {{ else if eq .Stock 0 }}
-      <span class="badge" style="background:#dc3545;">Out of stock</span>
-    {{ else }}
-      <span class="badge" style="background:#0d6efd;">{{ .Stock }} in stock</span>
-    {{ end }}
-    {{ if .IsAvailable }}
-      <span class="badge" style="background:#28a745;">Available</span>
-    {{ else }}
-      <span class="badge" style="background:#6c757d;">Hidden</span>
-    {{ end }}
-    <button hx-post="/admin/products/{{ .ID }}/toggle" hx-target="#product-list" style="border-radius: 8px;">
-      {{ if .IsAvailable }}Hide{{ else }}Show{{ end }}
-    </button>
+{{ range .MenuGroups }}
+<div class="menu-category" data-category="{{ .Name }}">
+  <h3 class="category-label">{{ .Name }} <span class="category-count">{{ len .Products }}</span></h3>
+
+  {{ range .Products }}
+  <div class="product-row-wrap">
+    <form class="product-row {{ if not .IsAvailable }}is-hidden{{ end }}" data-status="{{ if not .IsAvailable }}hidden{{ else if eq .AvailableStock -1 }}unlimited{{ else if eq .AvailableStock 0 }}out{{ else if le .AvailableStock 5 }}low{{ else }}available{{ end }}">
+      <input type="hidden" name="name" value="{{ .Name }}">
+      <input type="hidden" name="price" value="{{ printf "%.2f" .Price }}">
+      <input type="hidden" name="category" value="{{ .Category }}">
+      <div class="product-main">
+        <span class="product-name">{{ .Name }}</span>
+        <span class="product-price">€{{ printf "%.2f" .Price }}</span>
+        {{ if gt .Reserved 0 }}
+        <span style="font-size:11px;color:var(--text-muted);">{{ .Reserved }} in {{ if eq .Reserved 1 }}a cart{{ else }}carts{{ end }} right now</span>
+        {{ end }}
+      </div>
+      <div class="stock-stepper">
+        {{ if eq .Stock -1 }}
+        <input type="hidden" name="stock" value="-1">
+        <span class="unlimited-tag">∞ stock</span>
+        {{ else }}
+        <button type="button" class="stepper-btn" data-action="dec">–</button>
+        <input class="stepper-input" type="number" name="stock" value="{{ .Stock }}" min="0" title="Raw inventory count (not counting cart reservations)">
+        <button type="button" class="stepper-btn" data-action="inc">+</button>
+        {{ end }}
+      </div>
+      {{ if not .IsAvailable }}
+      <span class="status-pill status-hidden">Hidden</span>
+      {{ else if eq .AvailableStock -1 }}
+      <span class="status-pill status-unlimited">Unlimited</span>
+      {{ else if eq .AvailableStock 0 }}
+      <span class="status-pill status-out">Out of stock</span>
+      {{ else if le .AvailableStock 5 }}
+      <span class="status-pill status-low">Low stock</span>
+      {{ else }}
+      <span class="status-pill status-available">Available</span>
+      {{ end }}
+      <div class="row-actions">
+        <button type="button" class="btn btn-ghost btn-sm" hx-post="/admin/products/{{ .ID }}" hx-target="#menuList">Save</button>
+        <button type="button" class="btn btn-ghost btn-sm toggle-visibility" hx-post="/admin/products/{{ .ID }}/toggle" hx-target="#menuList">
+          {{ if .IsAvailable }}Hide from menu{{ else }}Show on menu{{ end }}
+        </button>
+      </div>
+    </form>
+
+    <div class="ingredient-tags">
+      {{ range .Ingredients }}
+      <span class="ingredient-tag {{ if eq .Kind "extra" }}is-extra{{ end }}">
+        {{ .Name }}{{ if eq .Kind "extra" }} · extra{{ end }}
+        <button type="button" class="ingredient-tag-remove" hx-delete="/admin/ingredients/{{ .ID }}" hx-target="#menuList" title="Remove {{ .Name }}">×</button>
+      </span>
+      {{ end }}
+      <form class="ingredient-add-form" hx-post="/admin/products/{{ .ID }}/ingredients" hx-target="#menuList" hx-on::after-request="if(event.detail.successful) this.reset()">
+        <input class="field-input" name="name" placeholder="Ingredient name" required>
+        <select class="field-select" name="kind">
+          <option value="removable">Removable</option>
+          <option value="extra">Extra</option>
+        </select>
+        <button type="submit" class="btn btn-ghost btn-sm">+ Tag</button>
+      </form>
+    </div>
   </div>
+  {{ end }}
 </div>
 {{ else }}
-<p>No products yet.</p>
+<p class="empty-note">No products yet.</p>
 {{ end }}

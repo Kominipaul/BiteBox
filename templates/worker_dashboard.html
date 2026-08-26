@@ -1,67 +1,318 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BiteBox - Worker Dashboard</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
-  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-  <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/ws.js"></script>
-  <style>
-    *, *::before, *::after {
-      box-sizing: border-box;
-    }
-    .card {
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1rem;
-      margin-bottom: 1rem;
-    }
-    .flex-between {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    .row {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    .badge {
-      color: white;
-      padding: 0.2rem 0.6rem;
-      border-radius: 12px;
-      font-size: 0.8rem;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BiteBox Worker — {{ .Username }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/htmx.org@1.9.10"></script>
+<script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/ws.js"></script>
+<style>
+  :root{
+    --bg-base:#14100D; --bg-surface:#1D1712; --bg-raised:#261F18;
+    --border:#332920; --border-soft:#2A2119;
+    --text-primary:#F5EFE6; --text-secondary:#AB9C89; --text-muted:#75695C;
+    --accent:#D9A441; --accent-strong:#E8B85B; --accent-soft:rgba(217,164,65,.13);
+    --success:#5FA777; --success-soft:rgba(95,167,119,.14);
+    --danger:#C25B48; --danger-soft:rgba(194,91,72,.15);
+    --purple:#9B6FAE; --purple-soft:rgba(155,111,174,.16);
+    --info:#6B8CAE; --info-soft:rgba(107,140,174,.15);
+    --radius-lg:16px; --radius-md:12px; --radius-sm:9px;
+    --font-display:'IBM Plex Mono',ui-monospace,monospace;
+    --font-body:'Manrope',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg-base);color:var(--text-primary);font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased;min-height:100vh;}
+  button{font-family:inherit;}
+  h1,h2{margin:0;}
+  :focus-visible{outline:3px solid var(--accent-strong);outline-offset:2px;}
+
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;
+    border-bottom:1px solid var(--border-soft);position:sticky;top:0;
+    background:rgba(20,16,13,.92);backdrop-filter:blur(8px);z-index:20;}
+  .brand{display:flex;align-items:center;gap:13px;}
+  .brand-mark{width:38px;height:38px;border-radius:11px;flex:none;
+    background:linear-gradient(155deg,var(--bg-raised),var(--bg-surface));border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:center;color:var(--accent);}
+  .brand-eyebrow{display:block;font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--text-muted);font-weight:700;}
+  .worker-name{font-size:19px;font-weight:800;}
+  .live-pill{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;color:var(--success);
+    background:var(--success-soft);border:1px solid rgba(95,167,119,.25);padding:6px 12px 6px 10px;
+    border-radius:99px;margin-right:12px;}
+  .pulse-dot{width:7px;height:7px;border-radius:50%;background:var(--success);animation:pulse 2.2s ease-out infinite;}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(95,167,119,.55);}70%{box-shadow:0 0 0 7px rgba(95,167,119,0);}100%{box-shadow:0 0 0 0 rgba(95,167,119,0);}}
+  @media (prefers-reduced-motion:reduce){.pulse-dot{animation:none;}}
+  .topbar-right{display:flex;align-items:center;}
+  .btn-ghost{background:transparent;color:var(--text-secondary);border:1px solid var(--border);
+    padding:10px 16px;border-radius:var(--radius-sm);font-weight:700;font-size:14px;cursor:pointer;}
+  .btn-ghost:hover{color:var(--text-primary);border-color:var(--text-muted);}
+
+  .dashboard{max-width:1200px;margin:0 auto;padding:26px 24px 100px;}
+  .section-heading{display:flex;align-items:center;justify-content:space-between;margin:6px 0 14px;}
+  .section-title{display:flex;align-items:center;gap:10px;}
+  .section-title h2{font-size:17px;font-weight:800;}
+  .section-icon{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+    background:var(--accent-soft);color:var(--accent);flex:none;}
+  .count-badge{background:var(--bg-raised);border:1px solid var(--border);color:var(--text-secondary);
+    font-size:12.5px;font-weight:800;padding:3px 10px;border-radius:99px;}
+  .empty-note{color:var(--text-muted);font-size:13px;padding:8px 4px;}
+
+  .order-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;}
+
+  .order-card{background:var(--bg-surface);border:1px solid var(--border-soft);border-radius:var(--radius-lg);
+    padding:18px;display:flex;flex-direction:column;gap:14px;border-left:4px solid var(--border);
+    transition:border-left-color .4s ease;}
+  .order-top{display:flex;align-items:center;justify-content:space-between;}
+  .table-tag{font-family:var(--font-display);font-size:24px;font-weight:600;}
+  .order-meta{display:flex;align-items:center;gap:8px;}
+  .new-flag{background:var(--danger);color:#2a0f0a;font-size:10.5px;font-weight:800;padding:3px 8px;
+    border-radius:99px;letter-spacing:.03em;}
+  .timer-badge{font-family:var(--font-display);font-size:12.5px;font-weight:700;padding:5px 10px;border-radius:99px;
+    transition:background-color .4s ease,color .4s ease;}
+
+  .order-items{display:flex;flex-direction:column;gap:6px;padding:12px 0;border-top:1px solid var(--border-soft);
+    border-bottom:1px solid var(--border-soft);}
+  .order-item{display:flex;gap:8px;font-size:15px;font-weight:600;}
+  .order-item .qty{font-family:var(--font-display);color:var(--accent-strong);min-width:26px;}
+
+  .pay-row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .pay-badge{font-size:11.5px;font-weight:800;padding:5px 11px;border-radius:99px;white-space:nowrap;}
+  .pay-online{background:var(--info-soft);color:var(--info);}
+  .pay-cash-unpaid{background:var(--accent-soft);color:var(--accent-strong);}
+  .pay-cash-paid{background:var(--success-soft);color:var(--success);}
+  .mark-paid-btn{background:var(--accent);color:#221805;border:none;font-weight:800;font-size:12.5px;
+    padding:8px 14px;border-radius:var(--radius-sm);cursor:pointer;}
+  .mark-paid-btn:hover{filter:brightness(1.08);}
+
+  .btn-primary-action{width:100%;padding:16px;font-size:16px;font-weight:800;border-radius:var(--radius-md);
+    border:none;cursor:pointer;transition:filter .12s,transform .05s;}
+  .btn-primary-action:active{transform:translateY(1px);}
+  .action-preparing{background:var(--accent);color:#221805;}
+  .action-preparing:hover{filter:brightness(1.08);}
+  .action-ready{background:var(--purple);color:#fff;}
+  .action-ready:hover{filter:brightness(1.08);}
+  .action-served{background:var(--success);color:#0c1f13;}
+  .action-served:hover{filter:brightness(1.08);}
+  .action-done{background:var(--bg-raised);color:var(--text-muted);cursor:default;}
+
+  .order-footer{display:flex;justify-content:flex-end;}
+  .cancel-link{background:none;border:none;color:var(--text-muted);font-size:12px;font-weight:600;
+    cursor:pointer;padding:4px;text-decoration:underline;text-underline-offset:2px;}
+  .cancel-link:hover{color:var(--danger);}
+
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--bg-raised);border:1px solid var(--border);color:var(--text-primary);
+    padding:12px 18px;border-radius:var(--radius-md);font-size:13.5px;font-weight:600;
+    display:flex;align-items:center;gap:14px;opacity:0;pointer-events:none;transition:all .2s ease;
+    box-shadow:0 10px 30px rgba(0,0,0,.4);z-index:50;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto;}
+  .toast-undo{background:none;border:none;color:var(--accent-strong);font-weight:800;cursor:pointer;font-size:13.5px;}
+
+  @media (max-width:640px){ .order-grid{grid-template-columns:1fr;} .dashboard{padding:20px 14px 100px;} }
+</style>
 </head>
 <body>
 
-  <div class="flex-between">
-    <h2>👷 Worker Dashboard</h2>
-    <form method="POST" action="/logout"><button style="border-radius: 8px;">Log Out</button></form>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/></svg>
+    </span>
+    <div>
+      <span class="brand-eyebrow">BiteBox Worker · {{ .DepartmentLabel }}</span>
+      <h1 class="worker-name">{{ .Username }}</h1>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span class="live-pill"><span class="pulse-dot"></span>Live</span>
+    <form method="POST" action="/logout"><button class="btn-ghost" type="submit">Log out</button></form>
+  </div>
+</header>
+
+<main class="dashboard">
+
+  {{ if .ShowOrders }}
+  <div class="section-heading">
+    <div class="section-title">
+      <span class="section-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></span>
+      <h2>Live order feed</h2>
+    </div>
+    <span class="count-badge" id="orderCount">0 active</span>
   </div>
 
-  <hr>
-
-  <h3>📋 Live Order Feed</h3>
   <div hx-ext="ws" ws-connect="/worker/orders/ws">
-    <div id="order-feed">
-      <p>Loading orders...</p>
+    <div class="order-grid" id="order-feed">
+      <p class="empty-note">Loading orders...</p>
+    </div>
+  </div>
+  {{ end }}
+
+  {{ if .ShowDJ }}
+  {{ if .ShowOrders }}<div style="height:28px;"></div>{{ end }}
+  <div class="section-heading">
+    <div class="section-title">
+      <span class="section-icon" style="background:var(--purple-soft);color:var(--purple);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>
+      <h2>DJ request terminal</h2>
     </div>
   </div>
 
-  <hr>
-
-  <h3>🎵 DJ Request Terminal</h3>
   <div hx-ext="ws" ws-connect="/worker/dj/ws">
-    <div id="dj-feed">
-      <p>Loading requests...</p>
+    <div class="order-grid" id="dj-feed">
+      <p class="empty-note">Loading requests...</p>
     </div>
   </div>
+  {{ end }}
+
+</main>
+
+<div class="toast" id="toast">
+  <span id="toastMsg"></span>
+  <button class="toast-undo" id="toastUndo">Undo</button>
+</div>
+
+<script>
+  // ---------------------------------------------------------------
+  // Urgency color: a continuous gradient, not discrete steps —
+  // green (fresh) -> amber -> red -> purple (needs attention now).
+  // Purely client-side, driven by each card's real data-ordered-at
+  // (server-rendered from the order's actual created_at). Nothing here
+  // is fetched — it's cosmetic, the backend doesn't need to know.
+  // ---------------------------------------------------------------
+  const URGENCY_STOPS = [
+    { min: 0,  rgb: [95, 167, 119] },  // green  — var(--success)
+    { min: 10, rgb: [217, 164, 65] },  // amber  — var(--accent)
+    { min: 20, rgb: [194, 91, 72]  },  // red    — var(--danger)
+    { min: 30, rgb: [155, 111, 174] }, // purple — var(--purple)
+  ];
+  function urgencyRGB(minutes){
+    if (minutes <= URGENCY_STOPS[0].min) return URGENCY_STOPS[0].rgb;
+    const last = URGENCY_STOPS[URGENCY_STOPS.length - 1];
+    if (minutes >= last.min) return last.rgb;
+    for (let i = 0; i < URGENCY_STOPS.length - 1; i++) {
+      const a = URGENCY_STOPS[i], b = URGENCY_STOPS[i + 1];
+      if (minutes >= a.min && minutes <= b.min) {
+        const t = (minutes - a.min) / (b.min - a.min);
+        return [0, 1, 2].map(k => Math.round(a.rgb[k] + (b.rgb[k] - a.rgb[k]) * t));
+      }
+    }
+    return last.rgb;
+  }
+  const rgbCss = (rgb, a = 1) => `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${a})`;
+
+  function refreshOrderCard(card){
+    const orderedAt = parseInt(card.dataset.orderedAt, 10);
+    if (!orderedAt) return;
+    const minutes = Math.max(0, Math.floor((Date.now() - orderedAt) / 60000));
+    const rgb = urgencyRGB(minutes);
+
+    card.style.borderLeftColor = rgbCss(rgb, 1);
+    const badge = card.querySelector('.timer-badge');
+    if (badge) {
+      badge.textContent = minutes + ' min';
+      badge.style.background = rgbCss(rgb, 0.16);
+      badge.style.color = rgbCss(rgb, 1);
+    }
+
+    // NEW tag is only useful for the first few minutes — drop it after 5
+    const newFlag = card.querySelector('.new-flag');
+    if (newFlag && minutes >= 5) newFlag.remove();
+  }
+
+  function resortOldestFirst(){
+    const grid = document.getElementById('order-feed');
+    if (!grid) return;
+    Array.from(grid.querySelectorAll('.order-card'))
+      .sort((a, b) => parseInt(a.dataset.orderedAt, 10) - parseInt(b.dataset.orderedAt, 10))
+      .forEach(card => grid.appendChild(card));
+  }
+
+  function updateOrderCount(){
+    const badge = document.getElementById('orderCount');
+    if (!badge) return;
+    const grid = document.getElementById('order-feed');
+    badge.textContent = (grid ? grid.querySelectorAll('.order-card').length : 0) + ' active';
+  }
+
+  function tickOrders(){
+    document.querySelectorAll('#order-feed .order-card').forEach(refreshOrderCard);
+    resortOldestFirst();
+    updateOrderCount();
+  }
+  tickOrders();                          // paint real elapsed time immediately on load
+  setInterval(tickOrders, 60 * 1000);    // then keep it live, every minute, client-side only
+
+  // The order feed's content is replaced wholesale on every live update
+  // (this worker's own action, or a checkout/status change from anyone
+  // else) — htmx fires oobAfterSwap for the websocket's OOB push and
+  // afterSwap for this worker's own direct hx-post response; re-run the
+  // (idempotent) client-side enhancements after either.
+  document.body.addEventListener('htmx:afterSwap', tickOrders);
+  document.body.addEventListener('htmx:oobAfterSwap', tickOrders);
+
+  // ---------------------------------------------------------------
+  // Toast + undo. The undo button always performs a real request (the
+  // same status-update endpoint, reused with the previous value) — a
+  // purely-visual revert would leave this screen disagreeing with every
+  // other connected client's live view, since the actual state already
+  // changed on the server the moment the original click's request
+  // succeeded.
+  // ---------------------------------------------------------------
+  let toastTimer = null;
+  function showToast(msg, undoFn){
+    const toast = document.getElementById('toast');
+    document.getElementById('toastMsg').textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    document.getElementById('toastUndo').onclick = () => { undoFn && undoFn(); toast.classList.remove('show'); };
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 4000);
+  }
+
+  document.body.addEventListener('click', (e) => {
+    const actionBtn = e.target.closest('.btn-primary-action[data-undo-status]');
+    if (actionBtn) {
+      const card = actionBtn.closest('.order-card');
+      const orderId = card.dataset.orderId;
+      const undoStatus = actionBtn.dataset.undoStatus;
+      const table = card.querySelector('.table-tag').textContent;
+      const label = actionBtn.dataset.next === 'preparing' ? 'moved to Preparing' : 'marked served';
+      actionBtn.addEventListener('htmx:afterRequest', function handler(evt) {
+        actionBtn.removeEventListener('htmx:afterRequest', handler);
+        if (!evt.detail.successful) return;
+        showToast(table + ' ' + label, () => {
+          htmx.ajax('POST', '/worker/orders/' + orderId + '/status', { values: { status: undoStatus }, target: '#order-feed', swap: 'innerHTML' });
+        });
+      }, { once: true });
+      return;
+    }
+
+    const payBtn = e.target.closest('.mark-paid-btn');
+    if (payBtn) {
+      const card = payBtn.closest('.order-card');
+      const orderId = card.dataset.orderId;
+      const table = card.querySelector('.table-tag').textContent;
+      payBtn.addEventListener('htmx:afterRequest', function handler(evt) {
+        payBtn.removeEventListener('htmx:afterRequest', handler);
+        if (!evt.detail.successful) return;
+        showToast(table + ' marked as paid', () => {
+          htmx.ajax('POST', '/worker/orders/' + orderId + '/unpaid', { target: '#order-feed', swap: 'innerHTML' });
+        });
+      }, { once: true });
+    }
+  });
+
+  // kicked out live: the server closes any of our websockets with close
+  // code 4001 the moment our own account gets deactivated (checked every
+  // few seconds server-side), so we don't sit on a stale page.
+  document.body.addEventListener('htmx:wsClose', (e) => {
+    if (e.detail && e.detail.event && e.detail.event.code === 4001) {
+      window.location.href = '/login';
+    }
+  });
+</script>
 
 </body>
 </html>

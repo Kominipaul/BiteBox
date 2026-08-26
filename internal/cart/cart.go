@@ -1,6 +1,7 @@
 package cart
 
 import (
+	"sort"
 	"sync"
 
 	"bitebox/internal/models"
@@ -31,16 +32,40 @@ func (s *Store) Get(sessionID string) models.Cart {
 	return *c
 }
 
-// Add increments the quantity for productID, creating the line item from the
-// given name/price snapshot if it isn't already in the cart. Returns the
-// updated cart snapshot.
-func (s *Store) Add(sessionID string, productID int, name string, price float64) models.Cart {
+// sameSet compares two string sets order-independently — used for both
+// excluded and extra ingredients. The same product with a different
+// customization (either set differs) is a different cart line (e.g.
+// "Burger, no onion" and "Burger, no pickles", or "Burger" and "Burger,
+// +extra cheese", don't merge).
+func sameSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	sa, sb := append([]string{}, a...), append([]string{}, b...)
+	sort.Strings(sa)
+	sort.Strings(sb)
+	for i := range sa {
+		if sa[i] != sb[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func sameCustomization(item models.OrderItem, excluded, extras []string) bool {
+	return sameSet(item.Excluded, excluded) && sameSet(item.Extras, extras)
+}
+
+// Add increments the quantity for the (productID, excluded, extras) line,
+// creating it from the given name/price snapshot if that exact
+// customization isn't already in the cart. Returns the updated cart snapshot.
+func (s *Store) Add(sessionID string, productID int, name string, price float64, excluded, extras []string) models.Cart {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	c := s.getOrCreate(sessionID)
 	for i := range c.Items {
-		if c.Items[i].ProductID == productID {
+		if c.Items[i].ProductID == productID && sameCustomization(c.Items[i], excluded, extras) {
 			c.Items[i].Quantity++
 			recalcTotal(c)
 			return *c
@@ -51,20 +76,22 @@ func (s *Store) Add(sessionID string, productID int, name string, price float64)
 		Name:      name,
 		Price:     price,
 		Quantity:  1,
+		Excluded:  append([]string{}, excluded...),
+		Extras:    append([]string{}, extras...),
 	})
 	recalcTotal(c)
 	return *c
 }
 
-// Remove decrements the quantity for productID by 1, dropping the line item
-// once it reaches zero. Returns the updated cart snapshot.
-func (s *Store) Remove(sessionID string, productID int) models.Cart {
+// Remove decrements the quantity for the exact (productID, excluded, extras)
+// line by 1, dropping it once it reaches zero. Returns the updated cart snapshot.
+func (s *Store) Remove(sessionID string, productID int, excluded, extras []string) models.Cart {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	c := s.getOrCreate(sessionID)
 	for i := range c.Items {
-		if c.Items[i].ProductID == productID {
+		if c.Items[i].ProductID == productID && sameCustomization(c.Items[i], excluded, extras) {
 			c.Items[i].Quantity--
 			if c.Items[i].Quantity <= 0 {
 				c.Items = append(c.Items[:i], c.Items[i+1:]...)
@@ -81,6 +108,27 @@ func (s *Store) Clear(sessionID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.carts, sessionID)
+}
+
+// ReservedQuantity sums how many units of a product currently sit in any
+// active cart, across every session and every customization variant — not
+// yet checked out (and so not yet decremented from products.stock), but no
+// longer available for someone else to add, either. Used to compute a live
+// "available" count that reflects what's sitting in other guests' carts,
+// not just the DB column.
+func (s *Store) ReservedQuantity(productID int) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	total := 0
+	for _, c := range s.carts {
+		for _, item := range c.Items {
+			if item.ProductID == productID {
+				total += item.Quantity
+			}
+		}
+	}
+	return total
 }
 
 func (s *Store) getOrCreate(sessionID string) *models.Cart {

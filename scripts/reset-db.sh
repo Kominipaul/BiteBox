@@ -19,4 +19,4 @@ rm -f "$DB_FILE" "$DB_FILE-wal" "$DB_FILE-shm" "$DB_FILE-journal"
 
 go run ./cmd/resetdb
 
-echo "✅ $DB_FILE reset and reseeded (admin/admin123, staff/staff123)."
+echo "✅ $DB_FILE reset and reseeded — see the server's own startup log line for current default account names/passwords (kept in one place, db.go's seedDefaultUsers, so this message can't drift out of sync with it again)."

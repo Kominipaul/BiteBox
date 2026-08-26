@@ -23,7 +23,7 @@ func renderGuestProductListHTML() ([]byte, error) {
 	}
 	var buf bytes.Buffer
 	tmpl := template.Must(template.ParseFiles("templates/_guest_product_list.html"))
-	if err := tmpl.Execute(&buf, map[string]interface{}{"Products": products}); err != nil {
+	if err := tmpl.Execute(&buf, map[string]interface{}{"Products": buildProductViews(products)}); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -39,4 +39,53 @@ func BroadcastMenu() {
 	}
 	msg := append(oobWrap("product-list", b), []byte(cartRefreshTrigger)...)
 	Hub.Broadcast(topicMenu, msg)
+}
+
+// BroadcastAllMenus pushes fresh menu content to both the guest-facing live
+// menu and the admin dashboard's menu list. Anything that changes what's
+// orderable needs both kept in sync — an admin edit, or a guest reserving
+// stock by adding it to their cart (which shifts live availability without
+// touching the products.stock column at all; only checkout does that).
+func BroadcastAllMenus() {
+	BroadcastMenu()
+	BroadcastAdminMenu()
+}
+
+func BroadcastAdminMenu() {
+	b, err := renderAdminProductListHTML()
+	if err != nil {
+		return
+	}
+	Hub.Broadcast(topicAdminMenu, oobWrap("menuList", b))
+}
+
+// renderDJSectionHTML renders the guest-facing "Request a song to DJ" form
+// section — entirely absent when the admin has disabled it (not a disabled/
+// greyed-out state, genuinely not there, matching "song requests aren't
+// shown to the guest at all" when a venue doesn't want them). This is only
+// the submission form; the #song-status decision widget is a separate,
+// always-present element (see host_menu.html) so an admin flipping this off
+// mid-visit doesn't hide the outcome of a request a guest already sent.
+func renderDJSectionHTML() ([]byte, error) {
+	settings, err := db.GetSettings()
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	tmpl := template.Must(template.ParseFiles("templates/_dj_section.html"))
+	if err := tmpl.Execute(&buf, map[string]interface{}{"DJRequestsEnabled": settings.DJRequestsEnabled}); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// BroadcastDJSection pushes the DJ request form's current on/off state to
+// every guest connected over /menu/ws (a venue-wide setting, not per-table
+// — reusing the global menu topic rather than needing a new connection).
+func BroadcastDJSection() {
+	b, err := renderDJSectionHTML()
+	if err != nil {
+		return
+	}
+	Hub.Broadcast(topicMenu, oobWrap("dj-section", b))
 }

@@ -1,24 +1,36 @@
 {{ range .Products }}
-<div class="card flex-between">
+<div class="item-card" data-cat="{{ .Category }}" data-name="{{ .Name }}">
   <div>
-    <strong>{{ .Name }}</strong>
-    <div>€{{ printf "%.2f" .Price }}</div>
-    {{ if eq .Stock 0 }}
-    <div style="color:#dc3545; font-size:0.85rem;">Sold out</div>
-    {{ else if gt .Stock 0 }}
-      {{ if le .Stock 5 }}
-      <div style="color:#dc3545; font-size:0.85rem;">Only {{ .Stock }} left</div>
-      {{ end }}
+    <div class="item-name">{{ .Name }}</div>
+    <div class="item-price">€{{ printf "%.2f" .Price }}</div>
+    {{ if eq .AvailableStock 0 }}
+    <div style="color:var(--danger); font-size:11.5px; margin-top:4px;">Sold out</div>
+    {{ else if and (ge .AvailableStock 0) (le .AvailableStock 5) }}
+    <div style="color:var(--danger); font-size:11.5px; margin-top:4px;">Only {{ .AvailableStock }} left</div>
     {{ end }}
   </div>
-  <div>
-    {{ if eq .Stock 0 }}
-    <button disabled style="border-radius: 8px;">Sold Out</button>
+  <div class="item-add">
+    {{ if eq .AvailableStock 0 }}
+    <button class="add-btn" disabled style="opacity:.5;cursor:default;">Sold Out</button>
     {{ else }}
-    <button hx-post="/cart/add" hx-vals='{"product_id": "{{ .ID }}"}' hx-target="#cart-summary" style="border-radius: 8px;">+ Add</button>
+    <button class="add-btn" hx-post="/cart/add" hx-vals='{"product_id": "{{ .ID }}"}' hx-target="#cart-summary" hx-swap="innerHTML">+ Add</button>
+    {{ end }}
+    {{ if .HasCustomizableIngredient }}
+    <button type="button" class="customize-link" data-action="toggle-customize">Customize</button>
     {{ end }}
   </div>
+  {{ if .HasCustomizableIngredient }}
+  <div class="customize-panel">
+    <div class="customize-hint">Tap a green ingredient to remove it, tap a blue one to add it</div>
+    <div class="ing-chips">
+      {{ range .Ingredients }}
+      <button type="button" class="ing-chip {{ if eq .Kind "extra" }}ing-chip-extra{{ end }}" data-kind="{{ .Kind }}" data-ing="{{ .Name }}">{{ .Name }}</button>
+      {{ end }}
+    </div>
+    <button type="button" class="add-custom-btn" data-action="add-custom" data-product-id="{{ .ID }}">Add to order</button>
+  </div>
+  {{ end }}
 </div>
 {{ else }}
-<p>No items on the menu right now.</p>
+<p class="empty-note">No items on the menu right now.</p>
 {{ end }}

@@ -1,0 +1,9 @@
+{{ if .DJRequestsEnabled }}
+<span class="status-pill status-available">Enabled</span>
+<p class="empty-note" style="margin:10px 0 14px;">Guests see the "Request a song to DJ" form on the menu page.</p>
+<button type="button" class="btn btn-ghost btn-sm" hx-post="/admin/settings/dj-requests/toggle" hx-target="#djTogglePanel" hx-swap="innerHTML">Disable song requests</button>
+{{ else }}
+<span class="status-pill status-hidden">Disabled</span>
+<p class="empty-note" style="margin:10px 0 14px;">Guests don't see any song-request option on the menu page.</p>
+<button type="button" class="btn btn-primary btn-sm" hx-post="/admin/settings/dj-requests/toggle" hx-target="#djTogglePanel" hx-swap="innerHTML">Enable song requests</button>
+{{ end }}

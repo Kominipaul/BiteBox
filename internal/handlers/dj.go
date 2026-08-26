@@ -16,6 +16,11 @@ func DJRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if settings, err := db.GetSettings(); err != nil || !settings.DJRequestsEnabled {
+		http.Error(w, "Song requests are currently disabled", http.StatusForbidden)
+		return
+	}
+
 	song := r.FormValue("song")
 	tip, err := strconv.ParseFloat(r.FormValue("tip"), 64)
 

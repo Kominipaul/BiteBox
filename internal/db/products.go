@@ -2,9 +2,15 @@ package db
 
 import "bitebox/internal/models"
 
+const productColumns = "id, name, price, stock, is_available, category"
+
+func scanProduct(p *models.Product, scan func(...interface{}) error) error {
+	return scan(&p.ID, &p.Name, &p.Price, &p.Stock, &p.IsAvailable, &p.Category)
+}
+
 // GetProducts returns only available products, for the guest-facing menu.
 func GetProducts() ([]models.Product, error) {
-	rows, err := DB.Query("SELECT id, name, price, stock, is_available FROM products WHERE is_available = 1")
+	rows, err := DB.Query("SELECT " + productColumns + " FROM products WHERE is_available = 1")
 	if err != nil {
 		return nil, err
 	}
@@ -13,7 +19,7 @@ func GetProducts() ([]models.Product, error) {
 	var products []models.Product
 	for rows.Next() {
 		var p models.Product
-		if err := rows.Scan(&p.ID, &p.Name, &p.Price, &p.Stock, &p.IsAvailable); err != nil {
+		if err := scanProduct(&p, rows.Scan); err != nil {
 			return nil, err
 		}
 		products = append(products, p)
@@ -23,7 +29,7 @@ func GetProducts() ([]models.Product, error) {
 
 // GetAllProducts returns every product regardless of availability, for admin management.
 func GetAllProducts() ([]models.Product, error) {
-	rows, err := DB.Query("SELECT id, name, price, stock, is_available FROM products ORDER BY id")
+	rows, err := DB.Query("SELECT " + productColumns + " FROM products ORDER BY category, id")
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +38,7 @@ func GetAllProducts() ([]models.Product, error) {
 	var products []models.Product
 	for rows.Next() {
 		var p models.Product
-		if err := rows.Scan(&p.ID, &p.Name, &p.Price, &p.Stock, &p.IsAvailable); err != nil {
+		if err := scanProduct(&p, rows.Scan); err != nil {
 			return nil, err
 		}
 		products = append(products, p)
@@ -42,16 +48,16 @@ func GetAllProducts() ([]models.Product, error) {
 
 func GetProductByID(id int) (models.Product, error) {
 	var p models.Product
-	err := DB.QueryRow("SELECT id, name, price, stock, is_available FROM products WHERE id = ?", id).
-		Scan(&p.ID, &p.Name, &p.Price, &p.Stock, &p.IsAvailable)
+	row := DB.QueryRow("SELECT "+productColumns+" FROM products WHERE id = ?", id)
+	err := scanProduct(&p, row.Scan)
 	return p, err
 }
 
 // CreateProduct inserts a product with a stock count, where -1 means
 // unlimited/untracked stock (the column's default, kept for products that
 // never need a count, e.g. drinks poured to order).
-func CreateProduct(name string, price float64, stock int) (int, error) {
-	res, err := DB.Exec("INSERT INTO products (name, price, stock) VALUES (?, ?, ?)", name, price, stock)
+func CreateProduct(name string, price float64, stock int, category string) (int, error) {
+	res, err := DB.Exec("INSERT INTO products (name, price, stock, category) VALUES (?, ?, ?, ?)", name, price, stock, category)
 	if err != nil {
 		return 0, err
 	}
@@ -59,8 +65,8 @@ func CreateProduct(name string, price float64, stock int) (int, error) {
 	return int(id), err
 }
 
-func UpdateProduct(id int, name string, price float64, stock int) error {
-	_, err := DB.Exec("UPDATE products SET name = ?, price = ?, stock = ? WHERE id = ?", name, price, stock, id)
+func UpdateProduct(id int, name string, price float64, stock int, category string) error {
+	_, err := DB.Exec("UPDATE products SET name = ?, price = ?, stock = ?, category = ? WHERE id = ?", name, price, stock, category, id)
 	return err
 }
 

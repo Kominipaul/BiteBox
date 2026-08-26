@@ -55,6 +55,7 @@ func (h *TableHandlers) View(w http.ResponseWriter, r *http.Request) {
 	if table.Status == "available" || table.HostSessionID == "" {
 		db.ClaimTable(tableNum, sessionID)
 		table.HostSessionID = sessionID
+		BroadcastAdminTables()
 	}
 
 	if table.HostSessionID == sessionID {
@@ -87,6 +88,8 @@ func (h *TableHandlers) Leave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db.ReleaseTable(tableNum)
+	BroadcastAdminTables()
+	BroadcastAllMenus()
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     GuestSessionCookieName,

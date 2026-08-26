@@ -1,8 +1,64 @@
-<div class="card stat-card">
-  <div class="stat-value">€{{ printf "%.2f" .Revenue }}</div>
-  <div>Revenue (paid orders)</div>
+{{ define "adminStatsInner" }}
+<div id="admin-stats">
+  <div class="section-heading">
+    <h2>Overview</h2>
+    <div class="heading-controls">
+      <div class="period-tabs">
+        <button type="button" class="period-tab {{ if eq .Period "today" }}active{{ end }}" hx-get="/admin/stats?period=today" hx-target="#admin-stats-socket" hx-swap="outerHTML">Today</button>
+        <button type="button" class="period-tab {{ if eq .Period "week" }}active{{ end }}" hx-get="/admin/stats?period=week" hx-target="#admin-stats-socket" hx-swap="outerHTML">This week</button>
+        <button type="button" class="period-tab {{ if eq .Period "month" }}active{{ end }}" hx-get="/admin/stats?period=month" hx-target="#admin-stats-socket" hx-swap="outerHTML">This month</button>
+      </div>
+      <a class="btn btn-ghost export-btn" href="/admin/export.csv">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        Export report
+      </a>
+    </div>
+  </div>
+
+  <section class="kpi-grid">
+    <div class="kpi-card is-primary">
+      <div class="kpi-top">
+        <span class="kpi-label">Revenue</span>
+        <span class="kpi-icon" style="font-family:var(--font-display);font-weight:700;font-size:15px;">€</span>
+      </div>
+      <span class="kpi-value">€{{ printf "%.2f" .Stats.Revenue }}</span>
+      <span class="kpi-caption">
+        {{ if eq .Period "today" }}From paid orders today
+        {{ else if eq .Period "week" }}From paid orders, last 7 days
+        {{ else }}From paid orders this month{{ end }}
+      </span>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-top">
+        <span class="kpi-label">Orders</span>
+        <span class="kpi-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></span>
+      </div>
+      <span class="kpi-value">{{ .Stats.OrderCount }}</span>
+      <span class="kpi-caption">
+        {{ if eq .Period "today" }}Since midnight
+        {{ else if eq .Period "week" }}In the last 7 days
+        {{ else }}This calendar month{{ end }}
+      </span>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-top">
+        <span class="kpi-label">Avg. order</span>
+        <span class="kpi-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 16 9 10 13 14 21 5"/><polyline points="15 5 21 5 21 11"/></svg></span>
+      </div>
+      <span class="kpi-value">€{{ printf "%.2f" .Stats.AvgOrder }}</span>
+      <span class="kpi-caption">Per paid order</span>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-top">
+        <span class="kpi-label">Tables</span>
+        <span class="kpi-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg></span>
+      </div>
+      <span class="kpi-value">{{ .TablesOccupied }} / {{ .TablesTotal }}</span>
+      <span class="kpi-caption">Occupied right now</span>
+    </div>
+  </section>
 </div>
-<div class="card stat-card">
-  <div class="stat-value">{{ .OrderCount }}</div>
-  <div>Orders Today</div>
+{{ end }}
+<div id="admin-stats-socket" hx-ext="ws" ws-connect="/admin/stats/ws?period={{ .Period }}">
+  {{ template "adminStatsInner" . }}
 </div>

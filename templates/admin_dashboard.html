@@ -1,202 +1,596 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BiteBox - Admin Dashboard</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
-  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-  <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/ws.js"></script>
-  <style>
-    *, *::before, *::after {
-      box-sizing: border-box;
-    }
-    .card {
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1rem;
-      margin-bottom: 1rem;
-    }
-    .flex-between {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    .row {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    .badge {
-      color: white;
-      padding: 0.2rem 0.6rem;
-      border-radius: 12px;
-      font-size: 0.8rem;
-    }
-    /* targeted by id, not class: the websocket OOB swap replaces the whole
-       #admin-stats div (including its attributes), so the layout rule has
-       to key off the id that always survives, not a class that wouldn't */
-    #admin-stats {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1rem;
-    }
-    .stat-card {
-      flex: 1;
-      min-width: 140px;
-      text-align: center;
-    }
-    .stat-value {
-      font-size: 2rem;
-      font-weight: bold;
-    }
-    .edit-form {
-      flex: 1 1 220px;
-    }
-    .scroll-panel {
-      max-height: 420px;
-      overflow-y: auto;
-      padding: 0.25rem;
-    }
-    .scroll-panel .card:last-child {
-      margin-bottom: 0;
-    }
-    @media (max-width: 480px) {
-      .row > button[type="submit"] {
-        width: 100%;
-      }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BiteBox Admin — Ouzeri Marina</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/htmx.org@1.9.10"></script>
+<script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/ws.js"></script>
+<style>
+  :root{
+    --bg-base:#14100D;
+    --bg-surface:#1D1712;
+    --bg-raised:#261F18;
+    --border:#332920;
+    --border-soft:#2A2119;
+    --text-primary:#F5EFE6;
+    --text-secondary:#AB9C89;
+    --text-muted:#75695C;
+    --accent:#D9A441;
+    --accent-strong:#E8B85B;
+    --accent-soft:rgba(217,164,65,.13);
+    --success:#5FA777;
+    --success-soft:rgba(95,167,119,.14);
+    --danger:#C25B48;
+    --danger-soft:rgba(194,91,72,.15);
+    --info:#6B8CAE;
+    --info-soft:rgba(107,140,174,.15);
+    --neutral:#8C8375;
+    --neutral-soft:rgba(140,131,117,.14);
+    --radius-lg:16px;
+    --radius-md:12px;
+    --radius-sm:9px;
+    --font-display:'IBM Plex Mono',ui-monospace,monospace;
+    --font-body:'Manrope',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html{-webkit-text-size-adjust:100%;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1200px 500px at 15% -10%, rgba(217,164,65,.06), transparent 60%),
+      var(--bg-base);
+    color:var(--text-primary);
+    font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  button,input,select{font-family:inherit;}
+  h1,h2,h3{margin:0;font-family:var(--font-body);}
+  a{color:inherit;}
+
+  :focus-visible{outline:2px solid var(--accent-strong);outline-offset:2px;}
+
+  /* ---------- Topbar ---------- */
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:20px 32px;
+    border-bottom:1px solid var(--border-soft);
+    position:sticky;top:0;
+    background:rgba(20,16,13,.88);
+    backdrop-filter:blur(8px);
+    z-index:10;
+  }
+  .brand{display:flex;align-items:center;gap:14px;}
+  .brand-mark{
+    width:40px;height:40px;flex:none;
+    border-radius:11px;
+    background:linear-gradient(155deg,var(--bg-raised),var(--bg-surface));
+    border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--accent);
+  }
+  .brand-text{display:flex;flex-direction:column;line-height:1.25;}
+  .brand-eyebrow{
+    font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--text-muted);font-weight:700;
+  }
+  .venue-name{font-size:19px;font-weight:800;letter-spacing:-.01em;}
+  .topbar-right{display:flex;align-items:center;gap:14px;}
+  .live-pill{
+    display:flex;align-items:center;gap:7px;
+    font-size:12.5px;font-weight:700;color:var(--success);
+    background:var(--success-soft);
+    border:1px solid rgba(95,167,119,.25);
+    padding:6px 12px 6px 10px;border-radius:99px;
+  }
+  .pulse-dot{
+    width:7px;height:7px;border-radius:50%;background:var(--success);
+    box-shadow:0 0 0 0 rgba(95,167,119,.6);
+    animation:pulse 2.2s ease-out infinite;
+  }
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(95,167,119,.55);}
+    70%{box-shadow:0 0 0 7px rgba(95,167,119,0);}
+    100%{box-shadow:0 0 0 0 rgba(95,167,119,0);}
+  }
+  @media (prefers-reduced-motion: reduce){ .pulse-dot{animation:none;} }
+
+  /* ---------- Buttons ---------- */
+  .btn{
+    font-family:var(--font-body);font-weight:700;font-size:13.5px;
+    border-radius:var(--radius-sm);border:1px solid transparent;
+    padding:9px 16px;cursor:pointer;white-space:nowrap;
+    transition:filter .12s ease, transform .05s ease;
+    display:inline-flex;align-items:center;gap:6px;
+  }
+  .btn:active{transform:translateY(1px);}
+  .btn-sm{padding:7px 12px;font-size:12.5px;}
+  .btn-primary{background:var(--accent);color:#221805;}
+  .btn-primary:hover{filter:brightness(1.08);}
+  .btn-ghost{background:transparent;color:var(--text-secondary);border-color:var(--border);}
+  .btn-ghost:hover{color:var(--text-primary);border-color:var(--text-muted);}
+  .btn-ghost[disabled]{opacity:.5;cursor:default;}
+  .btn-outline-danger{background:transparent;color:var(--danger);border-color:rgba(194,91,72,.4);}
+  .btn-outline-danger:hover{background:var(--danger-soft);}
+
+  /* ---------- Layout ---------- */
+  .dashboard{max-width:1180px;margin:0 auto;padding:32px 32px 80px;}
+  .section-heading{
+    display:flex;align-items:baseline;justify-content:space-between;
+    margin-bottom:16px;flex-wrap:wrap;gap:10px;
+  }
+  .section-heading h2{font-size:16px;font-weight:800;}
+  .section-sub{font-size:12.5px;color:var(--text-muted);font-weight:600;}
+
+  /* ---------- KPI hero ---------- */
+  .kpi-grid{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:14px;
+    margin-bottom:22px;
+  }
+  .kpi-card{
+    background:var(--bg-surface);border:1px solid var(--border-soft);
+    border-radius:var(--radius-lg);padding:18px 20px;
+    display:flex;flex-direction:column;gap:9px;
+    position:relative;overflow:hidden;
+  }
+  .kpi-card.is-primary{border-color:rgba(217,164,65,.3);}
+  .kpi-top{display:flex;align-items:center;justify-content:space-between;}
+  .kpi-icon{
+    width:30px;height:30px;border-radius:8px;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--accent-soft);color:var(--accent);flex:none;
+  }
+  .kpi-label{font-size:12px;font-weight:700;color:var(--text-secondary);
+    text-transform:uppercase;letter-spacing:.05em;}
+  .kpi-value{font-family:var(--font-display);font-size:27px;font-weight:600;
+    letter-spacing:-.01em;font-variant-numeric:tabular-nums;}
+  .kpi-caption{font-size:12px;color:var(--text-muted);}
+
+  /* ---------- Alert banner ---------- */
+  .alert{
+    display:flex;align-items:flex-start;gap:12px;
+    background:var(--accent-soft);border:1px solid rgba(217,164,65,.3);
+    border-left:3px solid var(--accent);
+    border-radius:var(--radius-md);padding:13px 16px;margin-bottom:26px;
+    font-size:13.5px;color:var(--text-primary);
+  }
+  .alert svg{color:var(--accent);flex:none;margin-top:1px;}
+  .alert strong{font-weight:800;}
+
+  /* ---------- Period tabs + export ---------- */
+  .heading-controls{display:flex;align-items:center;gap:12px;}
+  .period-tabs{display:flex;background:var(--bg-surface);border:1px solid var(--border);
+    border-radius:99px;padding:3px;}
+  .period-tab{background:none;border:none;color:var(--text-secondary);font-weight:700;
+    font-size:12.5px;padding:6px 13px;border-radius:99px;cursor:pointer;}
+  .period-tab.active{background:var(--accent);color:#221805;}
+  .export-btn{display:flex;align-items:center;gap:7px;text-decoration:none;}
+
+  /* ---------- Revenue trend ---------- */
+  .trend-panel{
+    background:var(--bg-surface);border:1px solid var(--border-soft);
+    border-radius:var(--radius-lg);padding:20px 22px;margin-bottom:22px;
+    display:flex;gap:24px;align-items:flex-end;
+  }
+  .trend-info{flex:none;min-width:140px;display:flex;flex-direction:column;gap:5px;}
+  .trend-title{font-size:12px;font-weight:700;color:var(--text-secondary);
+    text-transform:uppercase;letter-spacing:.05em;}
+  .trend-total{font-family:var(--font-display);font-size:22px;font-weight:600;}
+  .trend-delta{font-size:12px;font-weight:700;}
+  .trend-delta.is-up{color:var(--success);}
+  .trend-delta.is-down{color:var(--danger);}
+  .trend-bars{flex:1;display:flex;align-items:flex-end;gap:10px;height:84px;}
+  .trend-bar{flex:1;display:flex;flex-direction:column;align-items:center;
+    justify-content:flex-end;height:100%;gap:6px;}
+  .trend-bar-fill{width:100%;max-width:30px;border-radius:5px 5px 2px 2px;
+    background:var(--border);transition:background .15s;}
+  .trend-bar.is-today .trend-bar-fill{background:var(--accent);}
+  .trend-bar-label{font-size:10.5px;color:var(--text-muted);font-weight:700;}
+
+  /* ---------- Staff panel ---------- */
+  .staff-row{
+    display:grid;grid-template-columns:auto 1fr auto auto auto;align-items:center;
+    gap:14px;padding:11px 4px;border-bottom:1px solid var(--border-soft);
+  }
+  .staff-row:last-child{border-bottom:none;}
+  .staff-row.is-inactive{opacity:.5;}
+  .staff-avatar{
+    width:34px;height:34px;border-radius:50%;flex:none;
+    background:var(--bg-raised);border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--font-display);font-size:12.5px;font-weight:700;color:var(--text-secondary);
+  }
+  .staff-name{font-weight:700;font-size:13.5px;}
+  .staff-sub{font-size:11.5px;color:var(--text-muted);}
+  .role-badge{font-size:11px;font-weight:800;padding:4px 10px;border-radius:99px;white-space:nowrap;}
+  .role-admin{background:var(--info-soft);color:var(--info);}
+  .role-worker{background:var(--success-soft);color:var(--success);}
+  .staff-status{font-size:12px;color:var(--text-muted);white-space:nowrap;}
+
+  /* ---------- Panels ---------- */
+  .panel{
+    background:var(--bg-surface);border:1px solid var(--border-soft);
+    border-radius:var(--radius-lg);padding:22px 22px 20px;margin-bottom:20px;
+  }
+  .panel-header{
+    display:flex;align-items:center;justify-content:space-between;
+    gap:16px;flex-wrap:wrap;margin-bottom:18px;
+  }
+  .search-wrap{
+    display:flex;align-items:center;gap:8px;
+    background:var(--bg-raised);border:1px solid var(--border);
+    border-radius:var(--radius-sm);padding:8px 12px;min-width:220px;
+    color:var(--text-muted);
+  }
+  .search-wrap input{
+    background:none;border:none;color:var(--text-primary);font-size:13.5px;
+    width:100%;outline:none;
+  }
+  .search-wrap input::placeholder{color:var(--text-muted);}
+
+  /* ---------- Add product form ---------- */
+  .add-form{
+    display:grid;
+    grid-template-columns:1.6fr .8fr .9fr auto .8fr auto;
+    gap:10px;align-items:center;
+    background:var(--bg-raised);border:1px solid var(--border);
+    border-radius:var(--radius-md);padding:14px;margin-bottom:22px;
+  }
+  .field-input, .field-select{
+    background:var(--bg-surface);border:1px solid var(--border);
+    color:var(--text-primary);border-radius:var(--radius-sm);
+    padding:9px 11px;font-size:13.5px;width:100%;
+  }
+  .field-input::placeholder{color:var(--text-muted);}
+  .checkbox-label{
+    display:flex;align-items:center;gap:7px;font-size:12.5px;
+    color:var(--text-secondary);font-weight:600;white-space:nowrap;
+  }
+  .checkbox-label input{accent-color:var(--accent);width:15px;height:15px;}
+
+  /* ---------- Category groups ---------- */
+  .menu-category{margin-bottom:6px;}
+  .category-label{
+    display:flex;align-items:center;gap:8px;
+    font-size:11.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--text-muted);margin:18px 0 10px;
+  }
+  .category-count{
+    background:var(--bg-raised);color:var(--text-secondary);
+    border-radius:99px;padding:1px 8px;font-size:11px;
+  }
+
+  .product-row{
+    display:grid;
+    grid-template-columns:1fr auto auto auto;
+    align-items:center;gap:16px;
+    padding:12px 4px;border-bottom:1px solid var(--border-soft);
+    transition:opacity .15s ease;
+    margin:0;
+  }
+  .product-row:last-child{border-bottom:none;}
+  .product-row.is-hidden{opacity:.45;}
+  .product-main{display:flex;flex-direction:column;gap:2px;min-width:0;}
+  .product-name{font-weight:700;font-size:14px;}
+  .product-price{font-family:var(--font-display);font-size:12.5px;color:var(--text-secondary);}
+
+  .stock-stepper{display:flex;align-items:center;gap:0;border:1px solid var(--border);
+    border-radius:var(--radius-sm);overflow:hidden;background:var(--bg-raised);}
+  .stepper-btn{
+    background:none;border:none;color:var(--text-secondary);
+    width:28px;height:30px;cursor:pointer;font-size:15px;font-weight:700;
+  }
+  .stepper-btn:hover{color:var(--text-primary);background:rgba(255,255,255,.04);}
+  .stepper-input{
+    width:42px;text-align:center;background:none;border:none;color:var(--text-primary);
+    font-family:var(--font-display);font-size:13px;font-weight:600;
+  }
+  .unlimited-tag{font-size:12px;color:var(--info);font-weight:700;padding:0 6px;}
+
+  .status-pill{
+    font-size:11.5px;font-weight:800;letter-spacing:.02em;
+    padding:5px 11px;border-radius:99px;white-space:nowrap;
+  }
+  .status-available{background:var(--success-soft);color:var(--success);}
+  .status-low{background:var(--accent-soft);color:var(--accent-strong);}
+  .status-out{background:var(--danger-soft);color:var(--danger);}
+  .status-unlimited{background:var(--info-soft);color:var(--info);}
+  .status-hidden{background:var(--neutral-soft);color:var(--neutral);}
+  .status-occupied{background:var(--danger-soft);color:var(--danger);}
+
+  .row-actions{display:flex;gap:8px;}
+
+  /* ---------- Ingredient tags ---------- */
+  .product-row-wrap{border-bottom:1px solid var(--border-soft); padding:12px 0;}
+  .product-row-wrap:last-child{border-bottom:none;}
+  .product-row-wrap .product-row{border-bottom:none; padding:0 4px 10px;}
+  .ingredient-tags{display:flex; flex-wrap:wrap; align-items:center; gap:7px; padding:0 4px;}
+  .ingredient-tag{
+    display:inline-flex; align-items:center; gap:7px;
+    font-size:11.5px; font-weight:700; padding:5px 7px 5px 12px; border-radius:99px;
+    background:var(--success-soft); color:var(--success);
+  }
+  .ingredient-tag.is-extra{background:var(--info-soft); color:var(--info);}
+  .ingredient-tag-remove{
+    background:none; border:none; cursor:pointer; font-weight:800; line-height:1;
+    color:var(--danger); font-size:14px; padding:2px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .ingredient-tag-remove:hover{opacity:.7;}
+  .ingredient-add-form{display:flex; gap:7px; align-items:center; flex-wrap:wrap; margin-top:2px;}
+  .ingredient-add-form .field-input{width:160px; padding:7px 10px; font-size:12.5px; margin:0;}
+  .ingredient-add-form .field-select{padding:7px 8px; font-size:12.5px; margin:0;}
+
+  /* ---------- Tables ---------- */
+  .add-table-form{display:flex;gap:10px;align-items:center;}
+  .add-table-form .field-input{width:110px;}
+  .table-grid{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+    gap:12px;
+  }
+  .table-card{
+    border-radius:var(--radius-md);padding:16px;
+    display:flex;flex-direction:column;gap:10px;align-items:flex-start;
+    border:1px solid var(--border-soft);
+  }
+  .table-card.occupied{background:var(--danger-soft);border-color:rgba(194,91,72,.28);}
+  .table-card.available{background:var(--success-soft);border-color:rgba(95,167,119,.25);}
+  .table-number{font-family:var(--font-display);font-size:22px;font-weight:600;}
+  .table-card .btn{width:100%;text-align:center;justify-content:center;}
+
+  .empty-note{color:var(--text-muted);font-size:13px;padding:8px 4px;}
+
+  /* ---------- Order history (kept from before, restyled to match) ---------- */
+  .scroll-panel{
+    max-height:420px;overflow-y:auto;padding:0.25rem;
+    display:flex;flex-direction:column;gap:10px;
+  }
+  .history-card{
+    background:var(--bg-raised);border:1px solid var(--border-soft);
+    border-radius:var(--radius-md);padding:14px 16px;
+  }
+  .history-card ul{margin:8px 0;padding-left:18px;color:var(--text-secondary);font-size:13px;}
+  .history-time{font-size:12px;color:var(--text-muted);}
+
+  /* ---------- Responsive ---------- */
+  @media (max-width:920px){
+    .kpi-grid{grid-template-columns:repeat(2,1fr);}
+    .add-form{grid-template-columns:1fr 1fr;}
+  }
+  @media (max-width:640px){
+    .dashboard{padding:22px 16px 60px;}
+    .topbar{padding:16px 18px;}
+    .kpi-grid{grid-template-columns:1fr 1fr;}
+    .product-row{grid-template-columns:1fr;gap:8px;align-items:flex-start;}
+    .row-actions{width:100%;}
+    .add-form{grid-template-columns:1fr;}
+  }
+</style>
 </head>
 <body>
 
-  <div class="flex-between">
-    <h2>🛠️ Admin Dashboard</h2>
-    <form method="POST" action="/logout"><button style="border-radius: 8px;">Log Out</button></form>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l-1.5 8a4.5 4.5 0 0 1-9 0L6 3Z"/><path d="M12 15.5V21"/><path d="M8.5 21h7"/></svg>
+    </span>
+    <div class="brand-text">
+      <span class="brand-eyebrow">BiteBox Admin</span>
+      <h1 class="venue-name">Ouzeri Marina</h1>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span class="live-pill"><span class="pulse-dot"></span>Live</span>
+    <form method="POST" action="/logout"><button class="btn btn-ghost" type="submit">Log out</button></form>
+  </div>
+</header>
+
+<main class="dashboard">
+
+  <div id="admin-stats-wrap" hx-get="/admin/stats?period=today" hx-trigger="load" hx-swap="innerHTML">
+    <p class="empty-note">Loading overview...</p>
   </div>
 
-  <hr>
-
-  <h3>📊 Today's Overview</h3>
-  <div hx-ext="ws" ws-connect="/admin/stats/ws">
-    <div id="admin-stats">
-      <div class="card stat-card">
-        <div class="stat-value">€{{ printf "%.2f" .Revenue }}</div>
-        <div>Revenue (paid orders)</div>
-      </div>
-      <div class="card stat-card">
-        <div class="stat-value">{{ .OrderCount }}</div>
-        <div>Orders Today</div>
-      </div>
+  <div class="trend-panel">
+    <div class="trend-info">
+      <span class="trend-title">Revenue, last 7 days</span>
+      <span class="trend-total">€{{ printf "%.2f" .TrendTotal }}</span>
+      {{ if .HasTrendDelta }}
+      <span class="trend-delta {{ if ge .TrendDeltaPercent 0.0 }}is-up{{ else }}is-down{{ end }}">
+        {{ if ge .TrendDeltaPercent 0.0 }}↑{{ else }}↓{{ end }} {{ printf "%.0f" .TrendDeltaPercent }}% vs. previous week
+      </span>
+      {{ end }}
+    </div>
+    <div class="trend-bars">
+      {{ range .Trend }}
+      <div class="trend-bar {{ if .IsToday }}is-today{{ end }}"><div class="trend-bar-fill" style="height:{{ .Percent }}%"></div><span class="trend-bar-label">{{ .Label }}</span></div>
+      {{ end }}
     </div>
   </div>
 
-  <hr>
+  {{ if .HasLowStock }}
+  <div class="alert" id="stockAlert">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 2.5 18a1.5 1.5 0 0 0 1.3 2.2h16.4a1.5 1.5 0 0 0 1.3-2.2L13.7 3.9a1.5 1.5 0 0 0-2.6 0Z"/><path d="M12 9v4"/><path d="M12 16.5h.01"/></svg>
+    <div><strong>Running low:</strong> {{ .LowStock.Name }} has {{ .LowStock.AvailableStock }} left. Consider restocking before tonight.</div>
+  </div>
+  {{ end }}
 
-  <h3>🍔 Menu & Inventory</h3>
-  <form hx-post="/admin/products" hx-target="#product-list" class="row" style="margin-bottom:1rem;">
-    <input type="text" name="name" placeholder="Product name" required style="margin:0; flex:1; min-width:140px;">
-    <input type="number" name="price" placeholder="Price" step="0.10" min="0" required style="margin:0; width:8rem;">
-    <input type="number" name="stock" placeholder="Stock (blank = unlimited)" min="-1" style="margin:0; width:11rem;">
-    <button type="submit" style="border-radius: 8px;">Add Product</button>
-  </form>
-  <div id="product-list">
-    {{ range .Products }}
-    <div class="card flex-between" id="product-{{ .ID }}">
-      <form hx-post="/admin/products/{{ .ID }}" hx-target="#product-list" class="row edit-form">
-        <input type="text" name="name" value="{{ .Name }}" required style="margin:0; flex:1; min-width:100px;">
-        <input type="number" name="price" value="{{ printf "%.2f" .Price }}" step="0.10" min="0" required style="margin:0; width:6rem;">
-        <input type="number" name="stock" value="{{ .Stock }}" min="-1" style="margin:0; width:6rem;" title="-1 = unlimited">
-        <button type="submit" style="border-radius: 8px;">Save</button>
+  <section class="panel">
+    <div class="panel-header">
+      <h2>DJ song requests</h2>
+    </div>
+    <div id="djTogglePanel">
+      {{ if .DJRequestsEnabled }}
+      <span class="status-pill status-available">Enabled</span>
+      <p class="empty-note" style="margin:10px 0 14px;">Guests see the "Request a song to DJ" form on the menu page.</p>
+      <button type="button" class="btn btn-ghost btn-sm" hx-post="/admin/settings/dj-requests/toggle" hx-target="#djTogglePanel" hx-swap="innerHTML">Disable song requests</button>
+      {{ else }}
+      <span class="status-pill status-hidden">Disabled</span>
+      <p class="empty-note" style="margin:10px 0 14px;">Guests don't see any song-request option on the menu page.</p>
+      <button type="button" class="btn btn-primary btn-sm" hx-post="/admin/settings/dj-requests/toggle" hx-target="#djTogglePanel" hx-swap="innerHTML">Enable song requests</button>
+      {{ end }}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h2>Menu &amp; inventory</h2>
+      <div class="search-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" id="menuSearch" placeholder="Search menu…">
+      </div>
+    </div>
+
+    <form class="add-form" id="addProductForm" hx-post="/admin/products" hx-target="#menuList" hx-on::after-request="if(event.detail.successful) this.reset()">
+      <input class="field-input" name="name" placeholder="Item name" required>
+      <input class="field-input" name="price" type="number" step="0.50" min="0" placeholder="Price €" required>
+      <select class="field-select" name="category">
+        {{ range .Categories }}<option value="{{ . }}">{{ . }}</option>{{ end }}
+      </select>
+      <label class="checkbox-label"><input type="checkbox" id="newItemUnlimited"> Unlimited</label>
+      <input class="field-input" id="newItemStock" name="stock" type="number" min="0" placeholder="Stock qty">
+      <button type="submit" class="btn btn-primary">Add product</button>
+    </form>
+
+    <div hx-ext="ws" ws-connect="/admin/menu/ws">
+      <div id="menuList" hx-get="/admin/products" hx-trigger="load" hx-swap="innerHTML">
+        <p class="empty-note">Loading menu...</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h2>Table configuration</h2>
+      <form class="add-table-form" hx-post="/admin/tables" hx-target="#table-grid" hx-on::after-request="if(event.detail.successful) this.reset()">
+        <input class="field-input" name="number" type="number" min="1" placeholder="Table #" required>
+        <button type="submit" class="btn btn-primary">Add table</button>
       </form>
-      <div class="row">
-        {{ if eq .Stock -1 }}
-          <span class="badge" style="background:#0d6efd;">Unlimited</span>
-        {{ else if eq .Stock 0 }}
-          <span class="badge" style="background:#dc3545;">Out of stock</span>
-        {{ else }}
-          <span class="badge" style="background:#0d6efd;">{{ .Stock }} in stock</span>
-        {{ end }}
-        {{ if .IsAvailable }}
-          <span class="badge" style="background:#28a745;">Available</span>
-        {{ else }}
-          <span class="badge" style="background:#6c757d;">Hidden</span>
-        {{ end }}
-        <button hx-post="/admin/products/{{ .ID }}/toggle" hx-target="#product-list" style="border-radius: 8px;">
-          {{ if .IsAvailable }}Hide{{ else }}Show{{ end }}
-        </button>
+    </div>
+    <div hx-ext="ws" ws-connect="/admin/tables/ws">
+      <div class="table-grid" id="table-grid" hx-get="/admin/tables" hx-trigger="load" hx-swap="innerHTML">
+        <p class="empty-note">Loading tables...</p>
       </div>
     </div>
-    {{ else }}
-    <p>No products yet.</p>
-    {{ end }}
-  </div>
+  </section>
 
-  <hr>
-
-  <h3>🪑 Table Configuration</h3>
-  <form hx-post="/admin/tables" hx-target="#table-list" class="row" style="margin-bottom:1rem;">
-    <input type="number" name="number" placeholder="Table #" min="1" required style="margin:0; width:8rem;">
-    <button type="submit" style="border-radius: 8px;">Add Table</button>
-  </form>
-  <div id="table-list">
-    {{ range .Tables }}
-    <div class="card flex-between" id="table-{{ .Number }}">
-      <div>
-        <strong>Table #{{ .Number }}</strong>
-        {{ if eq .Status "occupied" }}
-          <span class="badge" style="background:#dc3545;">Occupied</span>
-        {{ else }}
-          <span class="badge" style="background:#28a745;">Available</span>
-        {{ end }}
-      </div>
-      <div class="row">
-        {{ if eq .Status "occupied" }}
-          <button hx-post="/admin/tables/{{ .Number }}/release" hx-target="#table-list" hx-confirm="Force-release Table #{{ .Number }}?" style="border-radius: 8px;">Force Release</button>
-        {{ else }}
-          <button hx-delete="/admin/tables/{{ .Number }}" hx-target="#table-list" hx-confirm="Remove Table #{{ .Number }}?" style="border-radius: 8px; background-color:#dc3545; color:white; border:none;">Remove</button>
-        {{ end }}
-      </div>
+  <section class="panel">
+    <div class="panel-header">
+      <h2>Staff &amp; access</h2>
     </div>
-    {{ else }}
-    <p>No tables yet.</p>
-    {{ end }}
-  </div>
 
-  <hr>
+    <form class="add-form" id="addStaffForm" style="grid-template-columns:1fr 1fr 1fr auto auto;" hx-post="/admin/staff" hx-target="#staff-list" hx-on::after-request="if(event.detail.successful) this.reset()">
+      <input class="field-input" name="username" placeholder="Username" required>
+      <input class="field-input" name="password" type="password" placeholder="Password (min. 6 chars)" required minlength="6">
+      <select class="field-select" name="role">
+        <option value="waiter">Worker — Waiter</option>
+        <option value="bar">Worker — Bar</option>
+        <option value="kitchen">Worker — Kitchen</option>
+        <option value="dj">Worker — DJ</option>
+        <option value="superworker">Worker — Manager (sees everything)</option>
+        <option value="admin">Admin</option>
+      </select>
+      <button type="submit" class="btn btn-primary">Add account</button>
+    </form>
 
-  <h3>📜 Order History</h3>
-  <div class="scroll-panel">
-    {{ range .History }}
-    <div class="card">
-      <div class="flex-between">
-        <strong>Table #{{ .TableNumber }} — Order #{{ .ID }}</strong>
-        <span>{{ .CreatedAt.Local.Format "2006-01-02 15:04" }}</span>
-      </div>
-      <ul style="margin: 0.5rem 0;">
-        {{ range .Items }}
-        <li>{{ .Quantity }}x {{ .Name }} (€{{ printf "%.2f" .Price }} each)</li>
-        {{ end }}
-      </ul>
-      <div class="flex-between">
-        <div class="row">
-          <span class="badge" style="background:#0d6efd;">{{ .Status }}</span>
-          {{ if eq .PaymentStatus "paid" }}
-            <span class="badge" style="background:#28a745;">paid</span>
-          {{ else }}
-            <span class="badge" style="background:#6c757d;">unpaid</span>
-          {{ end }}
+    <div id="staff-list" hx-get="/admin/staff" hx-trigger="load" hx-swap="innerHTML">
+      <p class="empty-note">Loading staff...</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h2>📜 Order history</h2>
+      <span class="section-sub">Most recent {{ len .History }} orders</span>
+    </div>
+    <div class="scroll-panel">
+      {{ range .History }}
+      <div class="history-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <strong>Table #{{ .TableNumber }} — Order #{{ .ID }}</strong>
+          <span class="history-time">{{ .CreatedAt.Local.Format "2006-01-02 15:04" }}</span>
         </div>
-        <strong>€{{ printf "%.2f" .TotalAmount }}</strong>
+        <ul>
+          {{ range .Items }}
+          <li>{{ .Quantity }}x {{ .Name }} (€{{ printf "%.2f" .Price }} each)</li>
+          {{ end }}
+        </ul>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+          <div class="row-actions">
+            {{ if eq .Status "cancelled" }}
+            <span class="status-pill status-out">cancelled</span>
+            {{ else }}
+            <span class="status-pill status-unlimited">{{ .Status }}</span>
+            {{ end }}
+            {{ if eq .PaymentStatus "paid" }}
+            <span class="status-pill status-available">paid</span>
+            {{ else }}
+            <span class="status-pill status-hidden">unpaid</span>
+            {{ end }}
+            {{ if .ServedBy }}
+            <span class="status-pill status-unlimited" style="background:var(--info-soft);color:var(--info);">served by {{ .ServedBy }}</span>
+            {{ end }}
+          </div>
+          <strong>€{{ printf "%.2f" .TotalAmount }}</strong>
+        </div>
       </div>
+      {{ else }}
+      <p class="empty-note">No orders yet.</p>
+      {{ end }}
     </div>
-    {{ else }}
-    <p>No orders yet.</p>
-    {{ end }}
-  </div>
+  </section>
+
+</main>
+
+<script>
+  // ---- stock steppers (local nudge only; Save persists it) ----
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.stepper-btn');
+    if (!btn) return;
+    const input = btn.parentElement.querySelector('.stepper-input');
+    let val = parseInt(input.value || '0', 10);
+    val = btn.dataset.action === 'inc' ? val + 1 : Math.max(0, val - 1);
+    input.value = val;
+  });
+
+  // ---- menu search ----
+  document.addEventListener('input', (e) => {
+    if (e.target.id !== 'menuSearch') return;
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll('.menu-category').forEach(cat => {
+      let visibleCount = 0;
+      cat.querySelectorAll('.product-row').forEach(row => {
+        const name = row.querySelector('.product-name').textContent.toLowerCase();
+        const match = name.includes(q);
+        row.style.display = match ? '' : 'none';
+        if (match) visibleCount++;
+      });
+      cat.style.display = visibleCount > 0 ? '' : 'none';
+    });
+  });
+
+  // ---- unlimited checkbox disables stock qty on the add-product form ----
+  document.addEventListener('change', (e) => {
+    if (e.target.id !== 'newItemUnlimited') return;
+    const stockField = document.getElementById('newItemStock');
+    stockField.disabled = e.target.checked;
+    if (e.target.checked) stockField.value = '';
+    stockField.placeholder = e.target.checked ? 'Unlimited' : 'Stock qty';
+  });
+
+  // ---- kicked out live: the server closes any of our websockets with
+  // close code 4001 the moment our own account gets deactivated (checked
+  // every few seconds server-side), so we don't sit on a stale page ----
+  document.body.addEventListener('htmx:wsClose', (e) => {
+    if (e.detail && e.detail.event && e.detail.event.code === 4001) {
+      window.location.href = '/login';
+    }
+  });
+</script>
 
 </body>
 </html>

@@ -27,6 +27,10 @@ func LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		renderError("Invalid username or password")
 		return
 	}
+	if !user.IsActive {
+		renderError("This account has been deactivated")
+		return
+	}
 
 	sessionID := auth.GenerateSessionID()
 	if err := db.CreateAuthSession(sessionID, user.ID); err != nil {

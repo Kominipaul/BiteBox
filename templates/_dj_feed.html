@@ -1,11 +1,17 @@
 {{ range .Requests }}
-<div class="card flex-between">
-  <span>🎵 Table #{{ .TableNumber }}: {{ .SongName }} — €{{ printf "%.2f" .TipAmount }} tip</span>
-  <div class="row">
-    <button hx-post="/worker/dj/{{ .ID }}/accept" hx-target="#dj-feed" style="border-radius: 8px; background-color:#28a745; color:white; border:none;">Accept</button>
-    <button hx-post="/worker/dj/{{ .ID }}/reject" hx-target="#dj-feed" style="border-radius: 8px; background-color:#dc3545; color:white; border:none;">Reject</button>
+<div class="order-card">
+  <div class="order-top">
+    <span class="table-tag">Table {{ printf "%02d" .TableNumber }}</span>
+    <span class="timer-badge" style="background:var(--purple-soft);color:var(--purple);">€{{ printf "%.2f" .TipAmount }} tip</span>
+  </div>
+  <div class="order-items">
+    <div class="order-item">🎵 {{ .SongName }}</div>
+  </div>
+  <div style="display:flex;gap:10px;">
+    <button class="btn-primary-action action-served" style="flex:1;" hx-post="/worker/dj/{{ .ID }}/accept" hx-target="#dj-feed" hx-swap="innerHTML">Accept</button>
+    <button class="btn-primary-action" style="flex:1;background:var(--danger);color:#fff;" hx-post="/worker/dj/{{ .ID }}/reject" hx-target="#dj-feed" hx-swap="innerHTML">Reject</button>
   </div>
 </div>
 {{ else }}
-<p>No pending song requests.</p>
+<p class="empty-note">No pending song requests.</p>
 {{ end }}

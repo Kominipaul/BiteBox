@@ -1,21 +1,14 @@
 {{ range .Tables }}
-<div class="card flex-between" id="table-{{ .Number }}">
-  <div>
-    <strong>Table #{{ .Number }}</strong>
-    {{ if eq .Status "occupied" }}
-      <span class="badge" style="background:#dc3545;">Occupied</span>
-    {{ else }}
-      <span class="badge" style="background:#28a745;">Available</span>
-    {{ end }}
-  </div>
-  <div class="row">
-    {{ if eq .Status "occupied" }}
-      <button hx-post="/admin/tables/{{ .Number }}/release" hx-target="#table-list" hx-confirm="Force-release Table #{{ .Number }}?" style="border-radius: 8px;">Force Release</button>
-    {{ else }}
-      <button hx-delete="/admin/tables/{{ .Number }}" hx-target="#table-list" hx-confirm="Remove Table #{{ .Number }}?" style="border-radius: 8px; background-color:#dc3545; color:white; border:none;">Remove</button>
-    {{ end }}
-  </div>
+<div class="table-card {{ if eq .Status "occupied" }}occupied{{ else }}available{{ end }}" id="table-{{ .Number }}">
+  <span class="table-number">{{ printf "%02d" .Number }}</span>
+  {{ if eq .Status "occupied" }}
+  <span class="status-pill status-occupied">Occupied</span>
+  <button class="btn btn-outline-danger btn-sm force-release" hx-post="/admin/tables/{{ .Number }}/release" hx-target="#table-grid" hx-confirm="Force-release Table #{{ .Number }}?">Force release</button>
+  {{ else }}
+  <span class="status-pill status-available">Available</span>
+  <button class="btn btn-outline-danger btn-sm remove-table" hx-delete="/admin/tables/{{ .Number }}" hx-target="#table-grid" hx-confirm="Remove Table #{{ .Number }}? This can't be undone.">Remove</button>
+  {{ end }}
 </div>
 {{ else }}
-<p>No tables yet.</p>
+<p class="empty-note">No tables yet.</p>
 {{ end }}

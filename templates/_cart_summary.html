@@ -1,25 +1,64 @@
 {{ if .Items }}
   {{ range .Items }}
-  <div class="flex-between">
-    {{ if .Unavailable }}
-    <span style="color:#dc3545;">{{ .Quantity }}x {{ .Name }} — no longer available</span>
-    {{ else }}
-    <span>{{ .Quantity }}x {{ .Name }} (€{{ printf "%.2f" .Price }} each)</span>
-    {{ end }}
-    <button hx-post="/cart/remove" hx-vals='{"product_id": "{{ .ProductID }}"}' hx-target="#cart-summary" style="border-radius: 8px;">-</button>
+  <div class="order-line" data-product-id="{{ .ProductID }}" data-excluded='{{ .ExcludedJSON }}' data-extras='{{ .ExtrasJSON }}'>
+    <div class="order-line-main">
+      <span class="order-line-name">{{ .Name }}</span>
+      {{ if .Unavailable }}
+      <span class="order-line-excl" style="color:var(--danger);">No longer available</span>
+      {{ else }}
+        {{ if .Excluded }}
+        <span class="order-line-excl">Without: {{ range $i, $e := .Excluded }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}</span>
+        {{ end }}
+        {{ if .Extras }}
+        <span class="order-line-excl" style="color:var(--info);">+ {{ range $i, $e := .Extras }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}</span>
+        {{ end }}
+        {{ if and (not .Excluded) (not .Extras) }}
+        <span class="order-line-price">€{{ printf "%.2f" .Price }} each</span>
+        {{ end }}
+      {{ end }}
+    </div>
+    <div class="ol-controls">
+      <button type="button" class="ol-btn" data-action="dec">–</button>
+      <span class="ol-qty">{{ .Quantity }}</span>
+      <button type="button" class="ol-btn" data-action="inc">+</button>
+    </div>
+    <span class="order-line-total">€{{ printf "%.2f" .LineTotal }}</span>
   </div>
   {{ end }}
-  <hr>
-  <div class="flex-between">
-    <strong>Total</strong>
-    <strong>€{{ printf "%.2f" .Total }}</strong>
+  <div class="order-subtotal-row" style="display:flex;">
+    <span>Subtotal</span>
+    <span class="order-subtotal">€{{ printf "%.2f" .Total }}</span>
+  </div>
+
+  {{ if .HasUnavailable }}
+  <p style="color:var(--danger); font-size:12.5px;">Remove the unavailable item(s) above to check out.</p>
+  {{ end }}
+
+  <div id="orderExtras" style="display:block;">
+    <label class="field-label">Note for the kitchen (optional)</label>
+    <textarea class="field-input" id="orderComment" name="note" rows="2" placeholder="e.g. no ice, nut allergy, birthday candle please"></textarea>
+
+    <label class="field-label">Payment method</label>
+    <div class="pay-method-row">
+      <button type="button" class="pay-method-chip active" data-method="cash">💵 Cash</button>
+      <button type="button" class="pay-method-chip" data-method="card">💳 Card <span class="demo-tag">Demo</span></button>
+    </div>
+    <input type="hidden" id="paymentMethodInput" name="payment_method" value="cash">
+  </div>
+
+  <button type="button" class="cancel-order-btn" style="display:block;" hx-post="/cart/clear" hx-target="#cart-summary" hx-swap="innerHTML" hx-confirm="Cancel your order? This clears everything you've added so far.">Cancel order</button>
+{{ else }}
+  <div class="empty-note" id="orderEmpty">Your cart is empty — add items from the menu above.</div>
+{{ end }}
+
+<div id="cart-bar" hx-swap-oob="true" class="cart-bar {{ if .Items }}show{{ end }}">
+  <div class="cart-bar-info">
+    <span class="cart-bar-count" id="cartCount">{{ .TotalQty }} item{{ if ne .TotalQty 1 }}s{{ end }}</span>
+    <span class="cart-bar-total" id="cartTotal">€{{ printf "%.2f" .Total }}</span>
   </div>
   {{ if .HasUnavailable }}
-    <p style="color:#dc3545;">Remove the unavailable item(s) above to check out.</p>
-    <button disabled style="border-radius: 8px; width: 100%; margin-top: 0.5rem;">💵 Place Order (Pay Cash)</button>
+  <button class="checkout-btn" disabled style="opacity:.5;">Review cart above</button>
   {{ else }}
-    <button hx-post="/cart/checkout" hx-confirm="Place this order and pay the waiter cash?" style="border-radius: 8px; width: 100%; margin-top: 0.5rem;">💵 Place Order (Pay Cash)</button>
+  <button class="checkout-btn" id="checkoutBtn" hx-post="/cart/checkout" hx-include="#orderComment, #paymentMethodInput" hx-confirm="Place this order?">Place order · Pay cash</button>
   {{ end }}
-{{ else }}
-  <p>Cart is empty</p>
-{{ end }}
+</div>

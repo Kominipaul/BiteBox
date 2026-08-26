@@ -1,0 +1,26 @@
+{{ if .DJRequestsEnabled }}
+<section class="section">
+  <h2><span class="icon">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+  </span>Request a song to DJ</h2>
+
+  <label class="field-label">Song title &amp; artist</label>
+  <input class="field-input" id="songInput" name="song" placeholder="e.g. Starlight - Muse">
+
+  <label class="field-label">Tip amount</label>
+  <div class="tip-row">
+    <button type="button" class="tip-chip" data-tip="1">€1</button>
+    <button type="button" class="tip-chip active" data-tip="2">€2</button>
+    <button type="button" class="tip-chip" data-tip="5">€5</button>
+    <button type="button" class="tip-chip" data-tip="10">€10</button>
+    <button type="button" class="tip-chip" data-tip="custom">Custom</button>
+  </div>
+  <div class="custom-tip-wrap" id="customTipWrap">
+    <input class="field-input" id="customTipInput" type="number" min="0.5" step="0.5" placeholder="Enter your own amount (€)">
+  </div>
+  <input type="hidden" id="tipAmountInput" name="tip" value="2">
+
+  <button type="button" class="dj-submit" id="djSubmit" hx-post="/dj/request" hx-include="#songInput, #tipAmountInput" hx-target="#djConfirm" hx-swap="innerHTML">Send request &amp; pay €2.00</button>
+  <div id="djConfirm"></div>
+</section>
+{{ end }}

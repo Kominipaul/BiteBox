@@ -1,26 +1,49 @@
 {{ range .Orders }}
-<div class="card">
-  <div class="flex-between">
-    <strong>Table #{{ .TableNumber }} — Order #{{ .ID }}</strong>
-    <span class="badge" style="background:#0d6efd;">{{ .Status }}</span>
-  </div>
-  <ul>
-    {{ range .Items }}
-    <li>{{ .Quantity }}x {{ .Name }}</li>
-    {{ end }}
-  </ul>
-  <div class="flex-between">
-    <span>Total: €{{ printf "%.2f" .TotalAmount }} ({{ .PaymentMethod }}, {{ .PaymentStatus }})</span>
-    <div class="row">
-      {{ if eq .PaymentStatus "unpaid" }}
-      <button hx-post="/worker/orders/{{ .ID }}/paid" hx-target="#order-feed" style="border-radius: 8px;">Mark Paid</button>
+<div class="order-card" data-order-id="{{ .ID }}" data-ordered-at="{{ .CreatedAt.UnixMilli }}">
+  <div class="order-top">
+    <span class="table-tag">Table {{ printf "%02d" .TableNumber }}</span>
+    <div class="order-meta">
+      {{ if eq .Status "ready" }}
+      <span class="new-flag" style="background:var(--purple);color:#fff;">READY</span>
+      {{ else }}
+      <span class="new-flag">NEW</span>
       {{ end }}
-      {{ if .HasNext }}
-      <button hx-post="/worker/orders/{{ .ID }}/status" hx-vals='{"status": "{{ .NextStatus }}"}' hx-target="#order-feed" style="border-radius: 8px;">{{ .NextLabel }}</button>
-      {{ end }}
+      <span class="timer-badge">— min</span>
     </div>
   </div>
+  <div class="order-items">
+    {{ range .Items }}
+    <div class="order-item">
+      <span class="qty">{{ .Quantity }}×</span> {{ .Name }}
+      {{ if .Excluded }}<div class="po-excl" style="font-size:11.5px;color:var(--text-muted);font-weight:500;">without {{ range $i, $e := .Excluded }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}</div>{{ end }}
+      {{ if .Extras }}<div class="po-excl" style="font-size:11.5px;color:var(--info);font-weight:500;">+ {{ range $i, $e := .Extras }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}</div>{{ end }}
+    </div>
+    {{ end }}
+  </div>
+  {{ if .Note }}<div class="po-note" style="font-size:12.5px;color:var(--text-secondary);font-style:italic;">Note: {{ .Note }}</div>{{ end }}
+  {{ if and .RefundRequested (eq .PaymentStatus "paid") }}
+  <div class="po-note" style="font-size:12.5px;color:var(--accent-strong);font-weight:700;">💰 Refund requested</div>
+  {{ end }}
+  <div class="pay-row">
+    {{ if eq .PaymentStatus "paid" }}
+    <span class="pay-badge pay-cash-paid">{{ if eq .PaymentMethod "card" }}Card{{ else }}Cash{{ end }} · paid ✓</span>
+    {{ else }}
+    <span class="pay-badge pay-cash-unpaid">Cash · unpaid</span>
+    <button class="mark-paid-btn" hx-post="/worker/orders/{{ .ID }}/paid" hx-target="#order-feed" hx-swap="innerHTML">Mark paid</button>
+    {{ end }}
+  </div>
+  {{ if .HasNext }}
+  <button class="btn-primary-action action-{{ .NextStatus }}" data-next="{{ .NextStatus }}" data-undo-status="{{ .Status }}"
+    hx-post="/worker/orders/{{ .ID }}/status" hx-vals='{"status": "{{ .NextStatus }}"}' hx-target="#order-feed" hx-swap="innerHTML">
+    {{ .NextLabel }}
+  </button>
+  {{ end }}
+  {{ if or (eq .Status "pending") (eq .Status "preparing") }}
+  <div class="order-footer">
+    <button class="cancel-link" hx-post="/worker/orders/{{ .ID }}/cancel" hx-target="#order-feed" hx-swap="innerHTML" hx-confirm="Cancel this order? This cannot be undone.">Cancel order</button>
+  </div>
+  {{ end }}
 </div>
 {{ else }}
-<p>No active orders.</p>
+<p class="empty-note">No active orders.</p>
 {{ end }}

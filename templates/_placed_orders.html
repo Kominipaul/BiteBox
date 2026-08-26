@@ -1,0 +1,40 @@
+{{ range .Orders }}
+<div class="placed-order {{ if eq .Status "cancelled" }}canceled{{ end }}">
+  <div class="po-top">
+    <span class="po-status {{ if eq .Status "cancelled" }}canceled{{ end }}">
+      {{ if eq .Status "pending" }}Order placed
+      {{ else if eq .Status "preparing" }}Being prepared
+      {{ else if eq .Status "ready" }}Ready — on its way!
+      {{ else if eq .Status "served" }}Served
+      {{ else if eq .Status "cancelled" }}Cancelled
+      {{ else }}{{ .Status }}{{ end }}
+    </span>
+    <span class="po-time">{{ .CreatedAt.Local.Format "15:04" }}</span>
+  </div>
+  {{ range .Items }}
+  <div class="po-item">{{ .Quantity }}× {{ .Name }}
+    {{ if .Excluded }} <span class="po-excl">(without {{ range $i, $e := .Excluded }}{{ if $i }}, {{ end }}{{ $e }}{{ end }})</span>{{ end }}
+    {{ if .Extras }} <span class="po-excl" style="color:var(--info);">(+ {{ range $i, $e := .Extras }}{{ if $i }}, {{ end }}{{ $e }}{{ end }})</span>{{ end }}
+  </div>
+  {{ end }}
+  {{ if .Note }}<div class="po-note">Note: {{ .Note }}</div>{{ end }}
+  {{ if and .RefundRequested (eq .PaymentStatus "paid") (ne .Status "cancelled") }}
+  <div class="po-note" style="color:var(--accent-strong);">💰 Refund requested — a staff member will process this.</div>
+  {{ end }}
+  <div class="po-footer">
+    <span class="po-method">{{ if eq .PaymentMethod "card" }}💳 Card{{ else }}💵 Cash{{ end }}{{ if eq .PaymentStatus "paid" }} · paid{{ end }}</span>
+    <span class="po-total">€{{ printf "%.2f" .TotalAmount }}</span>
+  </div>
+  {{ if or (eq .Status "pending") (eq .Status "preparing") }}
+    {{ if eq .PaymentStatus "paid" }}
+      {{ if not .RefundRequested }}
+      <button class="po-cancel" hx-post="/orders/{{ .ID }}/cancel" hx-target="#placed-orders" hx-swap="innerHTML" hx-confirm="This order is already paid. Request a refund and cancel it?">Request refund</button>
+      {{ end }}
+    {{ else }}
+    <button class="po-cancel" hx-post="/orders/{{ .ID }}/cancel" hx-target="#placed-orders" hx-swap="innerHTML" hx-confirm="Cancel this order?">Cancel order</button>
+    {{ end }}
+  {{ end }}
+</div>
+{{ else }}
+<p class="empty-note" id="placedEmpty">No orders placed yet.</p>
+{{ end }}
