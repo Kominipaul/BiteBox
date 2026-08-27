@@ -34,6 +34,13 @@ type productView struct {
 	AvailableStock int
 	Reserved       int // Stock - AvailableStock, i.e. currently sitting in someone's cart
 	Ingredients    []models.Ingredient
+	// RemovableIngredients/ExtraIngredients split Ingredients by kind so the
+	// admin ingredient panel can render two clearly-labeled groups ("guests
+	// can leave these out" vs. "optional add-ons") instead of one mixed
+	// list — precomputed here rather than in the template since html/template
+	// has no filter action of its own.
+	RemovableIngredients []models.Ingredient
+	ExtraIngredients     []models.Ingredient
 	// HasCustomizableIngredient is true if this product has *any* ingredient
 	// tag (removable or extra) — gates whether the guest menu shows a
 	// "Customize" link at all.
@@ -42,9 +49,17 @@ type productView struct {
 
 func buildProductView(p models.Product, ingredients []models.Ingredient) productView {
 	hasCustomizable := len(ingredients) > 0
+	var removable, extra []models.Ingredient
+	for _, ing := range ingredients {
+		if ing.Kind == models.IngredientExtra {
+			extra = append(extra, ing)
+		} else {
+			removable = append(removable, ing)
+		}
+	}
 
 	if p.Stock == -1 {
-		return productView{Product: p, AvailableStock: -1, Ingredients: ingredients, HasCustomizableIngredient: hasCustomizable}
+		return productView{Product: p, AvailableStock: -1, Ingredients: ingredients, RemovableIngredients: removable, ExtraIngredients: extra, HasCustomizableIngredient: hasCustomizable}
 	}
 	reserved := 0
 	if CartStore != nil {
@@ -54,7 +69,7 @@ func buildProductView(p models.Product, ingredients []models.Ingredient) product
 	if avail < 0 {
 		avail = 0
 	}
-	return productView{Product: p, AvailableStock: avail, Reserved: p.Stock - avail, Ingredients: ingredients, HasCustomizableIngredient: hasCustomizable}
+	return productView{Product: p, AvailableStock: avail, Reserved: p.Stock - avail, Ingredients: ingredients, RemovableIngredients: removable, ExtraIngredients: extra, HasCustomizableIngredient: hasCustomizable}
 }
 
 // buildProductViews batch-fetches every product's ingredient tags in one
@@ -78,6 +93,67 @@ func buildProductViews(products []models.Product) []productView {
 type productCategoryGroup struct {
 	Name     string
 	Products []productView
+}
+
+// productSubGroup is one Subcategory's worth of products within a single
+// guestCategoryGroup — carries its parent Category too (not just its own
+// Name) so the guest template can tag it with the right data-cat for the
+// category-tab filter, without needing the outer range's context.
+type productSubGroup struct {
+	Category string
+	Name     string
+	Products []productView
+}
+
+type guestCategoryGroup struct {
+	Name      string
+	SubGroups []productSubGroup
+}
+
+// groupProductsForGuestMenu buckets products into the fixed category order
+// (same as groupProductsByCategory), then further splits each category into
+// Subcategory groups, preserving each subcategory's first-seen order (menu
+// items are seeded/added in a deliberate order — e.g. "Brunch" before "Main
+// Courses" — there's no separate canonical ordering to sort against).
+// Products with a blank Subcategory land in their own no-heading group
+// (rendered with no .menu-section-label — see _guest_product_list.html) —
+// deliberately not merged into a same-category subgroup that does have a
+// name, since that would misleadingly label them.
+func groupProductsForGuestMenu(products []productView) []guestCategoryGroup {
+	type bucket struct {
+		subOrder []string
+		subMap   map[string][]productView
+	}
+	byCategory := make(map[string]*bucket)
+	for _, p := range products {
+		cat := p.Category
+		if !models.IsValidCategory(cat) {
+			cat = models.CategoryOther
+		}
+		b, ok := byCategory[cat]
+		if !ok {
+			b = &bucket{subMap: make(map[string][]productView)}
+			byCategory[cat] = b
+		}
+		if _, seen := b.subMap[p.Subcategory]; !seen {
+			b.subOrder = append(b.subOrder, p.Subcategory)
+		}
+		b.subMap[p.Subcategory] = append(b.subMap[p.Subcategory], p)
+	}
+
+	groups := make([]guestCategoryGroup, 0, len(models.ProductCategories))
+	for _, cat := range models.ProductCategories {
+		b, ok := byCategory[cat]
+		if !ok {
+			continue
+		}
+		subs := make([]productSubGroup, 0, len(b.subOrder))
+		for _, sub := range b.subOrder {
+			subs = append(subs, productSubGroup{Category: cat, Name: sub, Products: b.subMap[sub]})
+		}
+		groups = append(groups, guestCategoryGroup{Name: cat, SubGroups: subs})
+	}
+	return groups
 }
 
 // groupProductsByCategory buckets products into the fixed category order
@@ -161,7 +237,14 @@ func AdminHome(w http.ResponseWriter, r *http.Request) {
 	prevWeek, _ := db.GetRevenueForRange(13, 7)
 	settings, _ := db.GetSettings()
 
-	lowStock, hasLowStock := findLowStockProduct(buildProductViews(products))
+	productViews := buildProductViews(products)
+	lowStock, hasLowStock := findLowStockProduct(productViews)
+	// CategoryTabs drives the menu panel's category filter bar — built from
+	// the same data #menuList itself renders from (GetAllProducts, every
+	// product regardless of availability), so the counts shown on each tab
+	// always match what's actually there, and a category with nothing in it
+	// simply doesn't get a tab (same "skip empty buckets" rule as the list).
+	categoryTabs := groupProductsByCategory(productViews)
 
 	var trendTotal float64
 	for _, d := range trend {
@@ -176,6 +259,7 @@ func AdminHome(w http.ResponseWriter, r *http.Request) {
 	tmpl := template.Must(template.ParseFiles("templates/admin_dashboard.html"))
 	tmpl.Execute(w, map[string]interface{}{
 		"Categories":        models.ProductCategories,
+		"CategoryTabs":      categoryTabs,
 		"History":           history,
 		"Trend":             buildTrendBars(trend),
 		"TrendTotal":        trendTotal,
@@ -184,6 +268,7 @@ func AdminHome(w http.ResponseWriter, r *http.Request) {
 		"LowStock":          lowStock,
 		"HasLowStock":       hasLowStock,
 		"DJRequestsEnabled": settings.DJRequestsEnabled,
+		"VenueName":         settings.VenueName,
 	})
 }
 
@@ -207,6 +292,35 @@ func renderDJToggle(w http.ResponseWriter) {
 	settings, _ := db.GetSettings()
 	tmpl := template.Must(template.ParseFiles("templates/_dj_toggle.html"))
 	tmpl.Execute(w, map[string]interface{}{"DJRequestsEnabled": settings.DJRequestsEnabled})
+}
+
+// AdminUpdateVenueName renames the venue. Responds with the venue-settings
+// panel fragment (its own hx-target) plus an OOB fragment updating this same
+// admin's own header h1 — both land in one plain HTTP response, no
+// websocket needed for the actor's own page. BroadcastVenueName separately
+// pushes the change to every guest already browsing the menu live.
+func AdminUpdateVenueName(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		http.Error(w, "Venue name can't be empty", http.StatusBadRequest)
+		return
+	}
+	if len(name) > 80 {
+		name = name[:80]
+	}
+	if err := db.SetVenueName(name); err != nil {
+		http.Error(w, "Failed to update venue name", http.StatusInternalServerError)
+		return
+	}
+	renderVenuePanel(w)
+	fmt.Fprintf(w, `<h1 class="venue-name" id="venue-name-admin" hx-swap-oob="true">%s</h1>`, template.HTMLEscapeString(name))
+	BroadcastVenueName(name)
+}
+
+func renderVenuePanel(w http.ResponseWriter) {
+	settings, _ := db.GetSettings()
+	tmpl := template.Must(template.ParseFiles("templates/_venue_panel.html"))
+	tmpl.Execute(w, map[string]interface{}{"VenueName": settings.VenueName})
 }
 
 func renderAdminProductListHTML() ([]byte, error) {
@@ -309,7 +423,9 @@ func AdminCreateProduct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid product name, price, or stock", http.StatusBadRequest)
 		return
 	}
-	if _, err := db.CreateProduct(name, price, stock, parseCategory(r)); err != nil {
+	subcategory := strings.TrimSpace(r.FormValue("subcategory"))
+	description := strings.TrimSpace(r.FormValue("description"))
+	if _, err := db.CreateProduct(name, price, stock, parseCategory(r), subcategory, description); err != nil {
 		http.Error(w, "Failed to create product", http.StatusInternalServerError)
 		return
 	}
@@ -330,7 +446,9 @@ func AdminUpdateProduct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid product name, price, or stock", http.StatusBadRequest)
 		return
 	}
-	if err := db.UpdateProduct(id, name, price, stock, parseCategory(r)); err != nil {
+	subcategory := strings.TrimSpace(r.FormValue("subcategory"))
+	description := strings.TrimSpace(r.FormValue("description"))
+	if err := db.UpdateProduct(id, name, price, stock, parseCategory(r), subcategory, description); err != nil {
 		http.Error(w, "Failed to update product", http.StatusInternalServerError)
 		return
 	}

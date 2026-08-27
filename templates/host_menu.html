@@ -3,89 +3,254 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Table #{{ .TableNumber }} — Ouzeri Marina</title>
+<title>Table #{{ .TableNumber }} — {{ .VenueName }}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/htmx.org@1.9.10"></script>
 <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/ws.js"></script>
 <style>
+  /* EGO palette: warm taupe/charcoal + sand accent, olive kept as secondary */
   :root{
-    --bg-base:#14100D; --bg-surface:#1D1712; --bg-raised:#261F18;
-    --border:#332920; --border-soft:#2A2119;
-    --text-primary:#F5EFE6; --text-secondary:#AB9C89; --text-muted:#75695C;
-    --accent:#D9A441; --accent-strong:#E8B85B; --accent-soft:rgba(217,164,65,.13);
-    --success:#5FA777; --success-soft:rgba(95,167,119,.14);
+    --bg-base:#211D18;
+    --bg-surface:#2A251E;
+    --bg-raised:#332C23;
+    --paper:#F3EDE1;
+    --ink:#2B2620;
+    --ink-soft:#5C5347;
+    --border:#3E362B;
+    --border-soft:#332C23;
+    --text-primary:#F3EDE1;
+    --text-secondary:#C4B8A3;
+    --text-muted:#8C8072;
+    --accent:#C9A876; --accent-strong:#DBC090; --accent-soft:rgba(201,168,118,.16);
+    --success:#8B9463; --success-soft:rgba(139,148,99,.16);
     --danger:#C25B48; --danger-soft:rgba(194,91,72,.15);
     --info:#6B8CAE; --info-soft:rgba(107,140,174,.15);
-    --neutral:#8C8375; --neutral-soft:rgba(140,131,117,.14);
-    --radius-lg:16px; --radius-md:12px; --radius-sm:9px;
-    --font-display:'IBM Plex Mono',ui-monospace,monospace;
-    --font-body:'Manrope',system-ui,sans-serif;
+    --neutral:#8C8072; --neutral-soft:rgba(140,131,117,.14);
+    --radius-lg:18px; --radius-md:13px; --radius-sm:9px;
+    --font-display:'Fraunces',ui-serif,serif;
+    --font-body:'Archivo',system-ui,sans-serif;
+    --font-mono:'JetBrains Mono',ui-monospace,monospace;
   }
-  *{box-sizing:border-box;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html{scroll-behavior:smooth;}
   body{margin:0;background:var(--bg-base);color:var(--text-primary);
-    font-family:var(--font-body);-webkit-font-smoothing:antialiased;min-height:100vh;}
+    font-family:var(--font-body);-webkit-font-smoothing:antialiased;min-height:100vh;
+    background-image:
+      radial-gradient(ellipse 900px 500px at 15% -5%, rgba(219,192,144,.06), transparent 60%),
+      radial-gradient(ellipse 700px 600px at 100% 30%, rgba(139,148,99,.05), transparent 55%);
+  }
   button,input,textarea{font-family:inherit;}
   h1,h2,h3{margin:0;}
-  :focus-visible{outline:3px solid var(--accent-strong);outline-offset:2px;}
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:.01ms !important; transition-duration:.01ms !important;}
+  }
+  :focus-visible{outline:2.5px solid var(--accent-strong);outline-offset:2px;border-radius:4px;}
+
+  .skip-link{position:absolute;left:-9999px;top:0;background:var(--accent);color:var(--ink);
+    padding:10px 16px;border-radius:8px;z-index:100;font-weight:700;}
+  .skip-link:focus{left:16px;top:16px;}
 
   .topbar{display:flex;align-items:center;justify-content:space-between;
-    padding:16px 20px;border-bottom:1px solid var(--border-soft);
-    position:sticky;top:0;background:rgba(20,16,13,.92);backdrop-filter:blur(8px);z-index:20;}
+    padding:14px 18px;border-bottom:1px solid var(--border-soft);
+    position:sticky;top:0;background:rgba(33,29,24,.9);backdrop-filter:blur(10px);z-index:20;}
   .table-id{display:flex;align-items:center;gap:10px;}
-  .table-id h1{font-size:19px;font-weight:800;}
-  .host-tag{background:var(--info-soft);color:var(--info);font-size:11px;font-weight:800;
-    padding:4px 10px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;}
-  .leave-btn{background:transparent;color:var(--danger);border:1.5px solid rgba(194,91,72,.4);
-    font-weight:700;font-size:13px;padding:9px 15px;border-radius:var(--radius-sm);cursor:pointer;}
-  .leave-btn:hover{background:var(--danger-soft);}
+  .table-id h1{font-family:var(--font-display);font-size:19px;font-weight:600;letter-spacing:-.01em;}
+  .host-tag{background:var(--accent-soft);color:var(--accent-strong);font-size:10.5px;font-weight:700;
+    padding:4px 9px;border-radius:99px;text-transform:uppercase;letter-spacing:.06em;font-family:var(--font-mono);}
+  .leave-btn{background:transparent;color:var(--text-muted);border:1px solid var(--border);
+    font-weight:600;font-size:12.5px;padding:8px 13px;border-radius:var(--radius-sm);cursor:pointer;
+    transition:all .15s ease;}
+  .leave-btn:hover{color:var(--danger);border-color:rgba(194,91,72,.4);background:var(--danger-soft);}
 
-  .page{max-width:720px;margin:0 auto;padding:20px 18px 140px;}
+  .page{max-width:720px;margin:0 auto;padding:0 16px 130px;}
 
-  .venue-banner{text-align:center;margin-bottom:22px;}
-  .venue-banner .name{font-size:22px;font-weight:800;letter-spacing:-.01em;}
-  .venue-banner .tagline{font-size:13px;color:var(--text-muted);margin-top:2px;}
+  .venue-banner{text-align:center;padding:34px 10px 22px;}
+  .venue-mark{width:44px;height:44px;margin:0 auto 12px;opacity:.9;}
+  .venue-banner .eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--accent-strong);
+    letter-spacing:.14em;text-transform:uppercase;margin-bottom:10px;}
+  .venue-banner .name{font-family:var(--font-display);font-size:34px;font-weight:600;letter-spacing:.01em;line-height:1;}
+  .venue-banner .tagline{font-size:13.5px;color:var(--text-muted);margin-top:14px;font-style:italic;}
 
-  .cat-tabs{display:flex;gap:8px;margin-bottom:18px;overflow-x:auto;padding-bottom:2px;}
-  .cat-tab{flex:none;background:var(--bg-surface);border:1px solid var(--border);color:var(--text-secondary);
-    font-weight:700;font-size:13.5px;padding:9px 16px;border-radius:99px;cursor:pointer;}
-  .cat-tab.active{background:var(--accent);color:#221805;border-color:var(--accent);}
+  .cat-tabs{display:flex;gap:6px;margin-bottom:20px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none;}
+  .cat-tabs::-webkit-scrollbar{display:none;}
+  .cat-tab{flex:none;background:transparent;border:1px solid var(--border);color:var(--text-secondary);
+    font-weight:600;font-size:13px;padding:8px 15px;border-radius:99px;cursor:pointer;transition:all .15s ease;}
+  .cat-tab.active{background:var(--accent);color:var(--ink);border-color:var(--accent);}
+  .cat-tab:hover:not(.active){border-color:var(--text-muted);}
 
-  .menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:30px;}
+  .menu-grid{display:flex;flex-direction:column;margin-bottom:30px;}
+  .menu-group-super{font-family:var(--font-mono);font-size:10.5px;font-weight:700;color:var(--accent-strong);
+    text-transform:uppercase;letter-spacing:.14em;margin:34px 2px 4px;}
+  .menu-group-super:first-child{margin-top:0;}
+  .menu-section-label{font-family:var(--font-display);font-size:18px;font-weight:600;color:var(--text-primary);
+    margin:20px 2px 12px;display:flex;align-items:baseline;gap:10px;}
+  .menu-section-label::after{content:'';flex:1;border-bottom:1px solid var(--border);margin-bottom:5px;}
+  .menu-list{display:flex;flex-direction:column;gap:12px;margin-bottom:8px;}
   .item-card{background:var(--bg-surface);border:1px solid var(--border-soft);border-radius:var(--radius-md);
-    padding:14px;display:flex;flex-direction:column;gap:10px;position:relative;grid-column:span 1;}
-  .item-card.expanded{grid-column:1 / -1;}
-  .item-name{font-weight:700;font-size:14.5px;line-height:1.3;}
-  .item-price{font-family:var(--font-display);font-size:13.5px;color:var(--accent-strong);font-weight:600;}
-  .item-add{margin-top:auto;display:flex;gap:8px;align-items:center;}
-  .add-btn{flex:1;background:var(--accent-soft);color:var(--accent-strong);border:1px solid rgba(217,164,65,.3);
-    font-weight:800;font-size:14px;padding:9px;border-radius:var(--radius-sm);cursor:pointer;}
-  .add-btn:hover{background:rgba(217,164,65,.22);}
-  .customize-link{background:none;border:none;color:var(--text-muted);font-size:12px;font-weight:700;
-    text-decoration:underline;text-underline-offset:2px;cursor:pointer;padding:6px 2px;white-space:nowrap;}
-  .customize-link:hover{color:var(--text-secondary);}
+    padding:15px 16px;position:relative;transition:border-color .15s ease;}
+  .item-card:hover{border-color:var(--border);}
+  .item-top{display:flex;align-items:baseline;gap:8px;}
+  .item-name{font-family:var(--font-display);font-weight:600;font-size:16px;line-height:1.25;}
+  .item-leader{flex:1;border-bottom:1.5px dotted var(--border);margin-bottom:5px;min-width:12px;}
+  .item-price{font-family:var(--font-mono);font-size:13.5px;color:var(--accent-strong);font-weight:600;white-space:nowrap;}
+  .item-desc{font-size:11.5px;color:var(--text-muted);margin-top:5px;line-height:1.45;}
+  .item-actions{margin-top:12px;display:flex;gap:8px;align-items:center;}
+  .add-btn{flex:1;background:var(--accent-soft);color:var(--accent-strong);border:1px solid rgba(201,168,118,.35);
+    font-weight:700;font-size:13.5px;padding:9px;border-radius:var(--radius-sm);cursor:pointer;transition:all .15s ease;}
+  .add-btn:hover{background:rgba(201,168,118,.26);}
+  .add-btn:active{transform:scale(.97);}
+  .add-btn.flash{animation:flashAdd .45s ease;}
+  @keyframes flashAdd{
+    0%{background:var(--success-soft);color:var(--success);border-color:rgba(139,148,99,.5);}
+    100%{background:var(--accent-soft);color:var(--accent-strong);border-color:rgba(201,168,118,.35);}
+  }
+  .customize-link{background:none;border:1px solid var(--border);color:var(--text-muted);font-size:12px;font-weight:600;
+    cursor:pointer;padding:8px 12px;border-radius:var(--radius-sm);white-space:nowrap;transition:all .15s ease;}
+  .customize-link:hover{color:var(--text-secondary);border-color:var(--text-muted);}
 
-  .customize-panel{display:none;border-top:1px solid var(--border-soft);padding-top:12px;margin-top:2px;}
-  .customize-panel.open{display:block;}
-  .customize-hint{font-size:11.5px;color:var(--text-muted);margin-bottom:8px;}
-  .ing-chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px;}
+  /* ---- Customize modal (bottom sheet) ---- */
+  .modal-overlay{position:fixed;inset:0;background:rgba(15,13,10,.72);backdrop-filter:blur(3px);
+    z-index:60;display:none;align-items:flex-end;justify-content:center;}
+  .modal-overlay.show{display:flex;animation:fadeIn .18s ease;}
+  @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+  .customize-modal{background:var(--bg-surface);border:1px solid var(--border);border-top-left-radius:20px;
+    border-top-right-radius:20px;width:100%;max-width:560px;padding:22px 20px 24px;
+    animation:slideUp .22s cubic-bezier(.2,.9,.3,1);max-height:82vh;overflow-y:auto;}
+  @media(min-width:600px){
+    .modal-overlay{align-items:center;}
+    .customize-modal{border-radius:var(--radius-lg);margin:20px;}
+  }
+  @keyframes slideUp{from{transform:translateY(24px);opacity:.6;}to{transform:translateY(0);opacity:1;}}
+  .modal-handle{width:36px;height:4px;background:var(--border);border-radius:99px;margin:0 auto 16px;}
+  .modal-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;}
+  .modal-title{font-family:var(--font-display);font-size:20px;font-weight:600;}
+  .modal-price{font-family:var(--font-mono);color:var(--accent-strong);font-size:14px;margin-top:4px;}
+  .modal-close{background:none;border:none;color:var(--text-muted);font-size:22px;cursor:pointer;
+    line-height:1;padding:4px;}
+  .modal-close:hover{color:var(--text-primary);}
+  .customize-hint{font-size:12.5px;color:var(--text-muted);margin:16px 0 10px;}
   /* Removable ingredients start green ("included by default"); tapping
      excludes them (muted/struck-through). Extra ingredients start blue
      ("available, not included"); tapping adds them, turning green to match
      the same "this is on your order" language — tapping again reverts to
      blue. Green always means "on your order," consistently for both kinds. */
-  .ing-chip{background:var(--success-soft);color:var(--success);border:1px solid rgba(95,167,119,.3);
-    font-size:12.5px;font-weight:700;padding:6px 12px;border-radius:99px;cursor:pointer;}
+  .ing-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;}
+  .ing-chip{background:var(--success-soft);color:var(--success);border:1px solid rgba(139,148,99,.35);
+    font-size:13px;font-weight:600;padding:8px 14px;border-radius:99px;cursor:pointer;transition:all .12s ease;}
+  .ing-chip:hover{filter:brightness(1.15);}
   .ing-chip.excluded{background:var(--bg-raised);color:var(--text-muted);border-color:var(--border);
     text-decoration:line-through;}
   .ing-chip.ing-chip-extra{background:var(--info-soft);color:var(--info);border-color:rgba(107,140,174,.3);}
-  .ing-chip.ing-chip-extra.included{background:var(--success-soft);color:var(--success);border-color:rgba(95,167,119,.3);}
-  .add-custom-btn{width:100%;background:var(--accent);color:#221805;border:none;font-weight:800;
-    font-size:13.5px;padding:10px;border-radius:var(--radius-sm);cursor:pointer;}
-  .add-custom-btn:hover{filter:brightness(1.08);}
+  .ing-chip.ing-chip-extra.included{background:var(--success-soft);color:var(--success);border-color:rgba(139,148,99,.35);}
+  .add-custom-btn{width:100%;background:var(--accent);color:var(--ink);border:none;font-weight:700;
+    font-size:14.5px;padding:13px;border-radius:var(--radius-md);cursor:pointer;transition:filter .15s ease;
+    font-family:var(--font-body);}
+  .add-custom-btn:hover{filter:brightness(1.1);}
+  .add-custom-btn:active{transform:scale(.98);}
 
-  .order-line{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border-soft);}
+  .section{background:var(--bg-surface);border:1px solid var(--border-soft);border-radius:var(--radius-lg);
+    padding:22px 20px;margin-bottom:18px;}
+  .section h2{font-family:var(--font-display);font-size:18px;font-weight:600;margin-bottom:16px;
+    display:flex;align-items:center;gap:10px;}
+  .section h2 .icon{color:var(--accent-strong);flex:none;}
+
+  .empty-note{color:var(--text-muted);font-size:13.5px;padding:6px 0;line-height:1.5;}
+
+  .field-label{font-size:12.5px;font-weight:700;color:var(--text-secondary);margin:16px 0 7px;display:block;
+    text-transform:uppercase;letter-spacing:.04em;}
+  .field-label:first-of-type{margin-top:0;}
+  .field-input{width:100%;background:var(--bg-raised);border:1px solid var(--border);color:var(--text-primary);
+    border-radius:var(--radius-sm);padding:12px 13px;font-size:14.5px;transition:border-color .15s ease;}
+  .field-input:focus{border-color:var(--accent-strong);}
+  .field-input::placeholder{color:var(--text-muted);}
+  textarea.field-input{resize:vertical;min-height:56px;line-height:1.45;}
+
+  .pay-method-row{display:flex;gap:8px;}
+  .pay-method-chip{flex:1;background:var(--bg-raised);border:1.5px solid var(--border);color:var(--text-secondary);
+    font-weight:700;font-size:13.5px;padding:11px 8px;border-radius:var(--radius-sm);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;gap:6px;transition:all .15s ease;}
+  .pay-method-chip.active{background:var(--accent-soft);color:var(--accent-strong);border-color:rgba(201,168,118,.5);}
+  .demo-tag{font-size:9px;font-weight:800;background:rgba(255,255,255,.08);color:var(--text-muted);
+    padding:2px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.03em;font-family:var(--font-mono);}
+
+  .tip-row{display:flex;gap:7px;margin-bottom:8px;flex-wrap:wrap;}
+  .tip-chip{flex:1;min-width:52px;background:var(--bg-raised);border:1px solid var(--border);color:var(--text-secondary);
+    font-weight:700;font-size:13.5px;padding:10px 6px;border-radius:var(--radius-sm);cursor:pointer;
+    font-family:var(--font-mono);transition:all .15s ease;}
+  .tip-chip.active{background:var(--accent-soft);color:var(--accent-strong);border-color:rgba(201,168,118,.45);}
+  .dj-submit{width:100%;background:var(--accent);color:var(--ink);font-weight:700;font-size:14.5px;
+    padding:14px;border-radius:var(--radius-md);border:none;cursor:pointer;margin-top:16px;
+    transition:filter .15s ease,transform .1s ease;}
+  .dj-submit:hover{filter:brightness(1.1);}
+  .dj-submit:active{transform:scale(.98);}
+  .dj-confirm{color:var(--success);font-size:13.5px;font-weight:600;margin-top:12px;display:none;
+    align-items:center;gap:7px;}
+  .dj-confirm.show{display:flex;animation:fadeIn .2s ease;}
+
+  .custom-tip-wrap{display:none;margin-bottom:8px;}
+  .custom-tip-wrap.show{display:block;}
+
+  /* ---- Placed orders: receipt style (paper card on the dark page) ---- */
+  .placed-order{background:var(--paper);color:var(--ink);border-radius:10px;padding:16px 16px 14px;
+    margin-bottom:12px;position:relative;font-family:var(--font-mono);
+    box-shadow:0 4px 14px rgba(0,0,0,.22);
+    background-image:repeating-linear-gradient(transparent,transparent 27px,rgba(43,38,32,.05) 28px);}
+  .placed-order::before{content:'';position:absolute;top:-1px;left:0;right:0;height:8px;
+    background-image:radial-gradient(circle at 8px 0, transparent 6px, var(--paper) 6px);
+    background-size:16px 8px;background-repeat:repeat-x;}
+  .placed-order:last-child{margin-bottom:0;}
+  .placed-order.canceled{opacity:.55;}
+  .po-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;
+    padding-bottom:9px;border-bottom:1.5px dashed rgba(43,38,32,.3);}
+  .po-status{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:99px;
+    background:var(--success-soft);color:#4B5233;text-transform:uppercase;letter-spacing:.05em;}
+  .po-status.canceled{background:rgba(43,38,32,.1);color:var(--ink-soft);}
+  .po-time{font-size:11px;color:var(--ink-soft);}
+  .po-item{font-size:13px;font-weight:600;padding:2.5px 0;color:var(--ink);}
+  .po-excl{font-size:10.5px;color:var(--ink-soft);font-weight:500;display:block;font-family:var(--font-body);font-style:italic;}
+  .po-note{font-size:12px;color:var(--ink-soft);font-style:italic;margin-top:10px;font-family:var(--font-body);}
+  .po-footer{display:flex;align-items:center;justify-content:space-between;margin-top:11px;
+    padding-top:10px;border-top:1.5px dashed rgba(43,38,32,.3);}
+  .po-method{font-size:11.5px;color:var(--ink-soft);font-weight:600;}
+  .po-total{font-weight:700;color:var(--ink);font-size:14px;font-family:var(--font-mono);}
+  .po-cancel{width:100%;margin-top:12px;background:transparent;color:var(--danger);
+    border:1.5px solid rgba(194,91,72,.45);font-weight:700;font-size:12.5px;padding:9px;
+    border-radius:8px;cursor:pointer;font-family:var(--font-body);transition:all .15s ease;}
+  .po-cancel:hover{background:var(--danger-soft);}
+
+  /* ---- Sticky cart bar: tap opens the cart sheet ---- */
+  .cart-bar{position:fixed;bottom:0;left:0;right:0;background:var(--bg-surface);
+    border-top:1px solid var(--border);padding:13px 16px;display:none;
+    align-items:center;justify-content:space-between;gap:14px;z-index:30;
+    box-shadow:0 -10px 30px rgba(0,0,0,.4);}
+  .cart-bar.show{display:flex;animation:slideUpBar .2s ease;}
+  @keyframes slideUpBar{from{transform:translateY(100%);}to{transform:translateY(0);}}
+  .cart-bar-info{display:flex;flex-direction:column;cursor:pointer;padding:4px 2px;}
+  .cart-bar-count{font-size:11.5px;color:var(--text-muted);font-weight:600;display:flex;align-items:center;gap:5px;}
+  .cart-bar-count svg{width:12px;height:12px;}
+  .cart-bar-total{font-family:var(--font-mono);font-size:19px;font-weight:700;color:var(--text-primary);}
+  .checkout-btn{background:var(--accent);color:var(--ink);font-weight:700;font-size:14.5px;
+    padding:13px 20px;border-radius:var(--radius-md);border:none;cursor:pointer;white-space:nowrap;
+    transition:filter .15s ease,transform .1s ease;}
+  .checkout-btn:hover{filter:brightness(1.1);}
+  .checkout-btn:active{transform:scale(.97);}
+
+  /* ---- Cart sheet (bottom drawer) ---- */
+  .cart-sheet-overlay{position:fixed;inset:0;background:rgba(15,13,10,.72);backdrop-filter:blur(3px);
+    z-index:55;display:none;}
+  .cart-sheet-overlay.show{display:block;animation:fadeIn .18s ease;}
+  .cart-sheet{position:fixed;bottom:0;left:0;right:0;background:var(--bg-surface);
+    border-top:1px solid var(--border);border-top-left-radius:20px;border-top-right-radius:20px;
+    z-index:56;max-height:85vh;display:flex;flex-direction:column;
+    transform:translateY(100%);transition:transform .25s cubic-bezier(.2,.9,.3,1);}
+  .cart-sheet.show{transform:translateY(0);}
+  .cart-sheet-header{padding:14px 20px 10px;flex:none;}
+  .cart-sheet-body{overflow-y:auto;padding:0 20px 26px;flex:1;}
+  .cart-empty-state{text-align:center;padding:30px 10px;color:var(--text-muted);}
+
+  .order-line{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border-soft);}
   .order-line:last-child{border-bottom:none;}
   .order-line-main{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0;}
   .order-line-name{font-weight:700;font-size:14px;}
@@ -93,87 +258,63 @@
   .order-line-excl{font-size:11.5px;color:var(--accent-strong);}
   .ol-controls{display:flex;align-items:center;border:1px solid var(--border);border-radius:var(--radius-sm);
     overflow:hidden;background:var(--bg-raised);flex:none;}
-  .ol-btn{background:none;border:none;color:var(--text-secondary);width:28px;height:30px;
-    font-weight:800;font-size:15px;cursor:pointer;}
+  .ol-btn{background:none;border:none;color:var(--text-secondary);width:30px;height:32px;
+    font-weight:800;font-size:15px;cursor:pointer;transition:color .12s ease;}
   .ol-btn:hover{color:var(--text-primary);}
-  .ol-qty{font-family:var(--font-display);font-size:13px;font-weight:700;min-width:22px;text-align:center;display:inline-block;}
-  .order-line-total{font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--accent-strong);
+  .ol-qty{font-family:var(--font-mono);font-size:13px;font-weight:700;min-width:22px;text-align:center;display:inline-block;}
+  .order-line-total{font-family:var(--font-mono);font-size:14px;font-weight:700;color:var(--accent-strong);
     width:58px;text-align:right;flex:none;}
   .order-subtotal-row{display:none;justify-content:space-between;align-items:center;
-    padding-top:12px;margin-top:4px;border-top:1px solid var(--border);font-weight:800;font-size:15px;}
-  .order-subtotal{font-family:var(--font-display);color:var(--accent-strong);}
+    padding-top:14px;margin-top:2px;border-top:1px solid var(--border);font-weight:700;font-size:16px;}
+  .order-subtotal{font-family:var(--font-mono);color:var(--accent-strong);}
   .cancel-order-btn{display:none;width:100%;margin-top:14px;background:transparent;color:var(--danger);
-    border:1.5px solid rgba(194,91,72,.4);font-weight:700;font-size:13.5px;padding:11px;
-    border-radius:var(--radius-md);cursor:pointer;}
+    border:1.5px solid rgba(194,91,72,.4);font-weight:700;font-size:13px;padding:11px;
+    border-radius:var(--radius-md);cursor:pointer;transition:background .15s ease;}
   .cancel-order-btn:hover{background:var(--danger-soft);}
+  .place-order-btn{width:100%;background:var(--accent);color:var(--ink);font-weight:700;font-size:15px;
+    padding:14px;border-radius:var(--radius-md);border:none;cursor:pointer;margin-top:16px;
+    display:flex;align-items:center;justify-content:center;gap:8px;transition:filter .15s ease,transform .1s ease;}
+  .place-order-btn:hover{filter:brightness(1.1);}
+  .place-order-btn:active{transform:scale(.98);}
+  .place-order-btn .spinner{display:none;}
+  .place-order-btn.htmx-request{opacity:.75;pointer-events:none;}
+  .place-order-btn.htmx-request .spinner{display:inline-block;}
+  .spinner{width:14px;height:14px;border:2px solid rgba(43,38,32,.35);border-top-color:var(--ink);
+    border-radius:50%;animation:spin .6s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
 
-  .custom-tip-wrap{display:none;margin-bottom:6px;}
-  .custom-tip-wrap.show{display:block;}
+  /* ---- Toast ---- */
+  .toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--success);color:#161a0d;
+    padding:12px 20px;border-radius:var(--radius-md);font-size:13.5px;font-weight:700;
+    opacity:0;pointer-events:none;transition:all .25s cubic-bezier(.2,.9,.3,1);box-shadow:0 10px 30px rgba(0,0,0,.4);z-index:70;
+    max-width:88%;text-align:center;display:flex;align-items:center;gap:8px;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
-  .section{background:var(--bg-surface);border:1px solid var(--border-soft);border-radius:var(--radius-lg);
-    padding:20px;margin-bottom:20px;}
-  .section h2{font-size:15px;font-weight:800;margin-bottom:14px;display:flex;align-items:center;gap:9px;}
-  .section h2 .icon{color:var(--accent);}
-
-  .empty-note{color:var(--text-muted);font-size:13.5px;padding:6px 0;}
-
-  .field-label{font-size:12.5px;font-weight:700;color:var(--text-secondary);margin:14px 0 6px;display:block;}
-  .field-label:first-of-type{margin-top:0;}
-  .field-input{width:100%;background:var(--bg-raised);border:1px solid var(--border);color:var(--text-primary);
-    border-radius:var(--radius-sm);padding:12px;font-size:14.5px;}
-  .field-input::placeholder{color:var(--text-muted);}
-  textarea.field-input{resize:vertical;min-height:56px;line-height:1.4;}
-
-  .pay-method-row{display:flex;gap:8px;}
-  .pay-method-chip{flex:1;background:var(--bg-raised);border:1.5px solid var(--border);color:var(--text-secondary);
-    font-weight:700;font-size:13.5px;padding:11px 8px;border-radius:var(--radius-sm);cursor:pointer;
-    display:flex;align-items:center;justify-content:center;gap:6px;}
-  .pay-method-chip.active{background:var(--accent-soft);color:var(--accent-strong);border-color:rgba(217,164,65,.45);}
-  .demo-tag{font-size:9.5px;font-weight:800;background:var(--neutral-soft);color:var(--neutral);
-    padding:2px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.03em;}
-
-  .tip-row{display:flex;gap:8px;margin-bottom:6px;}
-  .tip-chip{flex:1;background:var(--bg-raised);border:1px solid var(--border);color:var(--text-secondary);
-    font-weight:700;font-size:13.5px;padding:9px;border-radius:var(--radius-sm);cursor:pointer;}
-  .tip-chip.active{background:var(--accent-soft);color:var(--accent-strong);border-color:rgba(217,164,65,.4);}
-  .dj-submit{width:100%;background:var(--accent);color:#221805;font-weight:800;font-size:14.5px;
-    padding:13px;border-radius:var(--radius-md);border:none;cursor:pointer;margin-top:14px;}
-  .dj-submit:hover{filter:brightness(1.08);}
-
-  .placed-order{border:1px solid var(--border-soft);border-radius:var(--radius-md);padding:14px;margin-bottom:12px;}
-  .placed-order:last-child{margin-bottom:0;}
-  .placed-order.canceled{opacity:.5;}
-  .po-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
-  .po-status{font-size:11.5px;font-weight:800;padding:4px 10px;border-radius:99px;
-    background:var(--accent-soft);color:var(--accent-strong);text-transform:uppercase;letter-spacing:.03em;}
-  .po-status.canceled{background:var(--neutral-soft);color:var(--neutral);}
-  .po-time{font-size:11.5px;color:var(--text-muted);}
-  .po-item{font-size:13.5px;font-weight:600;padding:2px 0;}
-  .po-excl{font-size:11.5px;color:var(--text-muted);font-weight:500;}
-  .po-note{font-size:12.5px;color:var(--text-secondary);font-style:italic;margin-top:8px;}
-  .po-footer{display:flex;align-items:center;justify-content:space-between;margin-top:10px;
-    padding-top:10px;border-top:1px solid var(--border-soft);}
-  .po-method{font-size:12.5px;color:var(--text-muted);font-weight:600;}
-  .po-total{font-family:var(--font-display);font-weight:700;color:var(--accent-strong);}
-  .po-cancel{width:100%;margin-top:12px;background:transparent;color:var(--danger);
-    border:1.5px solid rgba(194,91,72,.4);font-weight:700;font-size:13px;padding:9px;
-    border-radius:var(--radius-sm);cursor:pointer;}
-  .po-cancel:hover{background:var(--danger-soft);}
-
-  .cart-bar{position:fixed;bottom:0;left:0;right:0;background:var(--bg-surface);
-    border-top:1px solid var(--border);padding:14px 18px;display:none;
-    align-items:center;justify-content:space-between;gap:14px;z-index:30;
-    box-shadow:0 -10px 30px rgba(0,0,0,.35);}
-  .cart-bar.show{display:flex;}
-  .cart-bar-info{display:flex;flex-direction:column;}
-  .cart-bar-count{font-size:12px;color:var(--text-muted);font-weight:600;}
-  .cart-bar-total{font-family:var(--font-display);font-size:19px;font-weight:700;}
-  .checkout-btn{background:var(--accent);color:#221805;font-weight:800;font-size:15px;
-    padding:13px 22px;border-radius:var(--radius-md);border:none;cursor:pointer;white-space:nowrap;}
-  .checkout-btn:hover{filter:brightness(1.08);}
+  /* ---- Confirm dialog (replaces the native browser confirm() for every
+     hx-confirm action, so it matches the rest of the site instead of an
+     unstyled OS popup) ---- */
+  .confirm-overlay{position:fixed;inset:0;background:rgba(15,13,10,.72);backdrop-filter:blur(3px);
+    z-index:80;display:none;align-items:center;justify-content:center;padding:20px;}
+  .confirm-overlay.show{display:flex;animation:fadeIn .18s ease;}
+  .confirm-dialog{background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+    width:100%;max-width:340px;padding:24px 22px 20px;text-align:center;
+    animation:slideUp .18s cubic-bezier(.2,.9,.3,1);box-shadow:0 20px 50px rgba(0,0,0,.5);}
+  .confirm-message{font-family:var(--font-display);font-size:16.5px;font-weight:600;line-height:1.4;
+    color:var(--text-primary);}
+  .confirm-actions{display:flex;gap:10px;margin-top:20px;}
+  .confirm-btn{flex:1;border-radius:var(--radius-sm);padding:11px;font-weight:700;font-size:13.5px;
+    cursor:pointer;transition:filter .15s ease,transform .1s ease;font-family:var(--font-body);}
+  .confirm-btn:active{transform:scale(.97);}
+  .confirm-btn-cancel{background:var(--bg-raised);border:1px solid var(--border);color:var(--text-secondary);}
+  .confirm-btn-cancel:hover{border-color:var(--text-muted);color:var(--text-primary);}
+  .confirm-btn-ok{background:var(--accent);border:none;color:var(--ink);}
+  .confirm-btn-ok:hover{filter:brightness(1.1);}
 </style>
 </head>
 <body>
+
+<a href="#product-list" class="skip-link">Skip to menu</a>
 
 <header class="topbar">
   <div class="table-id">
@@ -186,15 +327,29 @@
 <main class="page">
 
   <div class="venue-banner">
-    <div class="name">Ouzeri Marina</div>
-    <div class="tagline">Browse the menu below — tap to add to your order</div>
+    <svg class="venue-mark" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="50" cy="50" r="48" stroke="#C9A876" stroke-width="1" opacity=".35"/>
+      <g stroke="#C9A876" stroke-width="1.3" stroke-linecap="round" opacity=".85">
+        <path d="M50 50 L50 12"/><path d="M50 50 L38 15"/><path d="M50 50 L62 15"/>
+        <path d="M50 50 L28 22"/><path d="M50 50 L72 22"/><path d="M50 50 L20 32"/><path d="M50 50 L80 32"/>
+        <path d="M50 50 L50 88"/><path d="M50 50 L38 85"/><path d="M50 50 L62 85"/>
+        <path d="M50 50 L28 78"/><path d="M50 50 L72 78"/><path d="M50 50 L20 68"/><path d="M50 50 L80 68"/>
+        <path d="M50 12 L44 4"/><path d="M50 12 L56 4"/>
+        <path d="M50 88 L44 96"/><path d="M50 88 L56 96"/>
+      </g>
+    </svg>
+    <div class="eyebrow">Table service</div>
+    <div class="name" id="venue-name">{{ .VenueName }}</div>
+    <div class="tagline">Order at your own pace — everything below reaches the kitchen and bar directly</div>
   </div>
 
   <div class="cat-tabs">
     <button type="button" class="cat-tab active" data-cat="all">All</button>
-    <button type="button" class="cat-tab" data-cat="Drinks">Drinks</button>
     <button type="button" class="cat-tab" data-cat="Food">Food</button>
-    <button type="button" class="cat-tab" data-cat="Other">Other</button>
+    <button type="button" class="cat-tab" data-cat="Coffee &amp; Soft">Coffee &amp; Soft</button>
+    <button type="button" class="cat-tab" data-cat="Beer &amp; Spirits">Beer &amp; Spirits</button>
+    <button type="button" class="cat-tab" data-cat="Cocktails">Cocktails</button>
+    <button type="button" class="cat-tab" data-cat="Wine">Wine</button>
   </div>
 
   <div hx-ext="ws" ws-connect="/menu/ws">
@@ -203,14 +358,6 @@
     </div>
   </div>
 
-  <section class="section" id="orderSection">
-    <h2><span class="icon">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6h15l-1.5 9h-12L6 3H3"/><circle cx="9.5" cy="20" r="1.4"/><circle cx="17.5" cy="20" r="1.4"/></svg>
-    </span>Your order</h2>
-    <div id="cart-summary" hx-get="/cart/summary" hx-trigger="load" hx-swap="innerHTML">
-      <p class="empty-note">Loading cart...</p>
-    </div>
-  </section>
   <div id="cart-refresh-trigger" style="display:none;"></div>
 
   <div hx-ext="ws" ws-connect="/table/{{ .TableNumber }}/ws">
@@ -237,17 +384,69 @@
 
 </main>
 
+<!-- Sticky bottom bar: tap opens the cart sheet -->
 <div id="cart-bar" class="cart-bar"></div>
+
+<!-- Cart bottom sheet -->
+<div class="cart-sheet-overlay" id="cartSheetOverlay"></div>
+<div class="cart-sheet" id="cartSheet" role="dialog" aria-modal="true" aria-labelledby="cartSheetTitle">
+  <div class="cart-sheet-header">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <h2 class="modal-title" id="cartSheetTitle">Your order</h2>
+      <button type="button" class="modal-close" id="closeCartBtn" aria-label="Close">×</button>
+    </div>
+  </div>
+  <div class="cart-sheet-body">
+    <div id="cart-summary" hx-get="/cart/summary" hx-trigger="load" hx-swap="innerHTML">
+      <p class="empty-note">Loading cart...</p>
+    </div>
+  </div>
+</div>
+
+<!-- Customize modal -->
+<div class="modal-overlay" id="customizeOverlay">
+  <div class="customize-modal" id="customizeModal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="customizeTitle">Item name</div>
+        <div class="modal-price" id="customizePrice">€0.00</div>
+      </div>
+      <button type="button" class="modal-close" id="closeCustomizeBtn" aria-label="Close">×</button>
+    </div>
+    <div class="customize-hint">Tap a green ingredient to remove it, tap a blue one to add it</div>
+    <div class="ing-chips" id="customizeChips"></div>
+    <button type="button" class="add-custom-btn" id="addCustomBtn">Add to order</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- Confirm dialog: styled replacement for every hx-confirm on this page,
+     see htmx:confirm listener below. -->
+<div class="confirm-overlay" id="confirmOverlay" role="alertdialog" aria-modal="true" aria-labelledby="confirmMessage">
+  <div class="confirm-dialog">
+    <div class="confirm-message" id="confirmMessage"></div>
+    <div class="confirm-actions">
+      <button type="button" class="confirm-btn confirm-btn-cancel" id="confirmCancelBtn">Cancel</button>
+      <button type="button" class="confirm-btn confirm-btn-ok" id="confirmOkBtn">Confirm</button>
+    </div>
+  </div>
+</div>
 
 <script>
   // ---- category tabs (client-only filter; re-applied after every live
   // menu update since #product-list gets wholesale-replaced by the
-  // websocket, not incrementally patched) ----
+  // websocket, not incrementally patched). Filtering toggles whole group
+  // containers (super-group label, sub-group label, sub-group list), not
+  // individual item-cards — matches how the guest menu is now grouped by
+  // category/subcategory (see _guest_product_list.html). ----
   function applyCategoryFilter(){
     const active = document.querySelector('.cat-tab.active');
     const cat = active ? active.dataset.cat : 'all';
-    document.querySelectorAll('#product-list .item-card').forEach(card => {
-      card.style.display = (cat === 'all' || card.dataset.cat === cat) ? '' : 'none';
+    document.querySelectorAll('#product-list [data-cat]').forEach(el => {
+      el.style.display = (cat === 'all' || el.dataset.cat === cat) ? '' : 'none';
     });
   }
   document.querySelectorAll('.cat-tab').forEach(tab => {
@@ -260,10 +459,49 @@
   document.body.addEventListener('htmx:afterSwap', applyCategoryFilter);
   document.body.addEventListener('htmx:oobAfterSwap', applyCategoryFilter);
 
-  // ---- menu grid: quick add, customize toggle, ingredient chip toggle,
-  // add-to-order-with-customization (a real /cart/add request, built as a
-  // throwaway form so repeated "excluded"/"extras" fields serialize
-  // correctly) ----
+  // ---- toast ----
+  function showToast(msg){
+    const t = document.getElementById('toast');
+    t.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> ${msg}`;
+    t.classList.add('show');
+    clearTimeout(showToast._timer);
+    showToast._timer = setTimeout(() => t.classList.remove('show'), 2600);
+  }
+
+  // ---- confirm dialog: replaces the native browser confirm() for every
+  // hx-confirm on this page (leave table, place/cancel order, cancel/
+  // refund a placed order) with one that matches the site's own look.
+  // htmx fires htmx:confirm for *every* request; e.detail.question is only
+  // set when that element actually carries hx-confirm, so anything else
+  // (e.g. plain hx-get/hx-post with no confirm attribute) passes through
+  // untouched. ----
+  const confirmOverlay = document.getElementById('confirmOverlay');
+  const confirmMessage = document.getElementById('confirmMessage');
+  let pendingConfirmResolve = null;
+  function closeConfirmDialog(result){
+    confirmOverlay.classList.remove('show');
+    if (!cartSheet.classList.contains('show') && !customizeOverlay.classList.contains('show')) {
+      document.body.style.overflow = '';
+    }
+    const resolve = pendingConfirmResolve;
+    pendingConfirmResolve = null;
+    if (resolve) resolve(result);
+  }
+  document.getElementById('confirmOkBtn').addEventListener('click', () => closeConfirmDialog(true));
+  document.getElementById('confirmCancelBtn').addEventListener('click', () => closeConfirmDialog(false));
+  confirmOverlay.addEventListener('click', (e) => { if (e.target === confirmOverlay) closeConfirmDialog(false); });
+  document.body.addEventListener('htmx:confirm', (e) => {
+    if (!e.detail.question) return;
+    e.preventDefault();
+    confirmMessage.textContent = e.detail.question;
+    confirmOverlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
+    pendingConfirmResolve = (ok) => { if (ok) e.detail.issueRequest(true); };
+  });
+
+  // ---- menu grid: quick add, customize modal, add-to-order-with-
+  // customization (a real /cart/add request, built as a throwaway form so
+  // repeated "excluded"/"extras" fields serialize correctly) ----
   function submitCartAction(url, productId, excluded, extras){
     const form = document.createElement('form');
     const pid = document.createElement('input');
@@ -287,48 +525,65 @@
   // Delegated from document.body, not bound to #product-list directly: the
   // menu websocket's very first push OOB-replaces that whole div (outerHTML,
   // a new DOM node), which would silently orphan a listener attached
-  // straight to it — this is why "Customize" previously did nothing.
+  // straight to it.
   document.body.addEventListener('click', (e) => {
     const card = e.target.closest('#product-list .item-card');
     if (!card) return;
 
+    const addBtn = e.target.closest('.add-btn');
+    if (addBtn && !addBtn.disabled) {
+      showToast(`Added ${card.dataset.name}`);
+      addBtn.classList.remove('flash'); void addBtn.offsetWidth; addBtn.classList.add('flash');
+      return;
+    }
     if (e.target.closest('.customize-link')) {
-      const panel = card.querySelector('.customize-panel');
-      panel.classList.toggle('open');
-      card.classList.toggle('expanded', panel.classList.contains('open'));
-      return;
-    }
-    if (e.target.closest('.ing-chip')) {
-      // Removable ingredients start "on" (green) — tapping excludes them.
-      // Extra ingredients start "off" (blue) — tapping includes them
-      // (green, same "on your order" color as an included removable one).
-      // Same green = "on your order" language either way.
-      const chip = e.target.closest('.ing-chip');
-      if (chip.dataset.kind === 'extra') {
-        chip.classList.toggle('included');
-      } else {
-        chip.classList.toggle('excluded');
-      }
-      return;
-    }
-    if (e.target.closest('.add-custom-btn')) {
-      const btn = e.target.closest('.add-custom-btn');
-      const excluded = Array.from(card.querySelectorAll('.ing-chip[data-kind="removable"].excluded')).map(c => c.dataset.ing);
-      const extras = Array.from(card.querySelectorAll('.ing-chip[data-kind="extra"].included')).map(c => c.dataset.ing);
-      submitCartAction('/cart/add', btn.dataset.productId, excluded, extras);
-      card.querySelectorAll('.ing-chip').forEach(c => { c.classList.remove('excluded'); c.classList.remove('included'); });
-      card.querySelector('.customize-panel').classList.remove('open');
-      card.classList.remove('expanded');
+      const btn = e.target.closest('.customize-link');
+      openCustomizeModal(card, btn.dataset.productId, btn.dataset.name, btn.dataset.price);
     }
   });
 
+  // ---- customize modal ----
+  const customizeOverlay = document.getElementById('customizeOverlay');
+  const customizeChips = document.getElementById('customizeChips');
+  let customizeProductId = null;
+
+  function openCustomizeModal(card, productId, name, price){
+    customizeProductId = productId;
+    document.getElementById('customizeTitle').textContent = name;
+    document.getElementById('customizePrice').textContent = '€' + price;
+    const source = card.querySelector('.customize-source');
+    customizeChips.innerHTML = source ? source.innerHTML : '';
+    customizeOverlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeCustomizeModal(){
+    customizeOverlay.classList.remove('show');
+    if (!cartSheet.classList.contains('show')) document.body.style.overflow = '';
+    customizeProductId = null;
+  }
+  customizeChips.addEventListener('click', (e) => {
+    // Removable ingredients start "on" (green) — tapping excludes them.
+    // Extra ingredients start "off" (blue) — tapping includes them (green,
+    // same "on your order" color as an included removable one).
+    const chip = e.target.closest('.ing-chip');
+    if (!chip) return;
+    if (chip.dataset.kind === 'extra') chip.classList.toggle('included');
+    else chip.classList.toggle('excluded');
+  });
+  document.getElementById('addCustomBtn').addEventListener('click', () => {
+    if (!customizeProductId) return;
+    const excluded = Array.from(customizeChips.querySelectorAll('.ing-chip[data-kind="removable"].excluded')).map(c => c.dataset.ing);
+    const extras = Array.from(customizeChips.querySelectorAll('.ing-chip[data-kind="extra"].included')).map(c => c.dataset.ing);
+    submitCartAction('/cart/add', customizeProductId, excluded, extras);
+    showToast(`Added ${document.getElementById('customizeTitle').textContent}`);
+    closeCustomizeModal();
+  });
+  document.getElementById('closeCustomizeBtn').addEventListener('click', closeCustomizeModal);
+  customizeOverlay.addEventListener('click', (e) => { if (e.target === customizeOverlay) closeCustomizeModal(); });
+
   // ---- "Your order" line stepper: +/- re-targets the exact customization
   // variant via its data-excluded/data-extras snapshot, not just the
-  // product. Delegated from document.body (not #cart-summary directly) —
-  // it isn't currently OOB-replaced, only innerHTML-swapped, so this would
-  // work either way, but delegating consistently everywhere means a future
-  // change to how it's updated can't silently orphan this listener the way
-  // #product-list was above. ----
+  // product. ----
   document.body.addEventListener('click', (e) => {
     const btn = e.target.closest('#cart-summary .ol-btn');
     if (!btn) return;
@@ -348,40 +603,90 @@
     document.querySelectorAll('.pay-method-chip').forEach(c => c.classList.remove('active'));
     chip.classList.add('active');
     document.getElementById('paymentMethodInput').value = chip.dataset.method;
-    const checkoutBtn = document.getElementById('checkoutBtn');
-    if (checkoutBtn) {
-      checkoutBtn.textContent = chip.dataset.method === 'cash' ? 'Place order · Pay cash' : 'Place order · Pay by card';
+    const label = document.getElementById('placeOrderLabel');
+    if (label) {
+      label.textContent = chip.dataset.method === 'cash' ? 'Place order · Pay cash' : 'Place order · Pay by card';
     }
   });
 
-  // ---- DJ tip presets + custom amount ----
-  const customTipWrap = document.getElementById('customTipWrap');
-  const customTipInput = document.getElementById('customTipInput');
-  const tipAmountInput = document.getElementById('tipAmountInput');
-  function updateDjSubmitLabel(){
-    const amount = parseFloat(tipAmountInput.value) || 0;
-    document.getElementById('djSubmit').textContent = `Send request & pay €${amount.toFixed(2)}`;
+  // ---- cart bar + cart sheet ----
+  const cartSheet = document.getElementById('cartSheet');
+  const cartSheetOverlay = document.getElementById('cartSheetOverlay');
+  function openCartSheet(){
+    cartSheetOverlay.classList.add('show');
+    cartSheet.classList.add('show');
+    document.body.style.overflow = 'hidden';
   }
-  document.querySelectorAll('.tip-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      document.querySelectorAll('.tip-chip').forEach(c => c.classList.remove('active'));
-      chip.classList.add('active');
-      if (chip.dataset.tip === 'custom') {
-        customTipWrap.classList.add('show');
-        const val = parseFloat(customTipInput.value);
-        tipAmountInput.value = val > 0 ? val : 0;
-        customTipInput.focus();
-      } else {
-        customTipWrap.classList.remove('show');
-        tipAmountInput.value = chip.dataset.tip;
-      }
-      updateDjSubmitLabel();
-    });
+  function closeCartSheet(){
+    cartSheetOverlay.classList.remove('show');
+    cartSheet.classList.remove('show');
+    if (!customizeOverlay.classList.contains('show')) document.body.style.overflow = '';
+  }
+  document.body.addEventListener('click', (e) => {
+    if (e.target.closest('#cart-bar .cart-bar-info') || e.target.closest('#cart-bar #openCartBtn')) openCartSheet();
   });
-  customTipInput.addEventListener('input', (e) => {
-    const val = parseFloat(e.target.value);
-    tipAmountInput.value = val > 0 ? val : 0;
+  document.getElementById('closeCartBtn').addEventListener('click', closeCartSheet);
+  cartSheetOverlay.addEventListener('click', closeCartSheet);
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (confirmOverlay.classList.contains('show')) closeConfirmDialog(false);
+    else if (customizeOverlay.classList.contains('show')) closeCustomizeModal();
+    else if (cartSheet.classList.contains('show')) closeCartSheet();
+  });
+  // A placed order (checkout) navigates away via HX-Redirect; cancelling the
+  // cart re-renders #cart-summary empty, which also hides the bar (see
+  // _cart_summary.html) — close the sheet to match.
+  document.body.addEventListener('htmx:afterRequest', (e) => {
+    if (e.detail.successful && e.detail.requestConfig && e.detail.requestConfig.path === '/cart/clear') closeCartSheet();
+  });
+
+  // ---- DJ tip presets + custom amount. Delegated from document.body, not
+  // bound directly to the tip chips/input: #dj-section is empty at initial
+  // page load and only gets its content (including these elements) from an
+  // async OOB websocket push (see _dj_section.html) — binding directly here
+  // would find nothing yet and throw, which (being a plain top-level
+  // <script>, no try/catch) would silently abort every listener registered
+  // *after* this block too. Same class of bug already documented in
+  // TODO.md for #product-list; fixed the same way. ----
+  function updateDjSubmitLabel(){
+    const tipAmountInput = document.getElementById('tipAmountInput');
+    const djSubmit = document.getElementById('djSubmit');
+    if (!tipAmountInput || !djSubmit) return;
+    const amount = parseFloat(tipAmountInput.value) || 0;
+    djSubmit.textContent = `Send request & pay €${amount.toFixed(2)}`;
+  }
+  document.body.addEventListener('click', (e) => {
+    const chip = e.target.closest('.tip-chip');
+    if (!chip) return;
+    document.querySelectorAll('.tip-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    const customTipWrap = document.getElementById('customTipWrap');
+    const customTipInput = document.getElementById('customTipInput');
+    const tipAmountInput = document.getElementById('tipAmountInput');
+    if (chip.dataset.tip === 'custom') {
+      customTipWrap.classList.add('show');
+      const val = parseFloat(customTipInput.value);
+      tipAmountInput.value = val > 0 ? val : 0;
+      customTipInput.focus();
+    } else {
+      customTipWrap.classList.remove('show');
+      tipAmountInput.value = chip.dataset.tip;
+    }
     updateDjSubmitLabel();
+  });
+  document.body.addEventListener('input', (e) => {
+    if (e.target.id !== 'customTipInput') return;
+    const val = parseFloat(e.target.value);
+    document.getElementById('tipAmountInput').value = val > 0 ? val : 0;
+    updateDjSubmitLabel();
+  });
+  // Clear the song field once a request is successfully sent (the response
+  // itself, swapped into #djConfirm, carries the success/failure message).
+  document.body.addEventListener('htmx:afterRequest', (e) => {
+    if (e.detail.elt && e.detail.elt.id === 'djSubmit' && e.detail.successful) {
+      const input = document.getElementById('songInput');
+      if (input) input.value = '';
+    }
   });
 </script>
 

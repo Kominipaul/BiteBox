@@ -23,7 +23,7 @@ func renderGuestProductListHTML() ([]byte, error) {
 	}
 	var buf bytes.Buffer
 	tmpl := template.Must(template.ParseFiles("templates/_guest_product_list.html"))
-	if err := tmpl.Execute(&buf, map[string]interface{}{"Products": buildProductViews(products)}); err != nil {
+	if err := tmpl.Execute(&buf, map[string]interface{}{"Groups": groupProductsForGuestMenu(buildProductViews(products))}); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -88,4 +88,20 @@ func BroadcastDJSection() {
 		return
 	}
 	Hub.Broadcast(topicMenu, oobWrap("dj-section", b))
+}
+
+// BroadcastVenueName pushes a renamed venue to every guest already browsing
+// the menu, live. Unlike the DJ section, the venue name doesn't need its own
+// render-on-connect step in MenuWS's initial payload — it's already part of
+// host_menu.html's own server-rendered HTML at page-load time (see
+// TableHandlers.View); this broadcast only matters for a tab that's already
+// open when an admin renames the venue mid-service.
+//
+// Built by hand rather than via oobWrap: the target element also carries
+// class="name" (host_menu.html's venue-banner styling), and an OOB swap
+// replaces the whole element outerHTML — reusing oobWrap here would silently
+// drop that class off the live-updated element.
+func BroadcastVenueName(name string) {
+	frag := `<div id="venue-name" class="name" hx-swap-oob="true">` + template.HTMLEscapeString(name) + `</div>`
+	Hub.Broadcast(topicMenu, []byte(frag))
 }

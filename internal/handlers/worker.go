@@ -91,7 +91,7 @@ func renderOrderFeedHTML(bucket string) ([]byte, error) {
 	var err error
 	switch bucket {
 	case models.DepartmentBar, models.DepartmentKitchen:
-		orders, err = db.GetActiveOrdersByCategory(models.DepartmentCategory(bucket))
+		orders, err = db.GetActiveOrdersByCategories(models.DepartmentCategories(bucket))
 	case models.DepartmentWaiter:
 		orders, err = db.GetReadyOrders()
 	default: // superworker (and admin, mapped to superworker above)
@@ -133,11 +133,6 @@ func renderOrderFeed(w http.ResponseWriter, bucket string) {
 	}
 	w.Write(b)
 	BroadcastOrderFeed()
-}
-
-func WorkerOrdersFeed(w http.ResponseWriter, r *http.Request) {
-	user, _ := UserFromContext(r)
-	renderOrderFeed(w, orderFeedBucket(user))
 }
 
 func WorkerUpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
@@ -262,10 +257,6 @@ func renderDJFeed(w http.ResponseWriter) {
 	}
 	w.Write(b)
 	BroadcastDJFeed(b)
-}
-
-func WorkerDJFeed(w http.ResponseWriter, r *http.Request) {
-	renderDJFeed(w)
 }
 
 func WorkerDJAccept(w http.ResponseWriter, r *http.Request) {

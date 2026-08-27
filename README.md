@@ -237,8 +237,7 @@ See `TODO.md` for the full, actively-maintained log — it's more current than t
 
 - **No real payment processing.** Card checkout is a UI-labeled demo; only cash is a genuine "collect in person" flow.
 - **Seeded passwords are fixed and public in this README** — fine for local dev/demos, must be changed before touching a real venue's network. There's no forced-change or self-service reset flow yet.
-- **`bitebox.db` is committed to the repository** for demo convenience. In a real deployment, gitignore it and rely on `scripts/reset-db.sh` / first-run seeding instead.
-- **No automated tests, no graceful shutdown, no cart-reservation expiry timer** — a guest who abandons a table without hitting "Leave" keeps their cart's stock reserved until an admin force-releases the table.
+- **No automated tests, no cart-reservation expiry timer** — a guest who abandons a table without hitting "Leave" keeps their cart's stock reserved until an admin force-releases the table.
 
 The full, unfiltered list — including intentional design tradeoffs versus genuine gaps — lives in `TODO.md`.
 

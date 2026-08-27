@@ -8,11 +8,17 @@
       <input type="hidden" name="name" value="{{ .Name }}">
       <input type="hidden" name="price" value="{{ printf "%.2f" .Price }}">
       <input type="hidden" name="category" value="{{ .Category }}">
+      <input type="hidden" name="subcategory" value="{{ .Subcategory }}">
+      <input type="hidden" name="description" value="{{ .Description }}">
       <div class="product-main">
         <span class="product-name">{{ .Name }}</span>
+        {{ if .Subcategory }}<span style="font-size:11px;color:var(--text-muted);">· {{ .Subcategory }}</span>{{ end }}
         <span class="product-price">€{{ printf "%.2f" .Price }}</span>
         {{ if gt .Reserved 0 }}
         <span style="font-size:11px;color:var(--text-muted);">{{ .Reserved }} in {{ if eq .Reserved 1 }}a cart{{ else }}carts{{ end }} right now</span>
+        {{ end }}
+        {{ if .Description }}
+        <span style="font-size:11.5px;color:var(--text-muted);font-style:italic;">{{ .Description }}</span>
         {{ end }}
       </div>
       <div class="stock-stepper">
@@ -44,22 +50,60 @@
       </div>
     </form>
 
-    <div class="ingredient-tags">
-      {{ range .Ingredients }}
-      <span class="ingredient-tag {{ if eq .Kind "extra" }}is-extra{{ end }}">
-        {{ .Name }}{{ if eq .Kind "extra" }} · extra{{ end }}
-        <button type="button" class="ingredient-tag-remove" hx-delete="/admin/ingredients/{{ .ID }}" hx-target="#menuList" title="Remove {{ .Name }}">×</button>
-      </span>
-      {{ end }}
-      <form class="ingredient-add-form" hx-post="/admin/products/{{ .ID }}/ingredients" hx-target="#menuList" hx-on::after-request="if(event.detail.successful) this.reset()">
-        <input class="field-input" name="name" placeholder="Ingredient name" required>
-        <select class="field-select" name="kind">
-          <option value="removable">Removable</option>
-          <option value="extra">Extra</option>
-        </select>
-        <button type="submit" class="btn btn-ghost btn-sm">+ Tag</button>
-      </form>
-    </div>
+    <details class="ingredient-panel" {{ if .Ingredients }}open{{ end }}>
+      <summary class="ingredient-summary">
+        <svg class="ingredient-summary-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 12.6 12 21.2a2 2 0 0 1-2.8 0L2.8 14.8a2 2 0 0 1 0-2.8L11.4 3.4a2 2 0 0 1 1.4-.6H19a1.6 1.6 0 0 1 1.6 1.6v6.2a2 2 0 0 1-.6 1.4Z"/><circle cx="16.5" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>
+        {{ if .Ingredients }}
+        <span>{{ len .Ingredients }} customizable ingredient{{ if ne (len .Ingredients) 1 }}s{{ end }}</span>
+        {{ else }}
+        <span class="ingredient-summary-empty">No customization set up — add one</span>
+        {{ end }}
+        <svg class="ingredient-summary-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </summary>
+      <div class="ingredient-panel-body">
+        {{ if .RemovableIngredients }}
+        <div class="ingredient-group">
+          <span class="ingredient-group-label"><span class="dot dot-removable"></span>Removable <span class="hint">— included by default, guests can leave these out</span></span>
+          <div class="ingredient-tags">
+            {{ range .RemovableIngredients }}
+            <span class="ingredient-tag">
+              {{ .Name }}
+              <button type="button" class="ingredient-tag-remove" hx-delete="/admin/ingredients/{{ .ID }}" hx-target="#menuList" title="Remove {{ .Name }}" aria-label="Remove {{ .Name }}">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            </span>
+            {{ end }}
+          </div>
+        </div>
+        {{ end }}
+        {{ if .ExtraIngredients }}
+        <div class="ingredient-group">
+          <span class="ingredient-group-label"><span class="dot dot-extra"></span>Extra <span class="hint">— optional add-ons, not included by default</span></span>
+          <div class="ingredient-tags">
+            {{ range .ExtraIngredients }}
+            <span class="ingredient-tag is-extra">
+              {{ .Name }}
+              <button type="button" class="ingredient-tag-remove" hx-delete="/admin/ingredients/{{ .ID }}" hx-target="#menuList" title="Remove {{ .Name }}" aria-label="Remove {{ .Name }}">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            </span>
+            {{ end }}
+          </div>
+        </div>
+        {{ end }}
+        {{ if not .Ingredients }}
+        <p class="ingredient-empty-note">This item has no removable or extra ingredients yet — guests won't see a "Customize" option for it.</p>
+        {{ end }}
+        <form class="ingredient-add-form" hx-post="/admin/products/{{ .ID }}/ingredients" hx-target="#menuList" hx-on::after-request="if(event.detail.successful) this.reset()">
+          <input class="field-input" name="name" placeholder="e.g. Onion, Extra cheese" required>
+          <select class="field-select" name="kind">
+            <option value="removable">Removable — on by default</option>
+            <option value="extra">Extra — optional add-on</option>
+          </select>
+          <button type="submit" class="btn btn-ghost btn-sm">+ Add ingredient</button>
+        </form>
+      </div>
+    </details>
   </div>
   {{ end }}
 </div>

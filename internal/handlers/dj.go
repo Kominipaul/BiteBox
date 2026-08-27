@@ -27,12 +27,12 @@ func DJRequest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
 	if song == "" || err != nil || tip <= 0 {
-		w.Write([]byte(`<p style='color: #dc3545;'>Please enter a song and a valid tip amount.</p>`))
+		w.Write([]byte(`<p class="empty-note" style="color:var(--danger);">Please enter a song and a valid tip amount.</p>`))
 		return
 	}
 
 	if _, err := db.CreateSongRequest(song, tip, table.Number); err != nil {
-		w.Write([]byte(`<p style='color: #dc3545;'>Something went wrong, please try again.</p>`))
+		w.Write([]byte(`<p class="empty-note" style="color:var(--danger);">Something went wrong, please try again.</p>`))
 		return
 	}
 
@@ -41,5 +41,5 @@ func DJRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	BroadcastSongStatus(table.Number)
 
-	w.Write([]byte(fmt.Sprintf("<p style='color: #28a745;'>✅ Request sent to DJ for '%s' (€%.2f tip)</p>", html.EscapeString(song), tip)))
+	w.Write([]byte(fmt.Sprintf(`<div class="dj-confirm show"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Sent to the DJ — '%s' (€%.2f tip)</div>`, html.EscapeString(song), tip)))
 }

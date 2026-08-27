@@ -262,24 +262,39 @@ func GetReadyOrders() ([]models.Order, error) {
 	return orders, nil
 }
 
-// GetActiveOrdersByCategory returns orders needing a department-filtered
+// GetActiveOrdersByCategories returns orders needing a department-filtered
 // (bar/kitchen) bucket's attention — pending/preparing only, not ready (see
 // categoryExcludedStatuses) — that contain at least one item currently in
-// the given product category. order_items only stores the immutable name/
+// any of the given product categories (bar now spans several: Coffee &
+// Soft, Beer & Spirits, Cocktails, Wine, ... — see
+// models.DepartmentCategories). order_items only stores the immutable name/
 // price snapshot, not category, so this reflects the item's *current*
 // classification, not what it was at order time. Each matching order is
 // returned whole (every item, not just the matching ones), so a
 // department-scoped worker still has full context on the order they're
-// acting on.
-func GetActiveOrdersByCategory(category string) ([]models.Order, error) {
+// acting on. An empty/nil categories list matches nothing (an empty result,
+// not "unfiltered" — callers wanting everything should use GetActiveOrders).
+func GetActiveOrdersByCategories(categories []string) ([]models.Order, error) {
+	if len(categories) == 0 {
+		return nil, nil
+	}
+
+	placeholders := make([]byte, 0, len(categories)*2)
 	args := append([]interface{}{}, categoryExcludedStatuses...)
-	args = append(args, category)
+	for i, cat := range categories {
+		if i > 0 {
+			placeholders = append(placeholders, ',')
+		}
+		placeholders = append(placeholders, '?')
+		args = append(args, cat)
+	}
+
 	rows, err := DB.Query(`
 		SELECT DISTINCT o.id, o.table_number, o.session_id, o.status, o.payment_method, o.payment_status, o.total_amount, o.served_by, o.note, o.refund_requested, o.created_at
 		FROM orders o
 		JOIN order_items oi ON oi.order_id = o.id
 		JOIN products p ON p.id = oi.product_id
-		WHERE o.status NOT IN `+excludeFour+` AND p.category = ?
+		WHERE o.status NOT IN `+excludeFour+` AND p.category IN (`+string(placeholders)+`)
 		ORDER BY o.created_at ASC`,
 		args...,
 	)

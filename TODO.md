@@ -5,6 +5,58 @@ Update this as things change — it's meant to be read before picking up work ag
 
 ## Done
 
+### Verified two previously-unconfirmed behaviors in a real browser; ops hygiene + cosmetic cleanup pass
+Walked the "Missing / rough edges" list with the user and knocked out the
+cheap/safe items, plus actually verified (not guessed) the two things that
+were flagged as unchecked:
+
+- **Cart-refresh-trigger poke: confirmed working, in a real browser.**
+  Set up headless Chromium (Playwright) and watched network traffic directly:
+  adding an item fires the expected extra `GET /cart/summary` the instant
+  the OOB-swapped `#cart-refresh-trigger` lands in the DOM — htmx really does
+  auto-fire `hx-trigger="load"` on an OOB-inserted node. No fallback needed.
+- **htmx `ws` extension reconnect across a server restart: confirmed working.**
+  Same browser session, killed and restarted the server mid-session: both
+  `/menu/ws` and `/table/{n}/ws` sockets showed a burst of failed reconnect
+  attempts (`ERR_CONNECTION_REFUSED`) while the server was down, then
+  successfully reopened on their own within ~1s of it coming back — no
+  manual page reload needed. A live widget survives a server restart.
+- **Graceful shutdown added.** `main.go` now installs a `SIGINT`/`SIGTERM`
+  handler and calls `http.Server.Shutdown` with a 10s drain deadline instead
+  of letting the OS kill the process mid-request. Known partial limitation,
+  stated honestly: Go's `Shutdown` doesn't wait on already-hijacked
+  connections, and `gorilla/websocket` hijacks the underlying TCP conn on
+  upgrade — so this drains in-flight plain HTTP requests cleanly, but open
+  WebSocket connections still just drop when the process actually exits.
+  Fixing that fully would mean the hub tracking and closing every live
+  connection itself; not done here, noted for later if it ever matters.
+- **`bitebox.db` untracked from git going forward.** Added `.gitignore`
+  (covers the db file itself plus its `-shm`/`-wal`/`-journal` WAL sidecars)
+  and ran `git rm --cached bitebox.db` — stays in past history, stops being
+  a footgun on every future `git status`. `scripts/reset-db.sh` / first-run
+  seeding are the source of a working database from here on, not git.
+- **Removed the dead plain-HTTP polling routes** (`/worker/orders/feed`,
+  `/worker/dj/feed`, `/table/{number}/order-status`) and their handlers
+  (`WorkerOrdersFeed`, `WorkerDJFeed`, `OrderStatusPoll`) — confirmed via
+  grep first that nothing in any template still pointed at them (the
+  websocket migration replaced every caller). The underlying `renderX`
+  helpers they called stay, since the POST mutation handlers still use them
+  to answer the actor's own request.
+- **Removed the dormant `.pay-online` CSS class** from
+  `worker_dashboard.html` — dead weight from the pasted design; this app has
+  only ever emitted `cash`/`card`, never an "online" payment badge.
+- **Venue name is a real setting now, not a hardcoded string.** Was
+  literally `"Ouzeri Marina"` baked into two templates. Extended the same
+  singleton-settings pattern the DJ toggle uses: `settings.venue_name`
+  column (defaults to the old hardcoded value, so upgrading changes nothing
+  until an admin actually edits it), a new "Venue settings" panel on the
+  admin dashboard, `db.SetVenueName`, and `BroadcastVenueName` — renaming
+  the venue updates every guest already browsing the menu live (pushed over
+  the existing `/menu/ws` topic, same reasoning as the DJ section) and the
+  admin's own header, in the same request, via a hand-built OOB fragment
+  (skipped the usual `oobWrap` helper here since the target element also
+  carries `class="name"`, which a generic OOB wrapper would have clobbered).
+
 ### DJ song requests are now an admin-controlled venue toggle
 Some venues don't run a DJ / don't want song requests taking tips right now —
 the "Request a song to DJ" form is no longer permanently on the guest menu.
@@ -698,11 +750,6 @@ templates.
   that window it could theoretically describe a table/order that's since
   changed further. Narrow edge case at this app's traffic level, not
   something to over-build for now.
-- **`.pay-online` CSS class is dormant.** Carried over from the pasted
-  design for fidelity, but this app only ever creates cash orders
-  (`models.PaymentMethodCash` is the only payment method that exists) — the
-  template never emits it. Only relevant if an online payment method is
-  ever actually added.
 - **Cart stock reservations never time out.** If a guest adds something to
   their cart and then just abandons the table (closes the tab without
   hitting "Leave Table" or getting force-released), whatever's in their
@@ -710,17 +757,8 @@ templates.
   else — indefinitely. Only an explicit remove/checkout/leave/force-release
   clears it. Fine at this app's scale (a venue admin can always force-
   release a table), but a real reservation-expiry timer would close the gap.
-- **No graceful shutdown.** `main.go` calls `http.ListenAndServe` directly
-  with no signal handling — Ctrl+C kills the process mid-request/mid-socket
-  rather than draining connections. Low priority for local dev, worth fixing
-  before any real deployment.
 - **No tests.** Nothing in `internal/` or `cmd/` has unit or integration
   tests — not the wshub, not the handlers, not the cart logic.
-- **`bitebox.db` is committed to git.** Works fine for a single-dev demo app,
-  but it means every test session's leftover data is one `git status` away
-  from getting committed by accident (already happened once this session —
-  had to `git checkout -- bitebox.db` to undo). Consider `.gitignore`-ing it
-  and relying on `scripts/reset-db.sh` / seed-on-first-run instead.
 - **Default seeded passwords** (`admin123` / `staff123`) — the server logs a
   warning about this on every fresh seed, but there's no forced change flow.
   Fine for local/demo use; must change before any real deployment.
@@ -741,15 +779,6 @@ templates.
   venue). Tighten this if that assumption turns out wrong — the check would
   be "does this order contain an item in my category" before allowing the
   mutation, symmetric to the read-side filter.
-- **Venue name ("Ouzeri Marina") is hardcoded** in admin_dashboard.html —
-  there's no settings/venue-config concept anywhere in the app.
-- **The cart-refresh-trigger poke hasn't been checked in a real browser.**
-  Confirmed server-side that the OOB fragment is correct and reaches the
-  socket; haven't confirmed htmx actually auto-fires `hx-trigger="load"` on
-  an OOB-swapped-in element in a live page. If it turns out it doesn't, the
-  fallback is trivial (broadcast the resolved cart HTML per-table directly
-  instead of the poke — the tricky part, iterating occupied tables/sessions,
-  is already sketched in this file's history if needed).
 - **DJ song-status only tracks the latest request per table.** If a guest
   sends a second request before the first is resolved, the widget switches
   to showing the new one; the first's outcome is still in the DB but no
@@ -760,14 +789,6 @@ templates.
 
 ## Maybe later (not needed now, just noted)
 
-- Remove the now-unused plain-HTTP polling routes
-  (`/worker/orders/feed`, `/worker/dj/feed`, `/table/{number}/order-status`,
-  their handlers `WorkerOrdersFeed`/`WorkerDJFeed`/`OrderStatusPoll`) once
-  we're confident nothing external depends on them — currently kept as a
-  safety net / manual-debugging fallback.
-- Verify behavior across a server restart: does htmx's `ws` extension
-  auto-reconnect the socket, or does the widget go silently stale until a
-  manual page reload? Not yet tested.
 - If this ever sits behind a reverse proxy / HTTPS, confirm the proxy passes
   through `Upgrade`/`Connection` headers for the websocket routes, and that
   the `ws://` vs `wss://` scheme htmx infers from the page matches.

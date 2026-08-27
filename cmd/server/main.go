@@ -1,8 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"bitebox/internal/cart"
 	"bitebox/internal/db"
@@ -29,7 +35,6 @@ func main() {
 	r.Get("/table/{number}", table.View)
 	r.Get("/table/{number}/left", table.Left)
 	r.Post("/table/{number}/leave", table.Leave)
-	r.Get("/table/{number}/order-status", handlers.OrderStatusPoll)
 	r.Get("/table/{number}/ws", handlers.TableStatusWS)
 
 	// Guest cart & checkout
@@ -78,6 +83,7 @@ func main() {
 		r.Post("/admin/staff/{id}/deactivate", handlers.AdminDeactivateStaff)
 		r.Post("/admin/staff/{id}/activate", handlers.AdminActivateStaff)
 		r.Post("/admin/settings/dj-requests/toggle", handlers.AdminToggleDJRequests)
+		r.Post("/admin/settings/venue-name", handlers.AdminUpdateVenueName)
 	})
 
 	// Worker dashboard
@@ -89,7 +95,6 @@ func main() {
 		// category-filtered feed, staff/admin get everything).
 		r.Group(func(r chi.Router) {
 			r.Use(handlers.RequireDepartment(models.DepartmentSuperworker, models.DepartmentWaiter, models.DepartmentBar, models.DepartmentKitchen))
-			r.Get("/worker/orders/feed", handlers.WorkerOrdersFeed)
 			r.Get("/worker/orders/ws", handlers.WorkerOrdersWS)
 			r.Post("/worker/orders/{id}/status", handlers.WorkerUpdateOrderStatus)
 			r.Post("/worker/orders/{id}/paid", handlers.WorkerMarkPaid)
@@ -100,13 +105,33 @@ func main() {
 		// DJ terminal: DJ department only.
 		r.Group(func(r chi.Router) {
 			r.Use(handlers.RequireDepartment(models.DepartmentDJ))
-			r.Get("/worker/dj/feed", handlers.WorkerDJFeed)
 			r.Get("/worker/dj/ws", handlers.WorkerDJWS)
 			r.Post("/worker/dj/{id}/accept", handlers.WorkerDJAccept)
 			r.Post("/worker/dj/{id}/reject", handlers.WorkerDJReject)
 		})
 	})
 
+	srv := &http.Server{Addr: ":8080", Handler: r}
+
+	// Graceful shutdown: Ctrl+C (or a deploy's SIGTERM) stops the server from
+	// accepting new connections and gives in-flight requests/websockets up to
+	// 10s to finish on their own, instead of the OS just killing the process
+	// mid-request. Any connection still open past that deadline is cut off.
+	go func() {
+		stop := make(chan os.Signal, 1)
+		signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+		<-stop
+		log.Println("🛑 Shutting down — draining in-flight requests (up to 10s)...")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("Graceful shutdown didn't finish cleanly: %v", err)
+		}
+	}()
+
 	log.Println("🚀 BiteBox Go server running on http://localhost:8080/table/1")
-	http.ListenAndServe(":8080", r)
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Fatalf("Server error: %v", err)
+	}
+	log.Println("✅ Server stopped cleanly")
 }

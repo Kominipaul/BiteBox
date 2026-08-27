@@ -59,9 +59,11 @@ func (h *TableHandlers) View(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if table.HostSessionID == sessionID {
+		settings, _ := db.GetSettings()
 		tmpl := template.Must(template.ParseFiles("templates/host_menu.html"))
 		tmpl.Execute(w, map[string]interface{}{
 			"TableNumber": tableNum,
+			"VenueName":   settings.VenueName,
 		})
 	} else {
 		tmpl := template.Must(template.ParseFiles("templates/guest_menu.html"))
@@ -124,14 +126,6 @@ func renderOrderStatusHTML(tableNumber int) []byte {
 // connected over that table's websocket.
 func BroadcastTableStatus(tableNumber int) {
 	Hub.Broadcast(topicTableStatus(tableNumber), oobWrap("order-status", renderOrderStatusHTML(tableNumber)))
-}
-
-// OrderStatusPoll renders the guest-facing "your order status" widget as a
-// plain HTTP response (kept for compatibility; host_menu.html now gets live
-// updates over /table/{number}/ws instead).
-func OrderStatusPoll(w http.ResponseWriter, r *http.Request) {
-	tableNum, _ := strconv.Atoi(chi.URLParam(r, "number"))
-	w.Write(renderOrderStatusHTML(tableNum))
 }
 
 // renderSongStatusHTML renders the guest-facing "DJ decision" widget for a

@@ -120,6 +120,14 @@ func InitDB() {
 	// venues already using the feature don't lose it silently on upgrade.
 	DB.Exec(`INSERT OR IGNORE INTO settings (id, dj_requests_enabled) VALUES (1, 1)`)
 
+	// venue_name defaults to EGO — BiteBox's first real client (an all-day
+	// bar in Kalamata) — so a fresh install comes up already branded for
+	// them instead of a placeholder name; an admin can still rename it
+	// anytime from the dashboard.
+	if err := addColumnIfMissing("settings", "venue_name", "TEXT DEFAULT 'EGO'"); err != nil {
+		log.Fatalf("Failed to migrate settings.venue_name: %v", err)
+	}
+
 	// bitebox.db may already exist from before payment_status was introduced;
 	// CREATE TABLE IF NOT EXISTS won't add columns to an existing table, and
 	// SQLite has no ADD COLUMN IF NOT EXISTS, so check first via PRAGMA.
@@ -166,6 +174,16 @@ func InitDB() {
 		log.Fatalf("Failed to migrate products.category: %v", err)
 	}
 
+	// Subcategory (guest-menu group label within a Category, e.g. "Main
+	// Courses") and Description (guest-facing menu copy) — both blank by
+	// default, purely additive display data, nothing depends on them being set.
+	if err := addColumnIfMissing("products", "subcategory", "TEXT DEFAULT ''"); err != nil {
+		log.Fatalf("Failed to migrate products.subcategory: %v", err)
+	}
+	if err := addColumnIfMissing("products", "description", "TEXT DEFAULT ''"); err != nil {
+		log.Fatalf("Failed to migrate products.description: %v", err)
+	}
+
 	for _, m := range []struct{ column, definition string }{
 		{"department", "TEXT DEFAULT 'staff'"},
 		{"is_active", "INTEGER DEFAULT 1"},
@@ -180,15 +198,11 @@ func InitDB() {
 	// Seed Table 1 if it doesn't exist
 	DB.Exec(`INSERT OR IGNORE INTO tables (number, status, host_session_id) VALUES (1, 'available', '')`)
 
-	// Seed mock menu items
+	// Seed EGO's real menu (first client — see seed_ego.go) on a fresh database.
 	var count int
 	DB.QueryRow("SELECT COUNT(*) FROM products").Scan(&count)
 	if count == 0 {
-		DB.Exec(`INSERT INTO products (name, price, category) VALUES
-			('Classic Mojito', 8.50, 'Drinks'),
-			('Heineken 0.5L', 5.00, 'Drinks'),
-			('Cheeseburger & Fries', 12.00, 'Food'),
-			('Club Sandwich', 9.00, 'Food')`)
+		seedEGOMenu()
 	}
 
 	seedDefaultUsers()

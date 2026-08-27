@@ -5,6 +5,7 @@ import "time"
 // Settings is a venue-wide singleton row of feature toggles.
 type Settings struct {
 	DJRequestsEnabled bool
+	VenueName         string
 }
 
 type Product struct {
@@ -14,15 +15,30 @@ type Product struct {
 	Stock       int     `json:"stock"`
 	IsAvailable bool    `json:"is_available"`
 	Category    string  `json:"category"`
+	// Subcategory is a free-text grouping label within Category (e.g. "Main
+	// Courses" within Food) — purely a guest-menu display grouping, not a
+	// validated set like Category. Blank means "no sub-heading" for this
+	// item; the guest menu renders it under its Category with no group label.
+	Subcategory string `json:"subcategory"`
+	// Description is optional guest-facing menu copy shown under the item
+	// name (e.g. "Grilled octopus, fava cream, cuttlefish ink..."). Blank
+	// means no description line is rendered.
+	Description string `json:"description"`
 }
 
 const (
-	CategoryDrinks = "Drinks"
-	CategoryFood   = "Food"
-	CategoryOther  = "Other"
+	CategoryFood        = "Food"
+	CategoryCoffeeSoft  = "Coffee & Soft"
+	CategoryBeerSpirits = "Beer & Spirits"
+	CategoryCocktails   = "Cocktails"
+	CategoryWine        = "Wine"
+	// CategoryOther is a fallback bucket only — for legacy/blank category
+	// data and anything an admin doesn't explicitly categorize — not one of
+	// the guest-facing menu tabs.
+	CategoryOther = "Other"
 )
 
-var ProductCategories = []string{CategoryDrinks, CategoryFood, CategoryOther}
+var ProductCategories = []string{CategoryFood, CategoryCoffeeSoft, CategoryBeerSpirits, CategoryCocktails, CategoryWine, CategoryOther}
 
 func IsValidCategory(c string) bool {
 	for _, v := range ProductCategories {
@@ -123,16 +139,25 @@ func IsValidDepartment(d string) bool {
 	return false
 }
 
-// DepartmentCategory maps a department to the product category its order
-// feed is filtered to; "" means unfiltered (see everything).
-func DepartmentCategory(department string) string {
+// DepartmentCategories maps a department to the product categories its
+// order feed is filtered to; nil means unfiltered (see everything). Bar
+// covers every category that isn't Food — so a menu with any number of
+// drink categories (Coffee & Soft, Beer & Spirits, Cocktails, Wine, ...)
+// still routes to bar without this needing to name each one.
+func DepartmentCategories(department string) []string {
 	switch department {
 	case DepartmentBar:
-		return CategoryDrinks
+		var cats []string
+		for _, c := range ProductCategories {
+			if c != CategoryFood {
+				cats = append(cats, c)
+			}
+		}
+		return cats
 	case DepartmentKitchen:
-		return CategoryFood
+		return []string{CategoryFood}
 	default:
-		return ""
+		return nil
 	}
 }
 

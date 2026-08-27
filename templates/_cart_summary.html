@@ -34,31 +34,36 @@
   <p style="color:var(--danger); font-size:12.5px;">Remove the unavailable item(s) above to check out.</p>
   {{ end }}
 
-  <div id="orderExtras" style="display:block;">
-    <label class="field-label">Note for the kitchen (optional)</label>
-    <textarea class="field-input" id="orderComment" name="note" rows="2" placeholder="e.g. no ice, nut allergy, birthday candle please"></textarea>
+  <label class="field-label">Note for the kitchen (optional)</label>
+  <textarea class="field-input" id="orderComment" name="note" rows="2" placeholder="e.g. no ice, nut allergy, birthday candle please"></textarea>
 
-    <label class="field-label">Payment method</label>
-    <div class="pay-method-row">
-      <button type="button" class="pay-method-chip active" data-method="cash">💵 Cash</button>
-      <button type="button" class="pay-method-chip" data-method="card">💳 Card <span class="demo-tag">Demo</span></button>
-    </div>
-    <input type="hidden" id="paymentMethodInput" name="payment_method" value="cash">
+  <label class="field-label">Payment method</label>
+  <div class="pay-method-row">
+    <button type="button" class="pay-method-chip active" data-method="cash">💵 Cash</button>
+    <button type="button" class="pay-method-chip" data-method="card">💳 Card <span class="demo-tag">Demo</span></button>
   </div>
+  <input type="hidden" id="paymentMethodInput" name="payment_method" value="cash">
 
+  {{ if .HasUnavailable }}
+  <button type="button" class="place-order-btn" disabled style="opacity:.5;">Review cart above</button>
+  {{ else }}
+  <button type="button" class="place-order-btn" id="checkoutBtn" hx-post="/cart/checkout" hx-include="#orderComment, #paymentMethodInput" hx-confirm="Place this order?">
+    <span class="spinner"></span>
+    <span id="placeOrderLabel">Place order · Pay cash</span>
+  </button>
+  {{ end }}
   <button type="button" class="cancel-order-btn" style="display:block;" hx-post="/cart/clear" hx-target="#cart-summary" hx-swap="innerHTML" hx-confirm="Cancel your order? This clears everything you've added so far.">Cancel order</button>
 {{ else }}
-  <div class="empty-note" id="orderEmpty">Your cart is empty — add items from the menu above.</div>
+  <div class="cart-empty-state" id="cartEmptyState">Your cart is empty. Close this and add something from the menu.</div>
 {{ end }}
 
 <div id="cart-bar" hx-swap-oob="true" class="cart-bar {{ if .Items }}show{{ end }}">
-  <div class="cart-bar-info">
-    <span class="cart-bar-count" id="cartCount">{{ .TotalQty }} item{{ if ne .TotalQty 1 }}s{{ end }}</span>
+  <div class="cart-bar-info" id="cartBarInfo">
+    <span class="cart-bar-count" id="cartCount">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6h15l-1.5 9h-12L6 3H3"/></svg>
+      {{ .TotalQty }} item{{ if ne .TotalQty 1 }}s{{ end }} — tap to review
+    </span>
     <span class="cart-bar-total" id="cartTotal">€{{ printf "%.2f" .Total }}</span>
   </div>
-  {{ if .HasUnavailable }}
-  <button class="checkout-btn" disabled style="opacity:.5;">Review cart above</button>
-  {{ else }}
-  <button class="checkout-btn" id="checkoutBtn" hx-post="/cart/checkout" hx-include="#orderComment, #paymentMethodInput" hx-confirm="Place this order?">Place order · Pay cash</button>
-  {{ end }}
+  <button type="button" class="checkout-btn" id="openCartBtn">Review order</button>
 </div>

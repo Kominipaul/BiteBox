@@ -1,0 +1,10 @@
+# SQLite database + WAL-mode sidecar files. bitebox.db was tracked in git
+# history before this existed (left there deliberately — rewriting history
+# to scrub it isn't worth the disruption); this just stops any *future*
+# change to it from being staged by accident, which has already happened
+# once. Get a working database via `scripts/reset-db.sh` or just run the
+# server — both reseed from scratch.
+bitebox.db
+bitebox.db-shm
+bitebox.db-wal
+bitebox.db-journal

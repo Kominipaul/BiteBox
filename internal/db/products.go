@@ -2,10 +2,10 @@ package db
 
 import "bitebox/internal/models"
 
-const productColumns = "id, name, price, stock, is_available, category"
+const productColumns = "id, name, price, stock, is_available, category, subcategory, description"
 
 func scanProduct(p *models.Product, scan func(...interface{}) error) error {
-	return scan(&p.ID, &p.Name, &p.Price, &p.Stock, &p.IsAvailable, &p.Category)
+	return scan(&p.ID, &p.Name, &p.Price, &p.Stock, &p.IsAvailable, &p.Category, &p.Subcategory, &p.Description)
 }
 
 // GetProducts returns only available products, for the guest-facing menu.
@@ -55,9 +55,11 @@ func GetProductByID(id int) (models.Product, error) {
 
 // CreateProduct inserts a product with a stock count, where -1 means
 // unlimited/untracked stock (the column's default, kept for products that
-// never need a count, e.g. drinks poured to order).
-func CreateProduct(name string, price float64, stock int, category string) (int, error) {
-	res, err := DB.Exec("INSERT INTO products (name, price, stock, category) VALUES (?, ?, ?, ?)", name, price, stock, category)
+// never need a count, e.g. drinks poured to order). subcategory/description
+// are both optional display-only fields — pass "" for either when unset.
+func CreateProduct(name string, price float64, stock int, category, subcategory, description string) (int, error) {
+	res, err := DB.Exec("INSERT INTO products (name, price, stock, category, subcategory, description) VALUES (?, ?, ?, ?, ?, ?)",
+		name, price, stock, category, subcategory, description)
 	if err != nil {
 		return 0, err
 	}
@@ -65,8 +67,9 @@ func CreateProduct(name string, price float64, stock int, category string) (int,
 	return int(id), err
 }
 
-func UpdateProduct(id int, name string, price float64, stock int, category string) error {
-	_, err := DB.Exec("UPDATE products SET name = ?, price = ?, stock = ?, category = ? WHERE id = ?", name, price, stock, category, id)
+func UpdateProduct(id int, name string, price float64, stock int, category, subcategory, description string) error {
+	_, err := DB.Exec("UPDATE products SET name = ?, price = ?, stock = ?, category = ?, subcategory = ?, description = ? WHERE id = ?",
+		name, price, stock, category, subcategory, description, id)
 	return err
 }
 
