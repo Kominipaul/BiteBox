@@ -31,6 +31,14 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
+	// Vendored htmx + its ws extension, served locally so the guest/worker/
+	// admin pages' ws-connect can fire the instant the page's own scripts
+	// load, instead of blocking on a CDN (unpkg) round-trip on every visit —
+	// that CDN fetch was the actual cause of "menu takes 2s to load": the
+	// menu is an empty shell until htmx runs and opens /menu/ws, so any
+	// latency fetching htmx itself shows up as the websocket looking slow.
+	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+
 	// Guest table access
 	r.Get("/table/{number}", table.View)
 	r.Get("/table/{number}/left", table.Left)

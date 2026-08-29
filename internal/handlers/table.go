@@ -41,6 +41,21 @@ type TableHandlers struct {
 
 // View handles /table/{number}: claims the table for a new host, or shows
 // the locked guest view to anyone else.
+//
+// Diagnosed the "menu takes a second or two to appear after the page loads"
+// report: it wasn't server time (a timed breakdown of every step here came
+// back at ~3ms total, WAL fix and all) and it wasn't payload size (same lag
+// reported with a 3-item catalog). #product-list and #dj-section started
+// out empty in host_menu.html — "Loading menu..." — and only got real
+// content once the browser had parsed the page, run htmx, opened /menu/ws,
+// and received its first push. That's several sequential round trips gating
+// every item's very first appearance, which is exactly the kind of fixed
+// per-load cost that doesn't move with catalog size and does show up as
+// "a second or two" over anything less than perfect network. Fix: render
+// both directly into the response below, same as the DB already renders
+// them for the websocket's first push — the two now use the identical
+// html, just reached without a client round trip. /menu/ws stays wired up
+// for what it's actually for: live updates after that first paint.
 func (h *TableHandlers) View(w http.ResponseWriter, r *http.Request) {
 	tableNum, _ := strconv.Atoi(chi.URLParam(r, "number"))
 
@@ -60,10 +75,24 @@ func (h *TableHandlers) View(w http.ResponseWriter, r *http.Request) {
 
 	if table.HostSessionID == sessionID {
 		settings, _ := db.GetSettings()
+
+		productListHTML, err := renderGuestProductListHTML()
+		if err != nil {
+			http.Error(w, "Failed to load menu", http.StatusInternalServerError)
+			return
+		}
+		djSectionHTML, err := renderDJSectionHTML()
+		if err != nil {
+			http.Error(w, "Failed to load menu", http.StatusInternalServerError)
+			return
+		}
+
 		tmpl := template.Must(template.ParseFiles("templates/host_menu.html"))
 		tmpl.Execute(w, map[string]interface{}{
-			"TableNumber": tableNum,
-			"VenueName":   settings.VenueName,
+			"TableNumber":     tableNum,
+			"VenueName":       settings.VenueName,
+			"ProductListHTML": template.HTML(productListHTML),
+			"DJSectionHTML":   template.HTML(djSectionHTML),
 		})
 	} else {
 		tmpl := template.Must(template.ParseFiles("templates/guest_menu.html"))

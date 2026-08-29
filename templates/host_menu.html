@@ -4,12 +4,30 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Table #{{ .TableNumber }} — {{ .VenueName }}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/htmx.org@1.9.10"></script>
-<script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/ws.js"></script>
+<script src="/static/vendor/htmx.min.js"></script>
+<script src="/static/vendor/htmx-ws.js"></script>
 <style>
+  /* Self-hosted, replacing a fonts.googleapis.com/fonts.gstatic.com stylesheet
+     — that CDN round-trip cost ~2.35s/235kB on every load, cache or no cache,
+     versus <1ms for everything else already served from /static. Each file
+     below is the single variable-font woff2 Google's own API was serving for
+     its "latin" subset (it covers every weight this page uses in one file —
+     see the @font-face's font-weight range), so this is a straight copy, not
+     a re-subset; only the vietnamese/cyrillic/greek subsets Google also
+     listed were dropped, since this page never renders those characters and
+     the browser was never fetching them either. */
+  @font-face{
+    font-family:'Archivo';font-style:normal;font-weight:400 800;font-display:swap;
+    src:url('/static/fonts/archivo-latin.woff2') format('woff2');
+  }
+  @font-face{
+    font-family:'Fraunces';font-style:normal;font-weight:500 700;font-display:swap;
+    src:url('/static/fonts/fraunces-latin.woff2') format('woff2');
+  }
+  @font-face{
+    font-family:'JetBrains Mono';font-style:normal;font-weight:500 700;font-display:swap;
+    src:url('/static/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  }
   /* EGO palette: warm taupe/charcoal + sand accent, olive kept as secondary */
   :root{
     --bg-base:#211D18;
@@ -353,9 +371,7 @@
   </div>
 
   <div hx-ext="ws" ws-connect="/menu/ws">
-    <div class="menu-grid" id="product-list">
-      <p class="empty-note">Loading menu...</p>
-    </div>
+    <div class="menu-grid" id="product-list">{{ .ProductListHTML }}</div>
   </div>
 
   <div id="cart-refresh-trigger" style="display:none;"></div>
@@ -373,14 +389,17 @@
     <div id="song-status"></div>
   </div>
 
-  <!-- populated live over /menu/ws (see templates/_dj_section.html) — a
-       venue with the DJ feature switched off never receives this fragment,
-       so the whole "Request a song" form is genuinely absent, not just
-       hidden. #song-status above stays outside this div and always present:
+  <!-- Server-rendered inline for first paint (see TableHandlers.View and
+       templates/_dj_section.html), then kept live over /menu/ws same as
+       #product-list above — a venue with the DJ feature switched off never
+       gets this fragment at all, so the whole "Request a song" form is
+       genuinely absent, not just hidden. #song-status above stays outside
+       this div and always present: it's targeted by the separate
+       /table/{number}/ws connection and must
        it's targeted by the separate /table/{number}/ws connection and must
        keep showing the outcome of a request a guest already sent even if
        the admin disables new requests afterward. -->
-  <div id="dj-section"></div>
+  <div id="dj-section">{{ .DJSectionHTML }}</div>
 
 </main>
 
@@ -522,10 +541,10 @@
       .then(() => form.remove());
   }
 
-  // Delegated from document.body, not bound to #product-list directly: the
-  // menu websocket's very first push OOB-replaces that whole div (outerHTML,
-  // a new DOM node), which would silently orphan a listener attached
-  // straight to it.
+  // Delegated from document.body, not bound to #product-list directly: any
+  // menu websocket push OOB-replaces that whole div (outerHTML, a new DOM
+  // node) — including the very next one after this server-rendered first
+  // paint — which would silently orphan a listener attached straight to it.
   document.body.addEventListener('click', (e) => {
     const card = e.target.closest('#product-list .item-card');
     if (!card) return;
@@ -641,13 +660,15 @@
   });
 
   // ---- DJ tip presets + custom amount. Delegated from document.body, not
-  // bound directly to the tip chips/input: #dj-section is empty at initial
-  // page load and only gets its content (including these elements) from an
-  // async OOB websocket push (see _dj_section.html) — binding directly here
-  // would find nothing yet and throw, which (being a plain top-level
-  // <script>, no try/catch) would silently abort every listener registered
-  // *after* this block too. Same class of bug already documented in
-  // TODO.md for #product-list; fixed the same way. ----
+  // bound directly to the tip chips/input: #dj-section is server-rendered
+  // for first paint now, but a DJ-toggle mid-service still replaces it
+  // wholesale via an OOB websocket push (see _dj_section.html), which would
+  // orphan a direct listener bound at page-load time — binding directly
+  // here would also throw on a venue with DJ requests off (no elements to
+  // find yet), which (being a plain top-level <script>, no try/catch) would
+  // silently abort every listener registered *after* this block too. Same
+  // class of bug already documented in TODO.md for #product-list; fixed
+  // the same way. ----
   function updateDjSubmitLabel(){
     const tipAmountInput = document.getElementById('tipAmountInput');
     const djSubmit = document.getElementById('djSubmit');
