@@ -1,10 +1,6 @@
 {{ range .Groups }}
 <div class="menu-group-super" data-cat="{{ .Name }}">{{ .Name }}</div>
-{{ range .SubGroups }}
-{{ if .Name }}
-<div class="menu-section-label" data-cat="{{ .Category }}">{{ .Name }}</div>
-{{ end }}
-<div class="menu-list" data-cat="{{ .Category }}">
+<div class="menu-list" data-cat="{{ .Name }}">
   {{ range .Products }}
   <div class="item-card" data-name="{{ .Name }}">
     <div class="item-top">
@@ -35,14 +31,17 @@
          second request — the ingredient data is already server-rendered. -->
     <div class="customize-source" hidden>
       {{ range .Ingredients }}
-      <button type="button" class="ing-chip {{ if eq .Kind "extra" }}ing-chip-extra{{ end }}" data-kind="{{ .Kind }}" data-ing="{{ .Name }}">{{ .Name }}</button>
+      <!-- data-price feeds the customize modal's live running total (see
+           host_menu.html) — only rendered as visible text here when it's
+           actually a paid extra; a free extra (0) or a removable tag (kind
+           never charges) shows just its name. -->
+      <button type="button" class="ing-chip {{ if eq .Kind "extra" }}ing-chip-extra{{ end }}" data-kind="{{ .Kind }}" data-ing="{{ .Name }}" data-price="{{ printf "%.2f" .Price }}">{{ .Name }}{{ if and (eq .Kind "extra") (gt .Price 0.0) }} <span class="ing-chip-price">+€{{ printf "%.2f" .Price }}</span>{{ end }}</button>
       {{ end }}
     </div>
     {{ end }}
   </div>
   {{ end }}
 </div>
-{{ end }}
 {{ else }}
 <p class="empty-note">No items on the menu right now.</p>
 {{ end }}

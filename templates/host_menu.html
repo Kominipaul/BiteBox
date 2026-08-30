@@ -99,12 +99,13 @@
   .cat-tab:hover:not(.active){border-color:var(--text-muted);}
 
   .menu-grid{display:flex;flex-direction:column;margin-bottom:30px;}
+  /* .menu-group-super is now the only heading level — categories are flat
+     (see models.Category), there's no more per-category Subcategory
+     sub-heading (.menu-section-label used to be that; removed along with
+     the nested SubGroups it labeled, see _guest_product_list.html). */
   .menu-group-super{font-family:var(--font-mono);font-size:10.5px;font-weight:700;color:var(--accent-strong);
     text-transform:uppercase;letter-spacing:.14em;margin:34px 2px 4px;}
   .menu-group-super:first-child{margin-top:0;}
-  .menu-section-label{font-family:var(--font-display);font-size:18px;font-weight:600;color:var(--text-primary);
-    margin:20px 2px 12px;display:flex;align-items:baseline;gap:10px;}
-  .menu-section-label::after{content:'';flex:1;border-bottom:1px solid var(--border);margin-bottom:5px;}
   .menu-list{display:flex;flex-direction:column;gap:12px;margin-bottom:8px;}
   .item-card{background:var(--bg-surface);border:1px solid var(--border-soft);border-radius:var(--radius-md);
     padding:15px 16px;position:relative;transition:border-color .15s ease;}
@@ -162,6 +163,7 @@
     text-decoration:line-through;}
   .ing-chip.ing-chip-extra{background:var(--info-soft);color:var(--info);border-color:rgba(107,140,174,.3);}
   .ing-chip.ing-chip-extra.included{background:var(--success-soft);color:var(--success);border-color:rgba(139,148,99,.35);}
+  .ing-chip-price{font-weight:800;opacity:.85;}
   .add-custom-btn{width:100%;background:var(--accent);color:var(--ink);border:none;font-weight:700;
     font-size:14.5px;padding:13px;border-radius:var(--radius-md);cursor:pointer;transition:filter .15s ease;
     font-family:var(--font-body);}
@@ -363,11 +365,9 @@
 
   <div class="cat-tabs">
     <button type="button" class="cat-tab active" data-cat="all">All</button>
-    <button type="button" class="cat-tab" data-cat="Food">Food</button>
-    <button type="button" class="cat-tab" data-cat="Coffee &amp; Soft">Coffee &amp; Soft</button>
-    <button type="button" class="cat-tab" data-cat="Beer &amp; Spirits">Beer &amp; Spirits</button>
-    <button type="button" class="cat-tab" data-cat="Cocktails">Cocktails</button>
-    <button type="button" class="cat-tab" data-cat="Wine">Wine</button>
+    {{ range .CategoryTabs }}
+    <button type="button" class="cat-tab" data-cat="{{ . }}">{{ . }}</button>
+    {{ end }}
   </div>
 
   <div hx-ext="ws" ws-connect="/menu/ws">
@@ -565,13 +565,29 @@
   const customizeOverlay = document.getElementById('customizeOverlay');
   const customizeChips = document.getElementById('customizeChips');
   let customizeProductId = null;
+  let customizeBasePrice = 0;
+
+  // Recomputes the header price as base + whichever extras are currently
+  // "included" — called on open and again on every chip tap, so ticking a
+  // priced extra on/off updates what the guest sees they'll pay before they
+  // ever hit "Add to order", not just after (the actual price charged is
+  // still always server-recomputed at add time, see validCustomization in
+  // cart.go — this is purely the modal's own live preview of that).
+  function updateCustomizePriceDisplay(){
+    let total = customizeBasePrice;
+    customizeChips.querySelectorAll('.ing-chip[data-kind="extra"].included').forEach(c => {
+      total += parseFloat(c.dataset.price) || 0;
+    });
+    document.getElementById('customizePrice').textContent = '€' + total.toFixed(2);
+  }
 
   function openCustomizeModal(card, productId, name, price){
     customizeProductId = productId;
+    customizeBasePrice = parseFloat(price) || 0;
     document.getElementById('customizeTitle').textContent = name;
-    document.getElementById('customizePrice').textContent = '€' + price;
     const source = card.querySelector('.customize-source');
     customizeChips.innerHTML = source ? source.innerHTML : '';
+    updateCustomizePriceDisplay();
     customizeOverlay.classList.add('show');
     document.body.style.overflow = 'hidden';
   }
@@ -588,6 +604,7 @@
     if (!chip) return;
     if (chip.dataset.kind === 'extra') chip.classList.toggle('included');
     else chip.classList.toggle('excluded');
+    updateCustomizePriceDisplay();
   });
   document.getElementById('addCustomBtn').addEventListener('click', () => {
     if (!customizeProductId) return;

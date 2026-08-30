@@ -16,17 +16,37 @@ import (
 // cart.
 const cartRefreshTrigger = `<div id="cart-refresh-trigger" hx-swap-oob="true" hx-get="/cart/summary" hx-trigger="load" hx-target="#cart-summary" hx-swap="innerHTML" style="display:none;"></div>`
 
-func renderGuestProductListHTML() ([]byte, error) {
+// guestMenuGroups fetches and groups the current guest-facing catalog —
+// shared by renderGuestProductListHTML (the /menu/ws payload) and
+// TableHandlers.View (which also needs the group names alone, for the
+// guest menu's category-tab bar, without re-rendering the HTML twice).
+func guestMenuGroups() ([]productCategoryGroup, error) {
 	products, err := db.GetProducts()
 	if err != nil {
 		return nil, err
 	}
+	categories, err := db.GetCategories()
+	if err != nil {
+		return nil, err
+	}
+	return groupProductsByCategory(buildProductViews(products), categoryNames(categories)), nil
+}
+
+func renderGuestProductListHTMLFromGroups(groups []productCategoryGroup) ([]byte, error) {
 	var buf bytes.Buffer
 	tmpl := template.Must(template.ParseFiles("templates/_guest_product_list.html"))
-	if err := tmpl.Execute(&buf, map[string]interface{}{"Groups": groupProductsForGuestMenu(buildProductViews(products))}); err != nil {
+	if err := tmpl.Execute(&buf, map[string]interface{}{"Groups": groups}); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+func renderGuestProductListHTML() ([]byte, error) {
+	groups, err := guestMenuGroups()
+	if err != nil {
+		return nil, err
+	}
+	return renderGuestProductListHTMLFromGroups(groups)
 }
 
 // BroadcastMenu pushes the current guest menu to every table connected over

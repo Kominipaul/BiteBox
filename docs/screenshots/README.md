@@ -1,19 +1,25 @@
 # Screenshots
 
-The `.svg` files in this folder are placeholders referenced from the root `README.md` — dashed-border cards that render cleanly on GitHub instead of broken image icons. Swap them out for real captures when you get a chance; keep the **same filenames** and the root README needs no changes.
+The `.png` files in this folder are real captures of the running app,
+referenced from the root `README.md`. They're not automatically kept in
+sync with the UI — when a screen changes enough to make one stale, recapture
+it and overwrite the same filename; the root README needs no changes as
+long as the filename stays put.
 
-## How to capture each one
+## How to recapture one
 
-1. Start the server: `go run ./cmd/server`
-2. Run `scripts/reset-db.sh` first if you want clean sample data (empty order history, full stock) in the shots.
+1. Reset to clean sample data: `scripts/reset-db.sh`
+2. Start the server: `go run ./cmd/server`
 
 | File | URL | Log in as | Notes |
 |---|---|---|---|
-| `guest-menu.svg` | `http://localhost:8080/table/1` | — (guest) | Capture at a phone width (~390px) in devtools device mode. |
-| `customize-panel.svg` | same, tap "Customize" on any item with ingredient tags | — (guest) | Add at least one removable and one extra ingredient to a product first in `/admin` so both colors show. |
-| `admin-dashboard.svg` | `http://localhost:8080/admin` | `admin` / `admin123` | Top of the page — revenue overview + trend chart + low-stock banner. |
-| `admin-menu.svg` | same page, scrolled to "Menu & inventory" | `admin` / `admin123` | Expand a product's ingredient tags so the green/blue chips are visible. |
-| `worker-dashboard.svg` | `http://localhost:8080/worker` | `manager` / `manager123` | The manager account sees the full unfiltered order feed. |
-| `dj-terminal.svg` | same URL | `dj` / `dj123` | Submit a song request from a guest tab first so there's something in the queue. |
+| `guest-menu.png` | `http://localhost:8080/table/1` | — (guest) | Capture at a phone width (~390px) in devtools device mode. |
+| `customize-panel.png` | same, tap "Customize" on any item with ingredient tags | — (guest) | Give the product at least one removable and one priced "extra" ingredient first in `/admin` so both chip colors show. |
+| `admin-dashboard.png` | `http://localhost:8080/admin` | `admin` / `admin123` | Top of the page — revenue overview + trend chart + low-stock banner. Place and mark a real order paid first so it isn't all zeroes. |
+| `admin-menu.png` | same page, scrolled to "Menu categories" / "Menu & inventory" | `admin` / `admin123` | Expand a product's ingredient tags so the green/blue chips are visible. |
+| `worker-dashboard.png` | `http://localhost:8080/worker` | `manager` / `manager123` | The manager account sees the full unfiltered order feed — place a guest order first so it isn't empty. |
+| `dj-terminal.png` | same URL | `dj` / `dj123` | Submit a song request from a guest tab first so there's something in the queue. |
 
-Export as PNG (1x is fine at these display widths) and replace the matching `.svg` filename — GitHub renders PNG/SVG the same way in Markdown, so you can literally overwrite `guest-menu.svg` with a PNG's bytes only if you also rename the extension in `README.md`, or just save as `guest-menu.png` and update the one `<img src>` line that points to it.
+Export as PNG (1x is fine at these display widths) and overwrite the
+matching filename — crop out empty space below the actual content first so
+the image doesn't carry a lot of dead background.

@@ -81,6 +81,7 @@ func main() {
 		r.Post("/admin/products/{id}/toggle", handlers.AdminToggleProduct)
 		r.Post("/admin/products/{id}/ingredients", handlers.AdminAddIngredient)
 		r.Delete("/admin/ingredients/{id}", handlers.AdminDeleteIngredient)
+		r.Post("/admin/categories", handlers.AdminCreateCategory)
 		r.Get("/admin/tables", handlers.AdminTableList)
 		r.Get("/admin/tables/ws", handlers.AdminTablesWS)
 		r.Post("/admin/tables", handlers.AdminCreateTable)

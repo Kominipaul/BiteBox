@@ -76,10 +76,24 @@ func (h *TableHandlers) View(w http.ResponseWriter, r *http.Request) {
 	if table.HostSessionID == sessionID {
 		settings, _ := db.GetSettings()
 
-		productListHTML, err := renderGuestProductListHTML()
+		groups, err := guestMenuGroups()
 		if err != nil {
 			http.Error(w, "Failed to load menu", http.StatusInternalServerError)
 			return
+		}
+		productListHTML, err := renderGuestProductListHTMLFromGroups(groups)
+		if err != nil {
+			http.Error(w, "Failed to load menu", http.StatusInternalServerError)
+			return
+		}
+		// CategoryTabs drives the guest menu's own category filter bar (see
+		// host_menu.html) — same "only categories with something in them,
+		// same order" rule as the admin dashboard's tab bar (AdminHome), and
+		// the same names groups here, so a tab always matches something
+		// actually rendered into #product-list above.
+		categoryTabs := make([]string, len(groups))
+		for i, g := range groups {
+			categoryTabs[i] = g.Name
 		}
 		djSectionHTML, err := renderDJSectionHTML()
 		if err != nil {
@@ -93,6 +107,7 @@ func (h *TableHandlers) View(w http.ResponseWriter, r *http.Request) {
 			"VenueName":       settings.VenueName,
 			"ProductListHTML": template.HTML(productListHTML),
 			"DJSectionHTML":   template.HTML(djSectionHTML),
+			"CategoryTabs":    categoryTabs,
 		})
 	} else {
 		tmpl := template.Must(template.ParseFiles("templates/guest_menu.html"))

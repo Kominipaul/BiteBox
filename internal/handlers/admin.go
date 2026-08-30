@@ -95,87 +95,49 @@ type productCategoryGroup struct {
 	Products []productView
 }
 
-// productSubGroup is one Subcategory's worth of products within a single
-// guestCategoryGroup — carries its parent Category too (not just its own
-// Name) so the guest template can tag it with the right data-cat for the
-// category-tab filter, without needing the outer range's context.
-type productSubGroup struct {
-	Category string
-	Name     string
-	Products []productView
-}
-
-type guestCategoryGroup struct {
-	Name      string
-	SubGroups []productSubGroup
-}
-
-// groupProductsForGuestMenu buckets products into the fixed category order
-// (same as groupProductsByCategory), then further splits each category into
-// Subcategory groups, preserving each subcategory's first-seen order (menu
-// items are seeded/added in a deliberate order — e.g. "Brunch" before "Main
-// Courses" — there's no separate canonical ordering to sort against).
-// Products with a blank Subcategory land in their own no-heading group
-// (rendered with no .menu-section-label — see _guest_product_list.html) —
-// deliberately not merged into a same-category subgroup that does have a
-// name, since that would misleadingly label them.
-func groupProductsForGuestMenu(products []productView) []guestCategoryGroup {
-	type bucket struct {
-		subOrder []string
-		subMap   map[string][]productView
+// groupProductsByCategory buckets products by category, in categoryNames'
+// order (the order admin-managed categories were created in — see
+// db.GetCategories), skipping any category with nothing in it. Any product
+// whose category isn't in categoryNames at all (legacy data, or a category
+// that's since been renamed/removed at the DB level — there's no delete/
+// rename UI yet, but nothing stops editing the table directly) is folded
+// into Other rather than silently dropped from the menu.
+//
+// Used for both the guest and admin menu views — they used to differ (the
+// guest view further split each category into Subcategory sub-groups), but
+// categories are flat now: what used to be a Subcategory (e.g. "Brunch",
+// "Red Wine") *is* the category, so there's nothing left to split.
+func groupProductsByCategory(products []productView, categoryNames []string) []productCategoryGroup {
+	valid := make(map[string]bool, len(categoryNames))
+	for _, c := range categoryNames {
+		valid[c] = true
 	}
-	byCategory := make(map[string]*bucket)
-	for _, p := range products {
-		cat := p.Category
-		if !models.IsValidCategory(cat) {
-			cat = models.CategoryOther
-		}
-		b, ok := byCategory[cat]
-		if !ok {
-			b = &bucket{subMap: make(map[string][]productView)}
-			byCategory[cat] = b
-		}
-		if _, seen := b.subMap[p.Subcategory]; !seen {
-			b.subOrder = append(b.subOrder, p.Subcategory)
-		}
-		b.subMap[p.Subcategory] = append(b.subMap[p.Subcategory], p)
-	}
-
-	groups := make([]guestCategoryGroup, 0, len(models.ProductCategories))
-	for _, cat := range models.ProductCategories {
-		b, ok := byCategory[cat]
-		if !ok {
-			continue
-		}
-		subs := make([]productSubGroup, 0, len(b.subOrder))
-		for _, sub := range b.subOrder {
-			subs = append(subs, productSubGroup{Category: cat, Name: sub, Products: b.subMap[sub]})
-		}
-		groups = append(groups, guestCategoryGroup{Name: cat, SubGroups: subs})
-	}
-	return groups
-}
-
-// groupProductsByCategory buckets products into the fixed category order
-// (Drinks, Food, Other), skipping empty buckets. Any product with an
-// unrecognized/blank category (e.g. from before the category column
-// existed) is folded into Other rather than dropped.
-func groupProductsByCategory(products []productView) []productCategoryGroup {
 	byCategory := make(map[string][]productView)
 	for _, p := range products {
 		cat := p.Category
-		if !models.IsValidCategory(cat) {
+		if !valid[cat] {
 			cat = models.CategoryOther
 		}
 		byCategory[cat] = append(byCategory[cat], p)
 	}
-	groups := make([]productCategoryGroup, 0, len(models.ProductCategories))
-	for _, cat := range models.ProductCategories {
+	groups := make([]productCategoryGroup, 0, len(categoryNames))
+	for _, cat := range categoryNames {
 		if items, ok := byCategory[cat]; ok {
 			groups = append(groups, productCategoryGroup{Name: cat, Products: items})
 		}
 	}
 	return groups
+}
+
+// categoryNames extracts just the names, in the same order, for callers
+// that only care about membership/ordering (grouping, the add-product
+// category dropdown) and not each category's department.
+func categoryNames(cats []models.Category) []string {
+	names := make([]string, len(cats))
+	for i, c := range cats {
+		names[i] = c.Name
+	}
+	return names
 }
 
 // findLowStockProduct returns the tightest available (reservation-aware),
@@ -232,6 +194,7 @@ func buildTrendBars(days []db.DayRevenue) []trendBarView {
 // of which has a dedicated fragment endpoint of its own).
 func AdminHome(w http.ResponseWriter, r *http.Request) {
 	products, _ := db.GetAllProducts() // only for the low-stock alert
+	categories, _ := db.GetCategories()
 	history, _ := db.GetOrderHistory(orderHistoryLimit)
 	trend, _ := db.GetRevenueTrend(7)
 	prevWeek, _ := db.GetRevenueForRange(13, 7)
@@ -244,7 +207,7 @@ func AdminHome(w http.ResponseWriter, r *http.Request) {
 	// product regardless of availability), so the counts shown on each tab
 	// always match what's actually there, and a category with nothing in it
 	// simply doesn't get a tab (same "skip empty buckets" rule as the list).
-	categoryTabs := groupProductsByCategory(productViews)
+	categoryTabs := groupProductsByCategory(productViews, categoryNames(categories))
 
 	var trendTotal float64
 	for _, d := range trend {
@@ -258,7 +221,7 @@ func AdminHome(w http.ResponseWriter, r *http.Request) {
 
 	tmpl := template.Must(template.ParseFiles("templates/admin_dashboard.html"))
 	tmpl.Execute(w, map[string]interface{}{
-		"Categories":        models.ProductCategories,
+		"Categories":        categories,
 		"CategoryTabs":      categoryTabs,
 		"History":           history,
 		"Trend":             buildTrendBars(trend),
@@ -328,9 +291,13 @@ func renderAdminProductListHTML() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	categories, err := db.GetCategories()
+	if err != nil {
+		return nil, err
+	}
 	var buf bytes.Buffer
 	tmpl := template.Must(template.ParseFiles("templates/_product_list.html"))
-	if err := tmpl.Execute(&buf, map[string]interface{}{"MenuGroups": groupProductsByCategory(buildProductViews(products))}); err != nil {
+	if err := tmpl.Execute(&buf, map[string]interface{}{"MenuGroups": groupProductsByCategory(buildProductViews(products), categoryNames(categories))}); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -404,12 +371,15 @@ func parseStock(r *http.Request) (int, bool) {
 	return stock, true
 }
 
-// parseCategory reads the "category" form field, falling back to "Other"
-// for anything blank or unrecognized rather than rejecting the request —
-// this is a display grouping, not a validated business rule.
+// parseCategory reads the "category" form field, falling back to Other for
+// anything blank or that isn't an existing category (see db.CategoryExists)
+// rather than rejecting the request — this is a display grouping, not a
+// validated business rule, and the < 1% case this actually hits is a
+// tampered request, not a normal admin picking from the real <select> this
+// form renders.
 func parseCategory(r *http.Request) string {
 	cat := r.FormValue("category")
-	if !models.IsValidCategory(cat) {
+	if ok, err := db.CategoryExists(cat); err != nil || !ok {
 		return models.CategoryOther
 	}
 	return cat
@@ -423,9 +393,8 @@ func AdminCreateProduct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid product name, price, or stock", http.StatusBadRequest)
 		return
 	}
-	subcategory := strings.TrimSpace(r.FormValue("subcategory"))
 	description := strings.TrimSpace(r.FormValue("description"))
-	if _, err := db.CreateProduct(name, price, stock, parseCategory(r), subcategory, description); err != nil {
+	if _, err := db.CreateProduct(name, price, stock, parseCategory(r), description); err != nil {
 		http.Error(w, "Failed to create product", http.StatusInternalServerError)
 		return
 	}
@@ -446,9 +415,8 @@ func AdminUpdateProduct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid product name, price, or stock", http.StatusBadRequest)
 		return
 	}
-	subcategory := strings.TrimSpace(r.FormValue("subcategory"))
 	description := strings.TrimSpace(r.FormValue("description"))
-	if err := db.UpdateProduct(id, name, price, stock, parseCategory(r), subcategory, description); err != nil {
+	if err := db.UpdateProduct(id, name, price, stock, parseCategory(r), description); err != nil {
 		http.Error(w, "Failed to update product", http.StatusInternalServerError)
 		return
 	}
@@ -475,11 +443,51 @@ func AdminToggleProduct(w http.ResponseWriter, r *http.Request) {
 	BroadcastAllMenus()
 }
 
+// isValidCategoryDepartment is deliberately narrower than
+// models.IsValidDepartment — a category only ever routes to whichever of
+// the two departments actually run a product order feed (see
+// db.CategoryNamesForDepartment); waiter/superworker/DJ aren't meaningful
+// answers here.
+func isValidCategoryDepartment(d string) bool {
+	return d == models.DepartmentKitchen || d == models.DepartmentBar
+}
+
+// AdminCreateCategory adds a new admin-named menu category. Responds with
+// HX-Refresh rather than re-rendering a fragment: the new category needs to
+// show up in two places that are otherwise only ever rendered once, at page
+// load (the add-product <select> and the category-tab filter bar — see
+// AdminHome's own comment on why tabs aren't live-pushed), so a full reload
+// is simpler and more correct here than wiring up two more OOB targets for
+// what's an infrequent admin action.
+func AdminCreateCategory(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.FormValue("name"))
+	department := r.FormValue("department")
+	if name == "" {
+		http.Error(w, "Category name required", http.StatusBadRequest)
+		return
+	}
+	if !isValidCategoryDepartment(department) {
+		department = models.DepartmentBar
+	}
+	if exists, err := db.CategoryExists(name); err != nil {
+		http.Error(w, "Failed to check category", http.StatusInternalServerError)
+		return
+	} else if exists {
+		http.Error(w, "A category with that name already exists", http.StatusConflict)
+		return
+	}
+	if _, err := db.CreateCategory(name, department); err != nil {
+		http.Error(w, "Failed to create category", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("HX-Refresh", "true")
+}
+
 // AdminAddIngredient tags a product with an ingredient — "removable" ones
 // (the default kind) are what the guest customize panel lets someone
-// exclude; "extra" ones are stored for admin management but not yet
-// surfaced anywhere on the guest side (no add-on/pricing flow exists for
-// them yet).
+// exclude, always free; "extra" ones are optional add-ons a guest can opt
+// into, at the given price (see templates/_product_list.html's ingredient-
+// add-form, which only shows the price field once "Extra" is selected).
 func AdminAddIngredient(w http.ResponseWriter, r *http.Request) {
 	productID, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
@@ -495,7 +503,20 @@ func AdminAddIngredient(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Ingredient name required", http.StatusBadRequest)
 		return
 	}
-	if _, err := db.CreateIngredient(productID, name, kind); err != nil {
+	// Price only ever applies to an "extra" — a removable tag is always
+	// free, whatever a client happened to send for it.
+	price := 0.0
+	if kind == models.IngredientExtra {
+		if raw := r.FormValue("price"); raw != "" {
+			p, err := strconv.ParseFloat(raw, 64)
+			if err != nil || p < 0 {
+				http.Error(w, "Invalid price", http.StatusBadRequest)
+				return
+			}
+			price = p
+		}
+	}
+	if _, err := db.CreateIngredient(productID, name, kind, price); err != nil {
 		http.Error(w, "Failed to add ingredient", http.StatusInternalServerError)
 		return
 	}

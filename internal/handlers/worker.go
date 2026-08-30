@@ -91,7 +91,11 @@ func renderOrderFeedHTML(bucket string) ([]byte, error) {
 	var err error
 	switch bucket {
 	case models.DepartmentBar, models.DepartmentKitchen:
-		orders, err = db.GetActiveOrdersByCategories(models.DepartmentCategories(bucket))
+		var cats []string
+		cats, err = db.CategoryNamesForDepartment(bucket)
+		if err == nil {
+			orders, err = db.GetActiveOrdersByCategories(cats)
+		}
 	case models.DepartmentWaiter:
 		orders, err = db.GetReadyOrders()
 	default: // superworker (and admin, mapped to superworker above)

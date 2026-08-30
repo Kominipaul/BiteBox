@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"html/template"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -61,6 +62,12 @@ func jsonArray(items []string) string {
 // it doesn't count toward what the guest owes), and the raw total quantity
 // across every line (used for the cart-bar badge, unlike Total this counts
 // unavailable lines too — it's "what's physically in your cart").
+//
+// Price (base and per-extra) is always re-derived from the current catalog
+// here, never trusted from the add-time snapshot stored on the item — same
+// reasoning as the base product price already got: an admin can change an
+// extra's price, or delete it outright, after a guest already added it to
+// their cart, and the cart should reflect that the moment it re-renders.
 func resolveCart(c models.Cart) (views []cartItemView, total float64, hasUnavailable bool, totalQty int) {
 	for _, item := range c.Items {
 		v := cartItemView{OrderItem: item, ExcludedJSON: jsonArray(item.Excluded), ExtrasJSON: jsonArray(item.Extras)}
@@ -70,8 +77,15 @@ func resolveCart(c models.Cart) (views []cartItemView, total float64, hasUnavail
 			v.Unavailable = true
 			hasUnavailable = true
 		} else {
+			extrasPrice := 0.0
+			ingredients, _ := db.GetIngredientsByProductIDs([]int{item.ProductID})
+			for _, ing := range ingredients[item.ProductID] {
+				if ing.Kind == models.IngredientExtra && slices.Contains(item.Extras, ing.Name) {
+					extrasPrice += ing.Price
+				}
+			}
 			v.Name = product.Name
-			v.Price = product.Price
+			v.Price = product.Price + extrasPrice
 			total += v.Price * float64(v.Quantity)
 		}
 		v.LineTotal = v.Price * float64(v.Quantity)
@@ -107,20 +121,22 @@ func (h *CartHandlers) Summary(w http.ResponseWriter, r *http.Request) {
 
 // validCustomization filters raw excluded/extra ingredient names down to
 // only the ones that are actually that kind of ingredient on this product —
-// never trust client-supplied ingredient names outright.
-func validCustomization(productID int, rawExcluded, rawExtras []string) (excluded, extras []string) {
+// never trust client-supplied ingredient names outright — and sums the
+// price of whichever extras survive that filter, off the catalog's current
+// price for each (never a client-supplied number).
+func validCustomization(productID int, rawExcluded, rawExtras []string) (excluded, extras []string, extrasPrice float64) {
 	if len(rawExcluded) == 0 && len(rawExtras) == 0 {
-		return nil, nil
+		return nil, nil, 0
 	}
 	byProduct, err := db.GetIngredientsByProductIDs([]int{productID})
 	if err != nil {
-		return nil, nil
+		return nil, nil, 0
 	}
 	removable := make(map[string]bool)
-	extra := make(map[string]bool)
+	extraPrice := make(map[string]float64)
 	for _, ing := range byProduct[productID] {
 		if ing.Kind == models.IngredientExtra {
-			extra[ing.Name] = true
+			extraPrice[ing.Name] = ing.Price
 		} else {
 			removable[ing.Name] = true
 		}
@@ -131,11 +147,12 @@ func validCustomization(productID int, rawExcluded, rawExtras []string) (exclude
 		}
 	}
 	for _, name := range rawExtras {
-		if extra[name] {
+		if price, ok := extraPrice[name]; ok {
 			extras = append(extras, name)
+			extrasPrice += price
 		}
 	}
-	return excluded, extras
+	return excluded, extras, extrasPrice
 }
 
 func (h *CartHandlers) Add(w http.ResponseWriter, r *http.Request) {
@@ -168,8 +185,8 @@ func (h *CartHandlers) Add(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	excluded, extras := validCustomization(product.ID, r.Form["excluded"], r.Form["extras"])
-	updated := h.Cart.Add(sessionID, product.ID, product.Name, product.Price, excluded, extras)
+	excluded, extras, extrasPrice := validCustomization(product.ID, r.Form["excluded"], r.Form["extras"])
+	updated := h.Cart.Add(sessionID, product.ID, product.Name, product.Price+extrasPrice, excluded, extras)
 	renderCartSummary(w, updated)
 	BroadcastAllMenus()
 }

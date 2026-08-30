@@ -8,11 +8,9 @@
       <input type="hidden" name="name" value="{{ .Name }}">
       <input type="hidden" name="price" value="{{ printf "%.2f" .Price }}">
       <input type="hidden" name="category" value="{{ .Category }}">
-      <input type="hidden" name="subcategory" value="{{ .Subcategory }}">
       <input type="hidden" name="description" value="{{ .Description }}">
       <div class="product-main">
         <span class="product-name">{{ .Name }}</span>
-        {{ if .Subcategory }}<span style="font-size:11px;color:var(--text-muted);">· {{ .Subcategory }}</span>{{ end }}
         <span class="product-price">€{{ printf "%.2f" .Price }}</span>
         {{ if gt .Reserved 0 }}
         <span style="font-size:11px;color:var(--text-muted);">{{ .Reserved }} in {{ if eq .Reserved 1 }}a cart{{ else }}carts{{ end }} right now</span>
@@ -22,14 +20,20 @@
         {{ end }}
       </div>
       <div class="stock-stepper">
-        {{ if eq .Stock -1 }}
-        <input type="hidden" name="stock" value="-1">
-        <span class="unlimited-tag">∞ stock</span>
-        {{ else }}
-        <button type="button" class="stepper-btn" data-action="dec">–</button>
-        <input class="stepper-input" type="number" name="stock" value="{{ .Stock }}" min="0" title="Raw inventory count (not counting cart reservations)">
-        <button type="button" class="stepper-btn" data-action="inc">+</button>
-        {{ end }}
+        <!-- Always renders the number input + steppers, just disabled while
+             the ∞ checkbox is on: a disabled input isn't submitted with the
+             form, so Save sends no "stock" field at all, and parseStock
+             (admin.go) already treats that as -1 — the same "blank means
+             unlimited" convention the add-product form uses. This is what
+             lets an admin flip an unlimited item back to a tracked count,
+             which the old unlimited-only markup below had no control for
+             at all. -->
+        <label class="checkbox-label stock-unlimited-toggle" title="Untracked stock — always shown as available">
+          <input type="checkbox" class="unlimited-toggle" {{ if eq .Stock -1 }}checked{{ end }}> ∞
+        </label>
+        <button type="button" class="stepper-btn" data-action="dec" {{ if eq .Stock -1 }}disabled{{ end }}>–</button>
+        <input class="stepper-input" type="number" name="stock" value="{{ if eq .Stock -1 }}0{{ else }}{{ .Stock }}{{ end }}" min="0" {{ if eq .Stock -1 }}disabled{{ end }} title="Raw inventory count (not counting cart reservations)">
+        <button type="button" class="stepper-btn" data-action="inc" {{ if eq .Stock -1 }}disabled{{ end }}>+</button>
       </div>
       {{ if not .IsAvailable }}
       <span class="status-pill status-hidden">Hidden</span>
@@ -83,6 +87,7 @@
             {{ range .ExtraIngredients }}
             <span class="ingredient-tag is-extra">
               {{ .Name }}
+              {{ if gt .Price 0.0 }}<span class="ingredient-tag-price">+€{{ printf "%.2f" .Price }}</span>{{ else }}<span class="ingredient-tag-price ingredient-tag-price-free">free</span>{{ end }}
               <button type="button" class="ingredient-tag-remove" hx-delete="/admin/ingredients/{{ .ID }}" hx-target="#menuList" title="Remove {{ .Name }}" aria-label="Remove {{ .Name }}">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
               </button>
@@ -96,10 +101,14 @@
         {{ end }}
         <form class="ingredient-add-form" hx-post="/admin/products/{{ .ID }}/ingredients" hx-target="#menuList" hx-on::after-request="if(event.detail.successful) this.reset()">
           <input class="field-input" name="name" placeholder="e.g. Onion, Extra cheese" required>
-          <select class="field-select" name="kind">
+          <select class="field-select ingredient-kind-select" name="kind">
             <option value="removable">Removable — on by default</option>
             <option value="extra">Extra — optional add-on</option>
           </select>
+          <!-- Only meaningful for "Extra" — hidden until that's picked (see
+               the delegated change listener in admin_dashboard.html). Blank
+               submits as 0, i.e. a free add-on, not "unset". -->
+          <input class="field-input ingredient-price-input" name="price" type="number" min="0" step="0.01" placeholder="Price (€), blank = free" style="display:none;width:170px;">
           <button type="submit" class="btn btn-ghost btn-sm">+ Add ingredient</button>
         </form>
       </div>

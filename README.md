@@ -5,9 +5,9 @@
 BiteBox turns any restaurant or bar table into a live ordering hub: a guest scans a QR code, claims the table as its "host," orders off a menu that updates in real time, customizes items ingredient-by-ingredient, and even sends a paid song request to the DJ — while staff across five roles work the exact same orders live, with zero page refreshes anywhere in the app.
 
 <p align="center">
-  <img src="docs/screenshots/guest-menu.svg" alt="Guest ordering screen on a phone" width="260">
+  <img src="docs/screenshots/guest-menu.png" alt="Guest ordering screen on a phone" width="260">
   &nbsp;&nbsp;
-  <img src="docs/screenshots/admin-dashboard.svg" alt="Admin dashboard overview" width="520">
+  <img src="docs/screenshots/admin-dashboard.png" alt="Admin dashboard overview" width="520">
 </p>
 
 <p align="center">
@@ -46,10 +46,10 @@ Most small-venue ordering software is either a heavyweight cloud POS with a mont
 ### For guests
 
 - **QR table sessions with single-host locking.** The first phone to open `/table/{n}` becomes that table's host and the only device allowed to order; every other phone that scans the same code gets a read-only "table is occupied" view. No double-ordering, no race between two people's phones.
-- **Live menu, grouped by category.** Drinks / Food / Other tabs, with price, availability, and remaining stock all pushed live — an admin marking an item out of stock removes it from every open guest's screen instantly, no refresh.
-- **Ingredient customization that actually reads clearly.** One panel per item shows both what can be **removed** (green by default, tap to exclude) and what can be **added extra** (blue by default, tap to include, turns green) — green always means "this is on my order," for either kind.
+- **Live menu, grouped by category.** Categories are admin-defined, not a fixed list — a venue names its own (Brunch, Cocktails, Red Wine, whatever its actual menu looks like) and each becomes a filter tab, with price, availability, and remaining stock all pushed live. An admin marking an item out of stock removes it from every open guest's screen instantly, no refresh.
+- **Ingredient customization that actually reads clearly.** One panel per item shows both what can be **removed** (green by default, tap to exclude, always free) and what can be **added extra** (blue by default, tap to include, turns green) — extras can carry a real price, shown right on the chip, and green always means "this is on my order," for either kind.
 
-  <p align="center"><img src="docs/screenshots/customize-panel.svg" alt="Ingredient customization panel, green and blue chips" width="260"></p>
+  <p align="center"><img src="docs/screenshots/customize-panel.png" alt="Ingredient customization panel, green and blue chips" width="260"></p>
 
 - **Real stock, honestly reserved.** An item sitting in someone else's cart is unavailable to you the moment they add it — not just at checkout — so two tables can never both "win" the last plate.
 - **Cash or card at checkout**, an optional note to the kitchen/bar, and a running "Your orders" history for the whole table visit.
@@ -60,21 +60,21 @@ Most small-venue ordering software is either a heavyweight cloud POS with a mont
 
 - **One dashboard, five roles.** The exact same worker dashboard template adapts to whoever's logged in: a **waiter** only sees orders the kitchen or bar have marked *ready* (the pop-up-to-deliver handoff); **bar** and **kitchen** each see only their own category's pending/preparing orders; a **manager** (superworker) sees everything, end to end; a **DJ** sees only the request terminal, no order feed at all.
 
-  <p align="center"><img src="docs/screenshots/worker-dashboard.svg" alt="Worker dashboard live order feed" width="520"></p>
+  <p align="center"><img src="docs/screenshots/worker-dashboard.png" alt="Worker dashboard live order feed" width="520"></p>
 
 - **One tap through the order lifecycle** — pending → preparing → ready → served — with the next action always labeled for what it actually does ("Start preparing," "Mark ready," "Mark served"), plus a separate cancel path that restores reserved stock.
 - **Mark paid / unpaid with a real undo**, not a client-side illusion — "Undo" on the toast is a genuine second request, so every other connected screen agrees with what actually happened.
 - **DJ terminal** — accept or reject a request with one tap; the guest's table sees the decision the instant it happens.
 
-  <p align="center"><img src="docs/screenshots/dj-terminal.svg" alt="DJ request terminal" width="520"></p>
+  <p align="center"><img src="docs/screenshots/dj-terminal.png" alt="DJ request terminal" width="520"></p>
 
 ### For admins
 
 - **Revenue overview with a real trend chart** — today / this week / this month, each updating live as orders come in and get paid, plus a week-over-week delta.
 - **Low-stock alerts** that account for what's currently sitting in guests' carts, not just the raw inventory number.
-- **Menu &amp; inventory management** — create/edit/hide products, set tracked or unlimited stock, and tag ingredients as removable or extra per item, all reflected on the live guest menu within moments.
+- **Menu &amp; inventory management** — create your own categories (each routed to kitchen or bar), create/edit/hide products, set tracked or unlimited stock, and tag ingredients as removable or priced extra per item, all reflected on the live guest menu within moments.
 
-  <p align="center"><img src="docs/screenshots/admin-menu.svg" alt="Admin menu and inventory management with ingredient tags" width="520"></p>
+  <p align="center"><img src="docs/screenshots/admin-menu.png" alt="Admin menu and inventory management with ingredient tags" width="520"></p>
 
 - **Table configuration** — add, remove, or force-release a table (e.g. a guest walked off without hitting "Leave"), with the table grid updating live for every admin watching.
 - **Staff &amp; access control** — create an account for any role/department in one form, deactivate one and watch their open session get force-disconnected within seconds (not just blocked on next login), see who's "Active now" vs. offline.
@@ -130,7 +130,7 @@ You should see:
 🚀 BiteBox Go server running on http://localhost:8080/table/1
 ```
 
-On first launch, BiteBox creates `bitebox.db`, seeds a small sample menu (Drinks + Food), and creates one staff account per department — see [Seed accounts](#seed-accounts) below.
+On first launch, BiteBox creates `bitebox.db`, seeds a sample menu across a handful of admin-managed categories, and creates one staff account per department — see [Seed accounts](#seed-accounts) below.
 
 | What | URL |
 |---|---|
@@ -166,8 +166,8 @@ One working login per department, so every role is testable out of the box:
 | `admin` | `admin123` | Admin | — | Everything — bypasses every department restriction. |
 | `manager` | `manager123` | Worker | Superworker | Every order, every status — the "sees everything" worker account. |
 | `waiter` | `waiter123` | Worker | Waiter | Only orders the kitchen/bar have marked **ready**. |
-| `bar` | `bar123` | Worker | Bar | Pending/preparing **Drinks** orders only. |
-| `kitchen` | `kitchen123` | Worker | Kitchen | Pending/preparing **Food** orders only. |
+| `bar` | `bar123` | Worker | Bar | Pending/preparing orders for every category tagged **Bar**. |
+| `kitchen` | `kitchen123` | Worker | Kitchen | Pending/preparing orders for every category tagged **Kitchen**. |
 | `dj` | `dj123` | Worker | DJ | The song-request terminal only — no order feed. |
 
 > **Change these before any real deployment.** They're intentionally simple, fixed, well-known credentials meant for local development and demos — see [Security notes](#security-notes).
@@ -176,9 +176,9 @@ One working login per department, so every role is testable out of the box:
 
 ```mermaid
 flowchart TB
-  P["Order placed — pending"] --> W1{"category"}
-  W1 -->|Drinks| BAR["Bar dept: prepares"]
-  W1 -->|Food| KIT["Kitchen dept: prepares"]
+  P["Order placed — pending"] --> W1{"item's category,\nadmin-tagged kitchen or bar"}
+  W1 -->|bar-tagged| BAR["Bar dept: prepares"]
+  W1 -->|kitchen-tagged| KIT["Kitchen dept: prepares"]
   BAR -->|marks ready| RD["ready"]
   KIT -->|marks ready| RD
   RD --> WAI["Waiter dept: only sees ready orders"]
@@ -186,7 +186,7 @@ flowchart TB
   SUP["Manager / Admin: sees every stage, every category"]
 ```
 
-Admin accounts bypass department checks entirely — they're not "in" a department, they can reach every worker view. A worker account's department is a genuine access boundary enforced on the server (`RequireDepartment` middleware), not just a UI filter.
+Admin accounts bypass department checks entirely — they're not "in" a department, they can reach every worker view. A worker account's department is a genuine access boundary enforced on the server (`RequireDepartment` middleware), not just a UI filter. Which department a category routes to (kitchen or bar) is itself admin-configurable per category, not hardcoded — see [Menu &amp; inventory management](#for-admins) above.
 
 ## Project structure
 
@@ -204,7 +204,7 @@ bitebox/
 │   ├── wshub/                 # tiny generic topic pub/sub hub for live pushes
 │   ├── db/                    # every SQL statement — one file per entity
 │   │   ├── db.go              # connection, schema, migrations, users/sessions
-│   │   ├── products.go · ingredients.go · tables.go
+│   │   ├── categories.go · products.go · ingredients.go · tables.go
 │   │   ├── orders.go · songs.go · settings.go
 │   └── handlers/               # every HTTP handler + WebSocket endpoint
 │       ├── middleware.go       # RequireRole / RequireDepartment
@@ -226,8 +226,9 @@ bitebox/
 - [x] **Admin dashboard** — menu/inventory management, table configuration, staff management, revenue analytics
 - [x] **Worker dashboard** — live order feed over WebSockets, full order lifecycle, DJ request terminal
 - [x] **Live updates everywhere** — WebSocket push replaced every polling loop in the app
-- [x] **Ingredient customization** — removable + extra ingredients, admin-managed, guest-facing
+- [x] **Ingredient customization** — removable + priced-extra ingredients, admin-managed, guest-facing
 - [x] **Order cancellation &amp; refund requests** — guest self-service and staff-side
+- [x] **Admin-managed menu categories** — a venue names its own categories and routes each to kitchen or bar, replacing a fixed Food/Drinks list
 - [ ] **Payments** — no real payment gateway yet; "card" at checkout is a demo that marks the order paid instantly. Stripe/Viva Wallet-style integration for Apple Pay/Google Pay/card is still open.
 - [ ] **Automated tests** — none yet, anywhere in the codebase.
 

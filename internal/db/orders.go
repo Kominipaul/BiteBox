@@ -265,11 +265,12 @@ func GetReadyOrders() ([]models.Order, error) {
 // GetActiveOrdersByCategories returns orders needing a department-filtered
 // (bar/kitchen) bucket's attention — pending/preparing only, not ready (see
 // categoryExcludedStatuses) — that contain at least one item currently in
-// any of the given product categories (bar now spans several: Coffee &
-// Soft, Beer & Spirits, Cocktails, Wine, ... — see
-// models.DepartmentCategories). order_items only stores the immutable name/
-// price snapshot, not category, so this reflects the item's *current*
-// classification, not what it was at order time. Each matching order is
+// any of the given product categories (an admin can add as many categories
+// as the menu needs, each tagged kitchen or bar — see
+// CategoryNamesForDepartment, which is what builds this list). order_items
+// only stores the immutable name/price snapshot, not category, so this
+// reflects the item's *current* classification, not what it was at order
+// time. Each matching order is
 // returned whole (every item, not just the matching ones), so a
 // department-scoped worker still has full context on the order they're
 // acting on. An empty/nil categories list matches nothing (an empty result,

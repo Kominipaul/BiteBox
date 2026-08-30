@@ -38,8 +38,14 @@
   }
   *{box-sizing:border-box;}
   html{-webkit-text-size-adjust:100%;}
+  /* Belt-and-suspenders: the actual overflow sources (inline-style grid
+     forms, unshrinkable flex children, an unwrapped currency string) are
+     fixed at the source below, but a phone should never be able to
+     side-scroll the whole dashboard because of whatever's fixed next —
+     nothing on this page needs horizontal scroll, so cut it off here too. */
   body{
     margin:0;
+    overflow-x:hidden;
     background:
       radial-gradient(1200px 500px at 15% -10%, rgba(217,164,65,.06), transparent 60%),
       var(--bg-base);
@@ -135,7 +141,7 @@
     background:var(--bg-surface);border:1px solid var(--border-soft);
     border-radius:var(--radius-lg);padding:18px 20px;
     display:flex;flex-direction:column;gap:9px;
-    position:relative;overflow:hidden;
+    position:relative;overflow:hidden;min-width:0;
   }
   .kpi-card.is-primary{border-color:rgba(217,164,65,.3);}
   .kpi-top{display:flex;align-items:center;justify-content:space-between;}
@@ -146,8 +152,14 @@
   }
   .kpi-label{font-size:12px;font-weight:700;color:var(--text-secondary);
     text-transform:uppercase;letter-spacing:.05em;}
-  .kpi-value{font-family:var(--font-display);font-size:27px;font-weight:600;
-    letter-spacing:-.01em;font-variant-numeric:tabular-nums;}
+  /* clamp() shrinks this with the viewport instead of holding 27px all the
+     way down to phone width — .kpi-card clips overflow, so a fixed size
+     here meant a busy night's revenue (e.g. "€1,234.56") got its trailing
+     digits silently cut off rather than just looking cramped. overflow-wrap
+     is a last-resort net for whatever's still too wide even after that: it
+     wraps onto a second line inside the card instead of getting clipped. */
+  .kpi-value{font-family:var(--font-display);font-size:clamp(18px,5vw,27px);font-weight:600;
+    letter-spacing:-.01em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
   .kpi-caption{font-size:12px;color:var(--text-muted);}
 
   /* ---------- Alert banner ---------- */
@@ -162,7 +174,7 @@
   .alert strong{font-weight:800;}
 
   /* ---------- Period tabs + export ---------- */
-  .heading-controls{display:flex;align-items:center;gap:12px;}
+  .heading-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
   .period-tabs{display:flex;background:var(--bg-surface);border:1px solid var(--border);
     border-radius:99px;padding:3px;}
   .period-tab{background:none;border:none;color:var(--text-secondary);font-weight:700;
@@ -183,13 +195,19 @@
   .trend-delta{font-size:12px;font-weight:700;}
   .trend-delta.is-up{color:var(--success);}
   .trend-delta.is-down{color:var(--danger);}
-  .trend-bars{flex:1;display:flex;align-items:flex-end;gap:10px;height:84px;}
-  .trend-bar{flex:1;display:flex;flex-direction:column;align-items:center;
+  /* min-width:0 overrides a flex item's default min-width:auto, which is
+     content's own min size (here, 7 bars' worth of label text) — without
+     it a flex child can't shrink past that no matter how small its
+     container gets, which is what was pushing this row wider than the
+     screen on a narrow phone. */
+  .trend-bars{flex:1;min-width:0;display:flex;align-items:flex-end;gap:10px;height:84px;}
+  .trend-bar{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;
     justify-content:flex-end;height:100%;gap:6px;}
   .trend-bar-fill{width:100%;max-width:30px;border-radius:5px 5px 2px 2px;
     background:var(--border);transition:background .15s;}
   .trend-bar.is-today .trend-bar-fill{background:var(--accent);}
-  .trend-bar-label{font-size:10.5px;color:var(--text-muted);font-weight:700;}
+  .trend-bar-label{font-size:10.5px;color:var(--text-muted);font-weight:700;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;}
 
   /* ---------- Staff panel ---------- */
   .staff-row{
@@ -209,6 +227,20 @@
   .role-badge{font-size:11px;font-weight:800;padding:4px 10px;border-radius:99px;white-space:nowrap;}
   .role-admin{background:var(--info-soft);color:var(--info);}
   .role-worker{background:var(--success-soft);color:var(--success);}
+
+  /* ---------- Menu categories ---------- */
+  .category-pills{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;}
+  .category-pill{
+    display:inline-flex;align-items:center;gap:8px;
+    font-size:12.5px;font-weight:700;padding:6px 6px 6px 13px;border-radius:99px;
+    background:var(--bg-raised);border:1px solid var(--border);color:var(--text-primary);
+  }
+  .category-pill-dept{
+    font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;
+    padding:3px 8px;border-radius:99px;
+  }
+  .category-pill-kitchen .category-pill-dept{background:var(--accent-soft);color:var(--accent-strong);}
+  .category-pill-bar .category-pill-dept{background:var(--info-soft);color:var(--info);}
   .staff-status{font-size:12px;color:var(--text-muted);white-space:nowrap;}
 
   /* ---------- Panels ---------- */
@@ -233,13 +265,24 @@
   .search-wrap input::placeholder{color:var(--text-muted);}
 
   /* ---------- Add product form ---------- */
+  /* .add-form is the shared shell; each usage picks its own column count
+     via a modifier below instead of an inline style="grid-template-columns"
+     — every call site used to set that inline, which silently defeated the
+     @media overrides further down (inline style always wins over a
+     stylesheet rule, media query or not), so none of the three forms using
+     this class ever actually collapsed to fewer columns on a narrow phone —
+     they just rendered their full desktop column count squeezed into
+     however little width was left, which is what was overflowing. */
   .add-form{
     display:grid;
-    grid-template-columns:1.6fr .8fr .9fr auto .8fr auto;
     gap:10px;align-items:center;
     background:var(--bg-raised);border:1px solid var(--border);
     border-radius:var(--radius-md);padding:14px;margin-bottom:22px;
   }
+  .add-form-venue{grid-template-columns:1fr auto;}
+  .add-form-staff{grid-template-columns:1fr 1fr 1fr auto;}
+  .add-form-category{grid-template-columns:1fr auto auto;}
+  .add-form-product{grid-template-columns:1.4fr .7fr .9fr 1.6fr auto .8fr auto;}
   .field-input, .field-select{
     background:var(--bg-surface);border:1px solid var(--border);
     color:var(--text-primary);border-radius:var(--radius-sm);
@@ -290,6 +333,8 @@
     font-family:var(--font-display);font-size:13px;font-weight:600;
   }
   .unlimited-tag{font-size:12px;color:var(--info);font-weight:700;padding:0 6px;}
+  .stock-unlimited-toggle{padding:0 8px 0 10px;border-right:1px solid var(--border);font-size:11.5px;}
+  .stock-unlimited-toggle input{width:13px;height:13px;}
 
   .status-pill{
     font-size:11.5px;font-weight:800;letter-spacing:.02em;
@@ -302,7 +347,7 @@
   .status-hidden{background:var(--neutral-soft);color:var(--neutral);}
   .status-occupied{background:var(--danger-soft);color:var(--danger);}
 
-  .row-actions{display:flex;gap:8px;}
+  .row-actions{display:flex;gap:8px;flex-wrap:wrap;}
 
   /* ---------- Menu category tabs ---------- */
   .menu-cat-tabs{display:flex;gap:6px;margin-bottom:18px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none;}
@@ -360,6 +405,8 @@
     background:var(--success-soft); color:var(--success); border:1px solid rgba(95,167,119,.25);
   }
   .ingredient-tag.is-extra{background:var(--info-soft); color:var(--info); border-color:rgba(107,140,174,.25);}
+  .ingredient-tag-price{font-weight:800;opacity:.85;}
+  .ingredient-tag-price-free{font-weight:600;text-transform:uppercase;font-size:10.5px;letter-spacing:.03em;opacity:.65;}
   .ingredient-tag-remove{
     background:rgba(0,0,0,.15); border:none; cursor:pointer; color:inherit;
     width:18px;height:18px;border-radius:50%;flex:none;
@@ -399,6 +446,18 @@
     max-height:420px;overflow-y:auto;padding:0.25rem;
     display:flex;flex-direction:column;gap:10px;
   }
+
+  /* ---------- Menu & Inventory scroll, same idea as .scroll-panel above but
+     sized for its own row height instead of reusing 420px: a product row
+     carries its ingredient panel underneath (open by default whenever the
+     product has any tags — the common case on a real menu), so a single
+     item runs noticeably taller than a history-card. 720px is tuned to
+     comfortably fit ~4 such rows before scrolling kicks in, not a handful
+     squeezed in — nudge it if your actual rows run shorter/taller than
+     that. ---------- */
+  .menu-scroll-panel{
+    max-height:720px;overflow-y:auto;padding:0.25rem;
+  }
   .history-card{
     background:var(--bg-raised);border:1px solid var(--border-soft);
     border-radius:var(--radius-md);padding:14px 16px;
@@ -409,15 +468,41 @@
   /* ---------- Responsive ---------- */
   @media (max-width:920px){
     .kpi-grid{grid-template-columns:repeat(2,1fr);}
-    .add-form{grid-template-columns:1fr 1fr;}
+    .add-form-product{grid-template-columns:1fr 1fr;}
+    .add-form-staff{grid-template-columns:1fr 1fr;}
   }
   @media (max-width:640px){
     .dashboard{padding:22px 16px 60px;}
     .topbar{padding:16px 18px;}
-    .kpi-grid{grid-template-columns:1fr 1fr;}
+    .panel{padding:16px;}
+    .kpi-grid{grid-template-columns:1fr 1fr;gap:10px;}
     .product-row{grid-template-columns:1fr;gap:8px;align-items:flex-start;}
     .row-actions{width:100%;}
-    .add-form{grid-template-columns:1fr;}
+    .add-form-venue,.add-form-staff,.add-form-product,.add-form-category{grid-template-columns:1fr;}
+
+    /* Chart reads better full-width and stacked than squeezed sideways —
+       .trend-bars already has min-width:0 so it wouldn't overflow either
+       way, but 7 bars in ~140px of leftover width next to .trend-info
+       would be too thin to read. */
+    .trend-panel{flex-direction:column;align-items:stretch;gap:14px;}
+    .trend-info{min-width:0;}
+
+    /* Same fixed 5-column grid a staff row uses on desktop has nowhere to
+       put a name, a role pill, a status, and an action button side by side
+       on a phone — switch to a wrapping flex row instead: avatar+name keep
+       to the first line, whatever doesn't fit (role/status/action) drops to
+       its own line below rather than forcing horizontal scroll. */
+    .staff-row{display:flex;flex-wrap:wrap;row-gap:8px;}
+    .staff-row>div{flex:1 1 140px;min-width:0;}
+
+    /* Ingredient add-form's fixed-width fields (200px name, auto-width
+       select/button) already wrap via flex-wrap, but stacked full-width
+       is easier to tap and read one-handed than several partial-width
+       fields dangling on their own line. */
+    .ingredient-add-form{flex-direction:column;align-items:stretch;}
+    .ingredient-add-form .field-input,
+    .ingredient-add-form .field-select,
+    .ingredient-add-form .ingredient-price-input{width:100%;}
   }
 </style>
 </head>
@@ -474,7 +559,7 @@
       <h2>Venue settings</h2>
     </div>
     <div id="venueSettingsPanel">
-      <form class="add-form" style="grid-template-columns:1fr auto;" hx-post="/admin/settings/venue-name" hx-target="#venueSettingsPanel" hx-swap="innerHTML">
+      <form class="add-form add-form-venue" hx-post="/admin/settings/venue-name" hx-target="#venueSettingsPanel" hx-swap="innerHTML">
         <input class="field-input" name="name" value="{{ .VenueName }}" maxlength="80" required>
         <button type="submit" class="btn btn-primary">Save</button>
       </form>
@@ -519,7 +604,7 @@
       <h2>Staff &amp; access</h2>
     </div>
 
-    <form class="add-form" id="addStaffForm" style="grid-template-columns:1fr 1fr 1fr auto auto;" hx-post="/admin/staff" hx-target="#staff-list" hx-on::after-request="if(event.detail.successful) this.reset()">
+    <form class="add-form add-form-staff" id="addStaffForm" hx-post="/admin/staff" hx-target="#staff-list" hx-on::after-request="if(event.detail.successful) this.reset()">
       <input class="field-input" name="username" placeholder="Username" required>
       <input class="field-input" name="password" type="password" placeholder="Password (min. 6 chars)" required minlength="6">
       <select class="field-select" name="role">
@@ -540,6 +625,29 @@
 
   <section class="panel">
     <div class="panel-header">
+      <h2>Menu categories</h2>
+      <span class="section-sub">What guests actually browse by — add as many as the menu needs, no fixed list</span>
+    </div>
+    <div class="category-pills">
+      {{ range .Categories }}
+      <span class="category-pill category-pill-{{ .Department }}">{{ .Name }}<span class="category-pill-dept">{{ if eq .Department "kitchen" }}Kitchen{{ else }}Bar{{ end }}</span></span>
+      {{ else }}
+      <p class="empty-note">No categories yet.</p>
+      {{ end }}
+    </div>
+    <form class="add-form add-form-category" hx-post="/admin/categories">
+      <input class="field-input" name="name" placeholder="Category name, e.g. Tapas" aria-label="Category name" required>
+      <select class="field-select" name="department" aria-label="Prepared by">
+        <option value="kitchen">Kitchen</option>
+        <option value="bar" selected>Bar</option>
+      </select>
+      <button type="submit" class="btn btn-primary">Add category</button>
+    </form>
+    <p class="empty-note" style="margin-top:10px;">Decides which order feed — kitchen or bar — products in this category route to for prep (see Staff &amp; access).</p>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
       <h2>Menu &amp; inventory</h2>
       <div class="search-wrap">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
@@ -548,13 +656,12 @@
     </div>
 
     <span class="form-heading">Add a new item</span>
-    <form class="add-form" id="addProductForm" style="grid-template-columns:1.3fr .7fr .9fr 1fr 1.4fr auto .8fr auto;" hx-post="/admin/products" hx-target="#menuList" hx-on::after-request="if(event.detail.successful) this.reset()">
+    <form class="add-form add-form-product" id="addProductForm" hx-post="/admin/products" hx-target="#menuList" hx-on::after-request="if(event.detail.successful) this.reset()">
       <input class="field-input" name="name" placeholder="Item name" aria-label="Item name" required>
       <input class="field-input" name="price" type="number" step="0.50" min="0" placeholder="Price €" aria-label="Price in euros" required>
       <select class="field-select" name="category" aria-label="Category">
-        {{ range .Categories }}<option value="{{ . }}">{{ . }}</option>{{ end }}
+        {{ range .Categories }}<option value="{{ .Name }}">{{ .Name }}</option>{{ end }}
       </select>
-      <input class="field-input" name="subcategory" placeholder="Subcategory (optional, e.g. Main Courses)" aria-label="Subcategory">
       <input class="field-input" name="description" placeholder="Description (optional, shown to guests)" aria-label="Description">
       <label class="checkbox-label"><input type="checkbox" id="newItemUnlimited"> Unlimited</label>
       <input class="field-input" id="newItemStock" name="stock" type="number" min="0" placeholder="Stock qty" aria-label="Stock quantity">
@@ -569,8 +676,10 @@
     </div>
 
     <div hx-ext="ws" ws-connect="/admin/menu/ws">
-      <div id="menuList" hx-get="/admin/products" hx-trigger="load" hx-swap="innerHTML">
-        <p class="empty-note">Loading menu...</p>
+      <div class="menu-scroll-panel">
+        <div id="menuList" hx-get="/admin/products" hx-trigger="load" hx-swap="innerHTML">
+          <p class="empty-note">Loading menu...</p>
+        </div>
       </div>
     </div>
   </section>
@@ -676,6 +785,34 @@
     stockField.disabled = e.target.checked;
     if (e.target.checked) stockField.value = '';
     stockField.placeholder = e.target.checked ? 'Unlimited' : 'Stock qty';
+  });
+
+  // ---- same ∞/tracked toggle, per existing-product row (_product_list.html)
+  // ----  delegated, not bound per-row, since every row gets wholesale
+  // replaced on every menu re-render (Save, toggle, ingredient add/remove,
+  // another admin's edit pushed over /admin/menu/ws — all of them). Checking
+  // it disables the number input and both steppers so Save submits no
+  // "stock" field at all, which parseStock (admin.go) reads as -1; unchecking
+  // re-enables them starting from 0 so there's always something sane to bump.
+  document.addEventListener('change', (e) => {
+    if (!e.target.classList.contains('unlimited-toggle')) return;
+    const wrap = e.target.closest('.stock-stepper');
+    const input = wrap.querySelector('.stepper-input');
+    input.disabled = e.target.checked;
+    wrap.querySelectorAll('.stepper-btn').forEach(b => b.disabled = e.target.checked);
+    if (e.target.checked) input.value = '';
+    else if (!input.value) input.value = '0';
+  });
+
+  // ---- ingredient-add-form: price field only makes sense for "Extra" —
+  // hidden for "Removable" (always free) and cleared so a stray leftover
+  // value can't get submitted once it's hidden again.
+  document.addEventListener('change', (e) => {
+    if (!e.target.classList.contains('ingredient-kind-select')) return;
+    const priceInput = e.target.closest('.ingredient-add-form').querySelector('.ingredient-price-input');
+    const isExtra = e.target.value === 'extra';
+    priceInput.style.display = isExtra ? '' : 'none';
+    if (!isExtra) priceInput.value = '';
   });
 
   // ---- kicked out live: the server closes any of our websockets with

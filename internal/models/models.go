@@ -14,39 +14,41 @@ type Product struct {
 	Price       float64 `json:"price"`
 	Stock       int     `json:"stock"`
 	IsAvailable bool    `json:"is_available"`
-	Category    string  `json:"category"`
-	// Subcategory is a free-text grouping label within Category (e.g. "Main
-	// Courses" within Food) — purely a guest-menu display grouping, not a
-	// validated set like Category. Blank means "no sub-heading" for this
-	// item; the guest menu renders it under its Category with no group label.
-	Subcategory string `json:"subcategory"`
+	// Category is a real, admin-managed category (see Category below) —
+	// there used to also be a free-text Subcategory field nested under a
+	// handful of fixed top-level categories (Food/Coffee & Soft/Beer &
+	// Spirits/Cocktails/Wine), but a generic "Food" bucket holding 50+ items
+	// with no real navigation was exactly the bad menu UX admins kept
+	// running into. Categories are flat now — what used to be a subcategory
+	// (e.g. "Brunch", "Red Wine") *is* the category — and an admin can add
+	// new ones by name instead of being stuck with the fixed set (see
+	// db.CreateCategory). The subcategory column still exists in the DB
+	// (never dropped, see addColumnIfMissing) but nothing writes to it
+	// anymore; db.go's one-time migration folded every existing value into
+	// Category already.
+	Category string `json:"category"`
 	// Description is optional guest-facing menu copy shown under the item
 	// name (e.g. "Grilled octopus, fava cream, cuttlefish ink..."). Blank
 	// means no description line is rendered.
 	Description string `json:"description"`
 }
 
-const (
-	CategoryFood        = "Food"
-	CategoryCoffeeSoft  = "Coffee & Soft"
-	CategoryBeerSpirits = "Beer & Spirits"
-	CategoryCocktails   = "Cocktails"
-	CategoryWine        = "Wine"
-	// CategoryOther is a fallback bucket only — for legacy/blank category
-	// data and anything an admin doesn't explicitly categorize — not one of
-	// the guest-facing menu tabs.
-	CategoryOther = "Other"
-)
+// CategoryOther is the one fallback category always guaranteed to exist
+// (seeded by db.go) — used when a product's category is blank or no longer
+// valid (e.g. legacy data from before categories existed), never a normal
+// choice an admin picks deliberately.
+const CategoryOther = "Other"
 
-var ProductCategories = []string{CategoryFood, CategoryCoffeeSoft, CategoryBeerSpirits, CategoryCocktails, CategoryWine, CategoryOther}
-
-func IsValidCategory(c string) bool {
-	for _, v := range ProductCategories {
-		if v == c {
-			return true
-		}
-	}
-	return false
+// Category is an admin-defined menu category (see db.CreateCategory) — a
+// venue names its own, there's no fixed list. Department decides which
+// worker order-feed a product in this category routes to: "kitchen" or
+// "bar" (see DepartmentBar/DepartmentKitchen and
+// db.CategoryNamesForDepartment). Waiter/superworker/DJ order feeds aren't
+// category-filtered at all, so Department only ever holds those two values.
+type Category struct {
+	ID         int    `json:"id"`
+	Name       string `json:"name"`
+	Department string `json:"department"`
 }
 
 type Table struct {
@@ -62,20 +64,27 @@ type OrderItem struct {
 	Price     float64  `json:"price"`
 	Quantity  int      `json:"quantity"`
 	Excluded  []string `json:"excluded,omitempty"` // removable ingredients left out of this line
-	Extras    []string `json:"extras,omitempty"`   // extra ingredients added to this line (free, no price change)
+	// Extras are just the chosen ingredients' names — any per-extra price is
+	// already folded into Price above at add-time (and re-derived live off
+	// the current catalog on every cart render, see cart.go's resolveCart),
+	// not tracked separately per name here.
+	Extras []string `json:"extras,omitempty"`
 }
 
 // Ingredient tags a product with something guests can customize.
 // "removable" ingredients are included by default and can be excluded per
-// order line (the only kind the guest UI currently acts on); "extra" tags
-// something addable but not yet wired to any guest-facing add-on flow —
-// stored for admin management so that's a template-only change later, not
-// a schema one.
+// order line at no price change. "extra" ones are optional add-ons a guest
+// can opt into from the customize modal; Price is what that add-on costs
+// (0 is a valid, deliberate "free add-on" price, not "unset" — the guest
+// chip just skips showing a "+€x.xx" label in that case). Price is always
+// 0 for a removable ingredient; the column exists on both kinds only
+// because they share one table.
 type Ingredient struct {
-	ID        int    `json:"id"`
-	ProductID int    `json:"product_id"`
-	Name      string `json:"name"`
-	Kind      string `json:"kind"`
+	ID        int     `json:"id"`
+	ProductID int     `json:"product_id"`
+	Name      string  `json:"name"`
+	Kind      string  `json:"kind"`
+	Price     float64 `json:"price"`
 }
 
 const (
@@ -118,11 +127,13 @@ const (
 	// "ready" (any category) — the pop-up-when-ready handoff. A waiter
 	// never sees pending/preparing orders; that's bar/kitchen's job.
 	DepartmentWaiter = "waiter"
-	// DepartmentBar sees pending/preparing Drinks orders only — once
-	// marked ready it's handed off to the waiter and drops from bar's feed.
+	// DepartmentBar sees pending/preparing orders for whichever categories
+	// are tagged Department: "bar" (see Category, db.CategoryNamesForDepartment)
+	// only — once marked ready it's handed off to the waiter and drops from
+	// bar's feed.
 	DepartmentBar = "bar"
-	// DepartmentKitchen sees pending/preparing Food orders only, same
-	// ready-handoff rule as bar.
+	// DepartmentKitchen sees pending/preparing orders for "kitchen"-tagged
+	// categories only, same ready-handoff rule as bar.
 	DepartmentKitchen = "kitchen"
 	// DepartmentDJ sees the DJ terminal only, no order feed at all.
 	DepartmentDJ = "dj"
@@ -139,27 +150,6 @@ func IsValidDepartment(d string) bool {
 	return false
 }
 
-// DepartmentCategories maps a department to the product categories its
-// order feed is filtered to; nil means unfiltered (see everything). Bar
-// covers every category that isn't Food — so a menu with any number of
-// drink categories (Coffee & Soft, Beer & Spirits, Cocktails, Wine, ...)
-// still routes to bar without this needing to name each one.
-func DepartmentCategories(department string) []string {
-	switch department {
-	case DepartmentBar:
-		var cats []string
-		for _, c := range ProductCategories {
-			if c != CategoryFood {
-				cats = append(cats, c)
-			}
-		}
-		return cats
-	case DepartmentKitchen:
-		return []string{CategoryFood}
-	default:
-		return nil
-	}
-}
 
 type User struct {
 	ID           int        `json:"id"`

@@ -109,6 +109,17 @@ func InitDB() {
 		id INTEGER PRIMARY KEY CHECK (id = 1),
 		dj_requests_enabled INTEGER DEFAULT 1
 	);
+
+	-- Admin-managed menu categories (see models.Category) — replaced a fixed
+	-- Food/Coffee & Soft/Beer & Spirits/Cocktails/Wine list plus a free-text
+	-- Subcategory field with one flat, venue-editable set. department is
+	-- "kitchen" or "bar": which worker order-feed a product in this category
+	-- routes to (see CategoryNamesForDepartment).
+	CREATE TABLE IF NOT EXISTS categories (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE,
+		department TEXT NOT NULL DEFAULT 'bar'
+	);
 	`
 
 	_, err = DB.Exec(query)
@@ -174,14 +185,45 @@ func InitDB() {
 		log.Fatalf("Failed to migrate products.category: %v", err)
 	}
 
-	// Subcategory (guest-menu group label within a Category, e.g. "Main
-	// Courses") and Description (guest-facing menu copy) — both blank by
-	// default, purely additive display data, nothing depends on them being set.
+	// subcategory is retired (see models.Product's Category doc comment) —
+	// kept only so this addColumnIfMissing check still finds it on an
+	// install that predates it, since the one-time migration a few lines
+	// down reads it once more before nothing ever touches it again.
+	// Description (guest-facing menu copy) is unrelated and still live —
+	// blank by default, purely additive, nothing depends on it being set.
 	if err := addColumnIfMissing("products", "subcategory", "TEXT DEFAULT ''"); err != nil {
 		log.Fatalf("Failed to migrate products.subcategory: %v", err)
 	}
 	if err := addColumnIfMissing("products", "description", "TEXT DEFAULT ''"); err != nil {
 		log.Fatalf("Failed to migrate products.description: %v", err)
+	}
+
+	// Categories used to be a fixed list (Food/Coffee & Soft/Beer &
+	// Spirits/Cocktails/Wine) with a free-text Subcategory nested under
+	// each; every seeded item already had a specific Subcategory (e.g.
+	// "Brunch", "Red Wine"), so it becomes the new flat Category outright —
+	// a plain UPDATE, safe to run every startup: once category already
+	// equals subcategory there's nothing left to change. A fresh install
+	// never touches this at all — seedEGOMenu below writes the flat
+	// category directly and leaves subcategory blank.
+	if _, err := DB.Exec(`UPDATE products SET category = subcategory WHERE subcategory != '' AND subcategory != category`); err != nil {
+		log.Fatalf("Failed to migrate products.category from subcategory: %v", err)
+	}
+
+	var categoryCount int
+	DB.QueryRow("SELECT COUNT(*) FROM categories").Scan(&categoryCount)
+	if categoryCount == 0 {
+		seedDefaultCategories()
+	}
+
+	// What a guest pays extra for adding this ingredient (0 for a plain
+	// "removable" tag, which was the only kind that existed before this
+	// column — those rows keep the REAL DEFAULT 0 untouched). 0 is also a
+	// valid price for an "extra" someone wants offered at no charge; the
+	// guest-facing chip only hides the "+€x.xx" label for that case, it
+	// doesn't stop the ingredient from being addable.
+	if err := addColumnIfMissing("product_ingredients", "price", "REAL DEFAULT 0"); err != nil {
+		log.Fatalf("Failed to migrate product_ingredients.price: %v", err)
 	}
 
 	for _, m := range []struct{ column, definition string }{
