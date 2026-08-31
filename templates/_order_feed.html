@@ -24,6 +24,30 @@
   {{ if and .RefundRequested (eq .PaymentStatus "paid") }}
   <div class="po-note" style="font-size:12.5px;color:var(--accent-strong);font-weight:700;">💰 Refund requested</div>
   {{ end }}
+  <button class="no-print print-btn" onclick="printOrder({{ .ID }})">🖨️ Print for kitchen</button>
+  <!-- Kitchen ticket: rendered server-side from this same order's real data
+       (no client-side re-population needed), stays hidden on screen and is
+       revealed only inside @media print when printOrder() marks this card
+       .printing-ticket — see the print stylesheet + printOrder() in
+       worker_dashboard.html. Deliberately excludes price/payment info:
+       the kitchen needs what to make, not what it costs. -->
+  <div class="print-ticket">
+    <div class="pt-header">
+      <span>TABLE {{ printf "%02d" .TableNumber }}</span>
+      <span>Order #{{ .ID }}</span>
+    </div>
+    <div class="pt-time">{{ .CreatedAt.Format "02 Jan 2006 · 15:04" }}</div>
+    <div class="pt-divider"></div>
+    {{ range .Items }}
+    <div class="pt-item-line">{{ .Quantity }}x {{ .Name }}</div>
+    {{ if .Excluded }}<div class="pt-mod">without {{ range $i, $e := .Excluded }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}</div>{{ end }}
+    {{ if .Extras }}<div class="pt-mod">+ {{ range $i, $e := .Extras }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}</div>{{ end }}
+    {{ end }}
+    {{ if .Note }}
+    <div class="pt-divider"></div>
+    <div class="pt-note">NOTE: {{ .Note }}</div>
+    {{ end }}
+  </div>
   <div class="pay-row">
     {{ if eq .PaymentStatus "paid" }}
     <span class="pay-badge pay-cash-paid">{{ if eq .PaymentMethod "card" }}Card{{ else }}Cash{{ end }} · paid ✓</span>

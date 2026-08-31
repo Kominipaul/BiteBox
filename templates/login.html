@@ -63,8 +63,10 @@
     .field input {
       width: 100%; background: var(--bg-raised); border: 1px solid var(--border);
       color: var(--text-primary); border-radius: var(--radius-sm);
-      padding: 11px 13px; font-size: 14.5px; outline: none;
+      padding: 11px 13px; font-size: 16px; outline: none;
     }
+    /* font-size must stay >=16px: iOS/Android auto-zoom the whole page on
+       focus for any text input under 16px, assuming it's too small to read. */
     .field input::placeholder { color: var(--text-muted); }
     .field input:focus { border-color: var(--accent); }
 

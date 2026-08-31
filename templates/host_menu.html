@@ -182,7 +182,10 @@
     text-transform:uppercase;letter-spacing:.04em;}
   .field-label:first-of-type{margin-top:0;}
   .field-input{width:100%;background:var(--bg-raised);border:1px solid var(--border);color:var(--text-primary);
-    border-radius:var(--radius-sm);padding:12px 13px;font-size:14.5px;transition:border-color .15s ease;}
+    border-radius:var(--radius-sm);padding:12px 13px;font-size:16px;transition:border-color .15s ease;}
+  /* font-size must stay >=16px: iOS/Android auto-zoom the whole page on
+     focus for any text input under 16px, assuming it's too small to read —
+     that's the "page zooms in when I type" bug, not a viewport-meta issue. */
   .field-input:focus{border-color:var(--accent-strong);}
   .field-input::placeholder{color:var(--text-muted);}
   textarea.field-input{resize:vertical;min-height:56px;line-height:1.45;}

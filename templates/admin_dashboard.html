@@ -259,9 +259,11 @@
     color:var(--text-muted);
   }
   .search-wrap input{
-    background:none;border:none;color:var(--text-primary);font-size:13.5px;
+    background:none;border:none;color:var(--text-primary);font-size:16px;
     width:100%;outline:none;
   }
+  /* font-size must stay >=16px: iOS/Android auto-zoom the whole page on
+     focus for any text input under 16px, assuming it's too small to read. */
   .search-wrap input::placeholder{color:var(--text-muted);}
 
   /* ---------- Add product form ---------- */
@@ -286,8 +288,10 @@
   .field-input, .field-select{
     background:var(--bg-surface);border:1px solid var(--border);
     color:var(--text-primary);border-radius:var(--radius-sm);
-    padding:9px 11px;font-size:13.5px;width:100%;
+    padding:9px 11px;font-size:16px;width:100%;
   }
+  /* font-size must stay >=16px: iOS/Android auto-zoom the whole page on
+     focus for any text input under 16px, assuming it's too small to read. */
   .field-input::placeholder{color:var(--text-muted);}
   .checkbox-label{
     display:flex;align-items:center;gap:7px;font-size:12.5px;
@@ -329,9 +333,13 @@
   }
   .stepper-btn:hover{color:var(--text-primary);background:rgba(255,255,255,.04);}
   .stepper-input{
-    width:42px;text-align:center;background:none;border:none;color:var(--text-primary);
-    font-family:var(--font-display);font-size:13px;font-weight:600;
+    /* width bumped alongside font-size so 3-digit stock counts still fit
+       comfortably at the larger, zoom-safe size */
+    width:48px;text-align:center;background:none;border:none;color:var(--text-primary);
+    font-family:var(--font-display);font-size:16px;font-weight:600;
   }
+  /* font-size must stay >=16px: iOS/Android auto-zoom the whole page on
+     focus for any text input under 16px, assuming it's too small to read. */
   .unlimited-tag{font-size:12px;color:var(--info);font-weight:700;padding:0 6px;}
   .stock-unlimited-toggle{padding:0 8px 0 10px;border-right:1px solid var(--border);font-size:11.5px;}
   .stock-unlimited-toggle input{width:13px;height:13px;}
@@ -419,8 +427,8 @@
 
   .ingredient-add-form{display:flex; gap:8px; align-items:center; flex-wrap:wrap;
     padding-top:12px; border-top:1px dashed var(--border-soft);}
-  .ingredient-add-form .field-input{width:200px; padding:8px 11px; font-size:12.5px; margin:0;}
-  .ingredient-add-form .field-select{padding:8px 10px; font-size:12.5px; margin:0; width:auto;}
+  .ingredient-add-form .field-input{width:200px; padding:8px 11px; font-size:16px; margin:0;}
+  .ingredient-add-form .field-select{padding:8px 10px; font-size:16px; margin:0; width:auto;}
 
   /* ---------- Tables ---------- */
   .add-table-form{display:flex;gap:10px;align-items:center;}

@@ -112,6 +112,40 @@
   .toast-undo{background:none;border:none;color:var(--accent-strong);font-weight:800;cursor:pointer;font-size:13.5px;}
 
   @media (max-width:640px){ .order-grid{grid-template-columns:1fr;} .dashboard{padding:20px 14px 100px;} }
+
+  .print-btn{background:none;border:1px dashed var(--border);color:var(--text-secondary);
+    font-size:12px;font-weight:700;padding:8px 10px;border-radius:var(--radius-sm);cursor:pointer;
+    align-self:flex-start;}
+  .print-btn:hover{color:var(--text-primary);border-color:var(--text-muted);}
+  .print-ticket{display:none;}
+
+  /* ---------------------------------------------------------------
+     Kitchen ticket printing. Each order-card carries its own hidden
+     .print-ticket (rendered server-side in _order_feed.html from that
+     order's real data). printOrder() below marks exactly one card
+     .printing-ticket before calling window.print() — this stylesheet
+     hides the entire normal UI and reveals only that one ticket, on
+     plain white/black, sized for a standard A4 printer.
+     --------------------------------------------------------------- */
+  @media print{
+    body *{visibility:hidden;}
+    .order-card.printing-ticket .print-ticket,
+    .order-card.printing-ticket .print-ticket *{visibility:visible;}
+    .no-print{display:none!important;}
+    .print-ticket{
+      display:block;position:absolute;top:0;left:0;width:100%;
+      font-family:'Courier New',monospace;color:#000;background:#fff;
+      padding:28px;font-size:15px;line-height:1.8;
+    }
+    .pt-header{display:flex;justify-content:space-between;font-size:20px;font-weight:700;
+      border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:10px;}
+    .pt-time{font-size:13px;margin-bottom:10px;}
+    .pt-divider{margin:10px 0;border-top:1px dashed #000;}
+    .pt-item-line{font-weight:700;margin-top:10px;}
+    .pt-mod{padding-left:20px;font-size:13px;}
+    .pt-note{font-weight:700;margin-top:10px;}
+    @page{margin:14mm;}
+  }
 </style>
 </head>
 <body>
@@ -301,6 +335,29 @@
         });
       }, { once: true });
     }
+  });
+
+  // ---------------------------------------------------------------
+  // Print for kitchen: pure client-side browser print, per order. The
+  // ticket markup already exists (hidden) inside the target order-card,
+  // rendered server-side from that order's real data — we just mark that
+  // one card so the @media print stylesheet reveals only its ticket, then
+  // hand off to the browser's native print dialog. WSL/the server are not
+  // involved beyond having served this page; the OS + already-configured
+  // A4 printer do the rest, same as printing any webpage.
+  // ---------------------------------------------------------------
+  function printOrder(orderId){
+    const card = document.querySelector('.order-card[data-order-id="' + orderId + '"]');
+    if (!card) return;
+    card.classList.add('printing-ticket');
+    window.print();
+  }
+  // Clean the marker card up again once the print dialog closes (works for
+  // both "printed" and "cancelled" — afterprint fires either way), so a
+  // second print of a different order doesn't also show a stale first one.
+  window.addEventListener('afterprint', () => {
+    document.querySelectorAll('.order-card.printing-ticket')
+      .forEach(c => c.classList.remove('printing-ticket'));
   });
 
   // kicked out live: the server closes any of our websockets with close
