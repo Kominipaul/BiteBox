@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -26,24 +27,40 @@ func GenerateSessionID() string {
 	return hex.EncodeToString(bytes)
 }
 
-func SetSessionCookie(w http.ResponseWriter, sessionID string) {
+// IsSecureRequest reports whether r arrived over a transport a "Secure"
+// cookie is allowed to be set on: direct TLS, or TLS terminated by a
+// front-line reverse proxy that says so via X-Forwarded-Proto. Deliberately
+// permissive on plain HTTP (e.g. a Raspberry Pi serving the venue's own LAN
+// with no TLS in front of it, per the deploy story in README) — a cookie
+// that's never sent because the server only ever sees HTTP would just break
+// login/guest sessions outright, not make them safer.
+func IsSecureRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+func SetSessionCookie(w http.ResponseWriter, r *http.Request, sessionID string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    sessionID,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   IsSecureRequest(r),
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(24 * time.Hour),
 	})
 }
 
-func ClearSessionCookie(w http.ResponseWriter) {
+func ClearSessionCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   IsSecureRequest(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 }

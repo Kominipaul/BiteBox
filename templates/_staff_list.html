@@ -11,13 +11,35 @@
   <span class="role-badge role-worker">Worker</span>
   {{ end }}
   <span class="staff-status">{{ if .IsActive }}{{ .StatusLabel }}{{ else }}Deactivated{{ end }}</span>
-  {{ if .IsSelf }}
-  <button class="btn btn-ghost btn-sm" disabled>You</button>
-  {{ else if .IsActive }}
-  <button class="btn btn-ghost btn-sm" hx-post="/admin/staff/{{ .ID }}/deactivate" hx-target="#staff-list" hx-confirm="Deactivate {{ .Username }}? They'll be logged out immediately.">Deactivate</button>
-  {{ else }}
-  <button class="btn btn-ghost btn-sm" hx-post="/admin/staff/{{ .ID }}/activate" hx-target="#staff-list">Activate</button>
-  {{ end }}
+  <details class="staff-manage">
+    <summary class="btn btn-ghost btn-sm">Manage</summary>
+    <div class="staff-manage-body">
+      <form class="staff-edit-form" hx-post="/admin/staff/{{ .ID }}" hx-target="#staff-list">
+        <input class="field-input" name="username" value="{{ .Username }}" required>
+        {{ if ne .Role "admin" }}
+        <select class="field-select" name="department">
+          <option value="waiter" {{ if eq .Department "waiter" }}selected{{ end }}>Waiter</option>
+          <option value="bar" {{ if eq .Department "bar" }}selected{{ end }}>Bar</option>
+          <option value="kitchen" {{ if eq .Department "kitchen" }}selected{{ end }}>Kitchen</option>
+          <option value="dj" {{ if eq .Department "dj" }}selected{{ end }}>DJ</option>
+          <option value="superworker" {{ if eq .Department "superworker" }}selected{{ end }}>Manager</option>
+        </select>
+        {{ end }}
+        <button type="submit" class="btn btn-ghost btn-sm">Save</button>
+      </form>
+      <form class="staff-reset-form" hx-post="/admin/staff/{{ .ID }}/reset-password" hx-target="#staff-list" hx-confirm="Reset {{ .Username }}'s password? They'll be logged out of any open session.">
+        <input class="field-input" name="password" type="password" placeholder="New password (min. 6 chars)" required minlength="6">
+        <button type="submit" class="btn btn-ghost btn-sm">Reset password</button>
+      </form>
+      {{ if .IsSelf }}
+      <button class="btn btn-ghost btn-sm" disabled>Can't deactivate your own account</button>
+      {{ else if .IsActive }}
+      <button class="btn btn-outline-danger btn-sm" hx-post="/admin/staff/{{ .ID }}/deactivate" hx-target="#staff-list" hx-confirm="Deactivate {{ .Username }}? They'll be logged out immediately.">Deactivate</button>
+      {{ else }}
+      <button class="btn btn-ghost btn-sm" hx-post="/admin/staff/{{ .ID }}/activate" hx-target="#staff-list">Activate</button>
+      {{ end }}
+    </div>
+  </details>
 </div>
 {{ else }}
 <p class="empty-note">No staff accounts yet.</p>

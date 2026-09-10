@@ -31,7 +31,7 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 
 			user, err := db.GetUserBySessionID(sessionID)
 			if err != nil {
-				auth.ClearSessionCookie(w)
+				auth.ClearSessionCookie(w, r)
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
 				return
 			}

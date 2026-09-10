@@ -1,0 +1,13 @@
+{{ range .Entries }}
+<div class="history-card">
+  <div style="display:flex;justify-content:space-between;align-items:center;">
+    <strong>{{ .Actor }} → {{ .Action }} → {{ .Target }}</strong>
+    <span class="history-time">{{ .CreatedAt.Local.Format "2006-01-02 15:04" }}</span>
+  </div>
+  {{ if .Detail }}
+  <p class="empty-note" style="margin-top:4px;">{{ .Detail }}</p>
+  {{ end }}
+</div>
+{{ else }}
+<p class="empty-note">No staff-management actions logged yet.</p>
+{{ end }}

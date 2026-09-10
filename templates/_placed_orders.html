@@ -21,9 +21,11 @@
   {{ if and .RefundRequested (eq .PaymentStatus "paid") (ne .Status "cancelled") }}
   <div class="po-note" style="color:var(--accent-strong);">💰 Refund requested — a staff member will process this.</div>
   {{ end }}
+  {{ if gt .TipAmount 0.0 }}<div class="po-note">Includes a €{{ printf "%.2f" .TipAmount }} tip for staff</div>{{ end }}
+  {{ if gt .SplitCount 1 }}<div class="po-note">Split {{ .SplitCount }} ways — €{{ printf "%.2f" .PerPersonTotal }} per person</div>{{ end }}
   <div class="po-footer">
     <span class="po-method">{{ if eq .PaymentMethod "card" }}💳 Card{{ else }}💵 Cash{{ end }}{{ if eq .PaymentStatus "paid" }} · paid{{ end }}</span>
-    <span class="po-total">€{{ printf "%.2f" .TotalAmount }}</span>
+    <span class="po-total">€{{ printf "%.2f" .GrandTotal }}</span>
   </div>
   {{ if or (eq .Status "pending") (eq .Status "preparing") }}
     {{ if eq .PaymentStatus "paid" }}

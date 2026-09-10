@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"bitebox/internal/auth"
 	"bitebox/internal/db"
 	"bitebox/internal/models"
 
@@ -65,6 +66,8 @@ func WorkerHome(w http.ResponseWriter, r *http.Request) {
 		"ShowDJ":          showDJ,
 		"Username":        user.Username,
 		"DepartmentLabel": departmentLabel(user.Department),
+		"VAPIDPublicKey":  PushVAPIDPublicKey(),
+		"IconVersion":     IconVersion(),
 	})
 }
 
@@ -139,6 +142,32 @@ func renderOrderFeed(w http.ResponseWriter, bucket string) {
 	BroadcastOrderFeed()
 }
 
+// authorizeDepartmentMutation reports whether user may mutate orderID.
+// Admin and superworker/waiter departments are unrestricted (unfiltered
+// access is already correct for them); bar/kitchen may only act on an
+// order that actually contains an item in their own department's
+// categories. Closes a gap TODO.md flagged as accepted-for-now: the
+// department split was previously a *read-side* filter only — a bar
+// worker who knew or guessed a kitchen order's id could still POST a
+// status/paid/cancel mutation on it directly. Symmetric to the read-side
+// filter in GetActiveOrdersByCategories.
+func authorizeDepartmentMutation(user models.User, orderID int) bool {
+	if user.Role == models.RoleAdmin {
+		return true
+	}
+	switch user.Department {
+	case models.DepartmentBar, models.DepartmentKitchen:
+		cats, err := db.CategoryNamesForDepartment(user.Department)
+		if err != nil {
+			return false
+		}
+		ok, err := db.OrderHasAnyCategory(orderID, cats)
+		return err == nil && ok
+	default: // superworker, waiter
+		return true
+	}
+}
+
 func WorkerUpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
@@ -148,6 +177,10 @@ func WorkerUpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
 	status := r.FormValue("status")
 	if !models.IsValidOrderStatus(status) {
 		http.Error(w, "Invalid order status", http.StatusBadRequest)
+		return
+	}
+	if user, _ := UserFromContext(r); !authorizeDepartmentMutation(user, id) {
+		http.Error(w, "403 Forbidden: not your department's order", http.StatusForbidden)
 		return
 	}
 	if err := db.UpdateOrderStatus(id, status); err != nil {
@@ -162,6 +195,12 @@ func WorkerUpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
 	if order, err := db.GetOrderByID(id); err == nil {
 		BroadcastTableStatus(order.TableNumber)
 		BroadcastPlacedOrders(order.TableNumber, order.SessionID)
+		if status == models.OrderStatusReady {
+			if items, err := db.GetOrderItems(id); err == nil {
+				pushReadyAlert(id, order.TableNumber, items)
+				pushOrderReadyAlert(order.SessionID, id, order.TableNumber, items)
+			}
+		}
 	}
 }
 
@@ -172,6 +211,10 @@ func WorkerCancelOrder(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
 		http.Error(w, "Invalid order id", http.StatusBadRequest)
+		return
+	}
+	if user, _ := UserFromContext(r); !authorizeDepartmentMutation(user, id) {
+		http.Error(w, "403 Forbidden: not your department's order", http.StatusForbidden)
 		return
 	}
 	orderBefore, _ := db.GetOrderByID(id)
@@ -202,6 +245,10 @@ func WorkerMarkUnpaid(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid order id", http.StatusBadRequest)
 		return
 	}
+	if user, _ := UserFromContext(r); !authorizeDepartmentMutation(user, id) {
+		http.Error(w, "403 Forbidden: not your department's order", http.StatusForbidden)
+		return
+	}
 	if err := db.UpdateOrderPaymentStatus(id, models.PaymentStatusUnpaid); err != nil {
 		http.Error(w, "Failed to update payment status", http.StatusInternalServerError)
 		return
@@ -219,6 +266,10 @@ func WorkerMarkPaid(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
 		http.Error(w, "Invalid order id", http.StatusBadRequest)
+		return
+	}
+	if user, _ := UserFromContext(r); !authorizeDepartmentMutation(user, id) {
+		http.Error(w, "403 Forbidden: not your department's order", http.StatusForbidden)
 		return
 	}
 	if err := db.UpdateOrderPaymentStatus(id, models.PaymentStatusPaid); err != nil {
@@ -287,4 +338,50 @@ func WorkerDJReject(w http.ResponseWriter, r *http.Request) {
 	if req, err := db.GetSongRequestByID(id); err == nil && req.TableNumber > 0 {
 		BroadcastSongStatus(req.TableNumber)
 	}
+}
+
+// renderAssistanceAlertsHTML renders the worker-facing "tables asking for
+// help" panel — every table with AssistanceRequested set (see
+// RequestAssistance in table.go), most-recently-requested first isn't
+// tracked separately; GetAllTables already orders by number, which is fine
+// for a handful of concurrent requests at this app's scale.
+func renderAssistanceAlertsHTML() ([]byte, error) {
+	tables, err := db.GetAllTables()
+	if err != nil {
+		return nil, err
+	}
+	var needsHelp []models.Table
+	for _, t := range tables {
+		if t.AssistanceRequested {
+			needsHelp = append(needsHelp, t)
+		}
+	}
+	var buf bytes.Buffer
+	tmpl := template.Must(template.ParseFiles("templates/_assistance_alerts.html"))
+	if err := tmpl.Execute(&buf, map[string]interface{}{"Tables": needsHelp}); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// BroadcastAssistanceAlerts pushes the current assistance-request list to
+// every connected worker dashboard's alert panel (waiter/superworker/admin —
+// see the route's RequireDepartment scope in main.go).
+func BroadcastAssistanceAlerts() {
+	b, err := renderAssistanceAlertsHTML()
+	if err != nil {
+		return
+	}
+	Hub.Broadcast(topicAssistance, oobWrap("assistance-alerts", b))
+}
+
+// WorkerAssistanceWS keeps the assistance-alert panel live.
+func WorkerAssistanceWS(w http.ResponseWriter, r *http.Request) {
+	b, err := renderAssistanceAlertsHTML()
+	if err != nil {
+		http.Error(w, "Failed to load assistance requests", http.StatusInternalServerError)
+		return
+	}
+	sessionID, _ := auth.SessionIDFromRequest(r)
+	pumpWS(w, r, []string{topicAssistance}, oobWrap("assistance-alerts", b), sessionID)
 }

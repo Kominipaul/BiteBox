@@ -280,9 +280,52 @@ var egoMenu = []seedProduct{
 // bad row doesn't stop the rest of a 140+ item seed from loading. Assumes
 // seedDefaultCategories has already run — every Category value here is one
 // of that list's names.
+// demoBrunchPhoto points at a small self-contained SVG asset (static/demo/,
+// not a hotlinked external URL — nothing to go dead or get rate-limited)
+// illustrating one seeded Brunch item, so a fresh install has a working
+// example of a product photo out of the box instead of every card starting
+// blank. Real venue photos go through the actual upload flow (see
+// internal/imageproc, AdminCreateProduct/AdminUpdateProduct) or a pasted
+// URL — this is demo data only, deliberately not photorealistic.
+//
+// This used to be an inline `data:image/svg+xml;base64,...` URI, which
+// html/template's contextual auto-escaper silently defangs to "#ZgotmplZ"
+// in any `src="{{ .ImageURL }}"` context (see html/template's urlFilter —
+// it only ever passes through http:, https:, and mailto: schemes), so the
+// one product this was meant to demo-show a photo on rendered a broken
+// image everywhere instead. A real static path sidesteps that filter
+// entirely (no scheme = no filtering) and, as a bonus, is no longer a ~1KB
+// string duplicated into every hidden image_url field and every
+// admin/menu WebSocket push that touches this row.
+const demoBrunchPhoto = "/static/demo/omelette-demo.svg"
+
 func seedEGOMenu() {
+	// Demo VAT-rate variety (see models.Product.VATRate — display structure
+	// for the demo receipt only, not a real tax classification): kitchen
+	// items seed at Greece's reduced rate, bar items at the standard rate.
+	// A real venue's actual rate per item depends on specifics this
+	// heuristic doesn't attempt to get right — it exists so the seeded
+	// demo data shows a receipt with more than one VAT line, not a single
+	// flat rate that would understate what the breakdown table is for.
+	categories, err := GetCategories()
+	if err != nil {
+		log.Printf("seed: failed to load categories for VAT-rate seeding: %v", err)
+	}
+	departmentByCategory := make(map[string]string, len(categories))
+	for _, c := range categories {
+		departmentByCategory[c.Name] = c.Department
+	}
+
 	for _, p := range egoMenu {
-		id, err := CreateProduct(p.Name, p.Price, p.Stock, p.Category, p.Description)
+		imageURL := ""
+		if p.Name == "Omelette" {
+			imageURL = demoBrunchPhoto
+		}
+		vatRate := 24.0
+		if departmentByCategory[p.Category] == models.DepartmentKitchen {
+			vatRate = 13.0
+		}
+		id, err := CreateProduct(p.Name, p.Price, p.Stock, p.Category, p.Description, imageURL, vatRate)
 		if err != nil {
 			log.Printf("seed: failed to create product %q: %v", p.Name, err)
 			continue

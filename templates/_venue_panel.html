@@ -1,4 +1,4 @@
-<form class="add-form" style="grid-template-columns:1fr auto;" hx-post="/admin/settings/venue-name" hx-target="#venueSettingsPanel" hx-swap="innerHTML">
+<form class="add-form add-form-venue" hx-post="/admin/settings/venue-name" hx-target="#venueSettingsPanel" hx-swap="innerHTML">
   <input class="field-input" name="name" value="{{ .VenueName }}" maxlength="80" required>
   <button type="submit" class="btn btn-primary">Save</button>
 </form>

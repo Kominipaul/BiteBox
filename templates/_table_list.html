@@ -1,6 +1,10 @@
 {{ range .Tables }}
 <div class="table-card {{ if eq .Status "occupied" }}occupied{{ else }}available{{ end }}" id="table-{{ .Number }}">
   <span class="table-number">{{ printf "%02d" .Number }}</span>
+  {{ if .AssistanceRequested }}
+  <span class="status-pill status-out" title="Guest asked for help">🙋 Needs help</span>
+  <button class="btn btn-ghost btn-sm" hx-post="/worker/tables/{{ .Number }}/assist/clear" hx-swap="none">Acknowledge</button>
+  {{ end }}
   {{ if eq .Status "occupied" }}
   <span class="status-pill status-occupied">Occupied</span>
   <button class="btn btn-outline-danger btn-sm force-release" hx-post="/admin/tables/{{ .Number }}/release" hx-target="#table-grid" hx-confirm="Force-release Table #{{ .Number }}?">Force release</button>

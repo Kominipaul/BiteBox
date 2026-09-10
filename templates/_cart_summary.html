@@ -39,15 +39,40 @@
 
   <label class="field-label">Payment method</label>
   <div class="pay-method-row">
+    {{ if .AllowCashOrders }}
     <button type="button" class="pay-method-chip active" data-method="cash">💵 Cash</button>
     <button type="button" class="pay-method-chip" data-method="card">💳 Card <span class="demo-tag">Demo</span></button>
+    {{ else }}
+    <button type="button" class="pay-method-chip active" data-method="card">💳 Card <span class="demo-tag">Demo</span></button>
+    {{ end }}
   </div>
+  {{ if .AllowCashOrders }}
   <input type="hidden" id="paymentMethodInput" name="payment_method" value="cash">
+  {{ else }}
+  <input type="hidden" id="paymentMethodInput" name="payment_method" value="card">
+  <p class="empty-note" style="margin:-6px 0 8px;">This venue is currently card-only.</p>
+  {{ end }}
+
+  <label class="field-label">Add a tip for staff (optional)</label>
+  <div class="tip-row">
+    <button type="button" class="tip-chip order-tip-chip active" data-tip="0">No tip</button>
+    <button type="button" class="tip-chip order-tip-chip" data-tip="1">€1</button>
+    <button type="button" class="tip-chip order-tip-chip" data-tip="2">€2</button>
+    <button type="button" class="tip-chip order-tip-chip" data-tip="5">€5</button>
+    <button type="button" class="tip-chip order-tip-chip" data-tip="custom">Custom</button>
+  </div>
+  <div class="custom-tip-wrap" id="orderCustomTipWrap">
+    <input class="field-input" id="orderCustomTipInput" type="number" min="0" step="0.5" placeholder="Enter your own amount (€)">
+  </div>
+  <input type="hidden" id="orderTipInput" name="tip" value="0">
+
+  <label class="field-label">Splitting the bill? (optional)</label>
+  <input class="field-input" id="orderSplitInput" name="split" type="number" min="1" max="20" placeholder="Number of people, e.g. 4">
 
   {{ if .HasUnavailable }}
   <button type="button" class="place-order-btn" disabled style="opacity:.5;">Review cart above</button>
   {{ else }}
-  <button type="button" class="place-order-btn" id="checkoutBtn" hx-post="/cart/checkout" hx-include="#orderComment, #paymentMethodInput" hx-confirm="Place this order?">
+  <button type="button" class="place-order-btn" id="checkoutBtn" hx-post="/cart/checkout" hx-include="#orderComment, #paymentMethodInput, #orderTipInput, #orderSplitInput" hx-confirm="Place this order?">
     <span class="spinner"></span>
     <span id="placeOrderLabel">Place order · Pay cash</span>
   </button>

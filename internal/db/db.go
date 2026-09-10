@@ -120,6 +120,52 @@ func InitDB() {
 		name TEXT NOT NULL UNIQUE,
 		department TEXT NOT NULL DEFAULT 'bar'
 	);
+
+	-- Append-only trail of admin/staff-management actions (account create/
+	-- update/deactivate/reactivate/password-reset) — actor is the acting
+	-- account's username at the time of the action (not a foreign key: an
+	-- account can later be renamed or deleted, and the log should still read
+	-- correctly), target is whoever the action was performed on.
+	CREATE TABLE IF NOT EXISTS audit_log (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		actor TEXT NOT NULL,
+		action TEXT NOT NULL,
+		target TEXT NOT NULL,
+		detail TEXT DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	-- One row per device a staff member has enabled real phone notifications
+	-- on (see handlers.PushSubscribe) — a lock-screen-visible alert for a
+	-- new order/ready-for-pickup, on top of (not instead of) the dashboard's
+	-- own in-page banner. endpoint is unique per browser+device install, so
+	-- re-subscribing the same device just refreshes its row instead of
+	-- piling up duplicates.
+	CREATE TABLE IF NOT EXISTS push_subscriptions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL,
+		endpoint TEXT NOT NULL UNIQUE,
+		p256dh TEXT NOT NULL,
+		auth TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (user_id) REFERENCES users(id)
+	);
+
+	-- The guest-side counterpart to push_subscriptions above. A guest is
+	-- never an authenticated user, so this keys off the same anonymous
+	-- bitebox_session cookie value every other guest action already keys
+	-- off (see handlers.GuestSessionCookieName / resolveHostedTable) rather
+	-- than a user_id — "who gets this device's alerts" is "whichever guest
+	-- session subscribed it," full stop, no FK to users. Same upsert-on-
+	-- endpoint intent as the staff table (see handlers.GuestPushSubscribe).
+	CREATE TABLE IF NOT EXISTS guest_push_subscriptions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		session_id TEXT NOT NULL,
+		endpoint TEXT NOT NULL UNIQUE,
+		p256dh TEXT NOT NULL,
+		auth TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 
 	_, err = DB.Exec(query)
@@ -137,6 +183,39 @@ func InitDB() {
 	// anytime from the dashboard.
 	if err := addColumnIfMissing("settings", "venue_name", "TEXT DEFAULT 'EGO'"); err != nil {
 		log.Fatalf("Failed to migrate settings.venue_name: %v", err)
+	}
+
+	// allow_cash_orders lets a venue go card/digital-only at checkout —
+	// defaults to 1 (on) so local dev and every existing venue's cash flow
+	// keep working unchanged on upgrade; an admin has to deliberately turn
+	// it off. Card is never toggleable — see models.Settings' doc comment.
+	if err := addColumnIfMissing("settings", "allow_cash_orders", "INTEGER DEFAULT 1"); err != nil {
+		log.Fatalf("Failed to migrate settings.allow_cash_orders: %v", err)
+	}
+
+	// business_vat_number/tax_office (ΑΦΜ/ΔΟΥ) back the demo Greek-receipt
+	// printout (see models.Order.VATBreakdown, templates/_receipt.html) —
+	// defaults are deliberately, obviously fake placeholders, never a real
+	// tax registration, and nothing here ever talks to myDATA/ΑΑΔΕ or any
+	// other government system. An admin can edit both from the dashboard;
+	// still demo values either way unless someone puts real ones in, which
+	// this app makes no attempt to enforce or validate.
+	if err := addColumnIfMissing("settings", "business_vat_number", "TEXT DEFAULT 'EL000000000 (DEMO)'"); err != nil {
+		log.Fatalf("Failed to migrate settings.business_vat_number: %v", err)
+	}
+	if err := addColumnIfMissing("settings", "tax_office", "TEXT DEFAULT 'Δ.Ο.Υ. ΔΗΜΟ (DEMO)'"); err != nil {
+		log.Fatalf("Failed to migrate settings.tax_office: %v", err)
+	}
+
+	// products.vat_rate / order_items.vat_rate: see models.Product.VATRate
+	// and models.OrderItem.VATRate — 24 (Greece's standard rate) is the
+	// default for any product that predates this column or never had one
+	// explicitly set.
+	if err := addColumnIfMissing("products", "vat_rate", "REAL DEFAULT 24"); err != nil {
+		log.Fatalf("Failed to migrate products.vat_rate: %v", err)
+	}
+	if err := addColumnIfMissing("order_items", "vat_rate", "REAL DEFAULT 24"); err != nil {
+		log.Fatalf("Failed to migrate order_items.vat_rate: %v", err)
 	}
 
 	// bitebox.db may already exist from before payment_status was introduced;
@@ -235,6 +314,74 @@ func InitDB() {
 		if err := addColumnIfMissing("users", m.column, m.definition); err != nil {
 			log.Fatalf("Failed to migrate users.%s: %v", m.column, err)
 		}
+	}
+
+	// last_activity_at drives auto-release of an abandoned table (see
+	// sweepIdleTables) — touched on every request that resolves a hosted
+	// table (claim, revisit, cart mutation, checkout, DJ request), not just
+	// on claim, so an actively-ordering table never gets swept out from
+	// under a real guest.
+	if err := addColumnIfMissing("tables", "last_activity_at", "DATETIME"); err != nil {
+		log.Fatalf("Failed to migrate tables.last_activity_at: %v", err)
+	}
+	// assistance_requested drives the guest-facing "Call waiter" button —
+	// set when a guest asks for help, cleared when staff acknowledges it
+	// (see AllowTableClaim's sibling, the assistance handlers in table.go).
+	if err := addColumnIfMissing("tables", "assistance_requested", "INTEGER DEFAULT 0"); err != nil {
+		log.Fatalf("Failed to migrate tables.assistance_requested: %v", err)
+	}
+	if err := addColumnIfMissing("tables", "assistance_requested_at", "DATETIME"); err != nil {
+		log.Fatalf("Failed to migrate tables.assistance_requested_at: %v", err)
+	}
+
+	// tip_amount is separate from total_amount (which stays "sum of line
+	// items", untouched, so every existing stock/revenue-per-item
+	// computation keeps working unmodified) — added at checkout, optional,
+	// defaults to 0 so every pre-existing order reads as "no tip" rather
+	// than NULL.
+	if err := addColumnIfMissing("orders", "tip_amount", "REAL DEFAULT 0"); err != nil {
+		log.Fatalf("Failed to migrate orders.tip_amount: %v", err)
+	}
+	// split_count is purely informational (how many people to divide the
+	// total between on the receipt) — this app has no per-guest payment
+	// collection, one host's session pays for the whole table either way.
+	if err := addColumnIfMissing("orders", "split_count", "INTEGER DEFAULT 1"); err != nil {
+		log.Fatalf("Failed to migrate orders.split_count: %v", err)
+	}
+
+	// image_url is optional guest-facing menu art — blank means "no photo,
+	// show the placeholder" (see _guest_product_list.html). A plain URL
+	// field, not an upload: this app has no file storage/serving
+	// infrastructure for guest-supplied binaries, and a venue's own product
+	// photos are far more likely to already be hosted somewhere (their own
+	// site, a CDN) than to need one built here.
+	if err := addColumnIfMissing("products", "image_url", "TEXT DEFAULT ''"); err != nil {
+		log.Fatalf("Failed to migrate products.image_url: %v", err)
+	}
+	// One-time data fixup, not a schema migration: earlier seeds stored the
+	// demo Omelette photo (see seed_ego.go's demoBrunchPhoto) as an inline
+	// `data:image/svg+xml;base64,...` URI. html/template's contextual
+	// auto-escaper silently defangs any non-http(s)/mailto scheme to
+	// "#ZgotmplZ" in a `src="{{ .ImageURL }}"` context, so that photo
+	// rendered broken everywhere on any database seeded before
+	// demoBrunchPhoto moved to a real static file. Idempotent — matches
+	// nothing (a no-op UPDATE) once a database has already been fixed or
+	// was seeded after the switch.
+	if _, err := DB.Exec(`UPDATE products SET image_url = ? WHERE image_url LIKE 'data:image/svg+xml;base64,%'`, demoBrunchPhoto); err != nil {
+		log.Fatalf("Failed to backfill legacy data: URI product photos: %v", err)
+	}
+
+	// vapid_public_key/vapid_private_key: this server's own Web Push
+	// identity (see handlers.InitPush) — generated once on first run and
+	// persisted here so every phone that's ever subscribed keeps working
+	// across restarts. Blank until InitPush fills them in; never exposed
+	// except vapid_public_key, which the browser needs to open a
+	// subscription (see handlers.PushVAPIDPublicKey).
+	if err := addColumnIfMissing("settings", "vapid_public_key", "TEXT DEFAULT ''"); err != nil {
+		log.Fatalf("Failed to migrate settings.vapid_public_key: %v", err)
+	}
+	if err := addColumnIfMissing("settings", "vapid_private_key", "TEXT DEFAULT ''"); err != nil {
+		log.Fatalf("Failed to migrate settings.vapid_private_key: %v", err)
 	}
 
 	// Seed Table 1 if it doesn't exist
@@ -444,3 +591,61 @@ func SetUserActive(id int, active bool) error {
 	return err
 }
 
+// UpdateUserProfile renames a staff account and/or moves it between
+// departments — the two things account creation locks in that previously
+// had no way to change afterward short of deactivate-and-recreate (which
+// loses the account's own identity/history association). role is
+// deliberately not editable here: admin vs. worker is a bigger boundary
+// than this form exists to cross: promoting a worker to admin should be a
+// deliberate "create a new admin account" action, not a field edit.
+func UpdateUserProfile(id int, username, department string) error {
+	_, err := DB.Exec("UPDATE users SET username = ?, department = ? WHERE id = ?", username, department, id)
+	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed") {
+		return ErrDuplicateUsername
+	}
+	return err
+}
+
+// SetUserPassword overwrites a staff account's password hash directly — the
+// admin-side "reset password" action for a staff member who forgot theirs.
+// There is no self-service reset flow (no email system exists in this app);
+// only an admin can do this, and it's logged via LogAudit by the caller.
+func SetUserPassword(id int, passwordHash string) error {
+	_, err := DB.Exec("UPDATE users SET password_hash = ? WHERE id = ?", passwordHash, id)
+	return err
+}
+
+// LogAudit appends one row to the staff-management audit trail. actor is
+// the acting account's username at the time of the action (not a foreign
+// key — stays readable even if that account is later renamed or removed).
+// Errors are deliberately swallowed by callers that treat this as
+// best-effort bookkeeping, not a condition that should fail the action it's
+// logging (losing an audit row is much cheaper than blocking a legitimate
+// deactivate/reset because the log insert hiccuped).
+func LogAudit(actor, action, target, detail string) error {
+	_, err := DB.Exec("INSERT INTO audit_log (actor, action, target, detail) VALUES (?, ?, ?, ?)", actor, action, target, detail)
+	return err
+}
+
+// auditColumns/scanAudit mirror the userColumns/scanUser pattern above.
+const auditColumns = "id, actor, action, target, detail, created_at"
+
+// GetRecentAuditLog returns the most recent staff-management actions,
+// newest first, for the admin "Staff & access" panel's audit trail.
+func GetRecentAuditLog(limit int) ([]models.AuditEntry, error) {
+	rows, err := DB.Query("SELECT "+auditColumns+" FROM audit_log ORDER BY created_at DESC LIMIT ?", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []models.AuditEntry
+	for rows.Next() {
+		var e models.AuditEntry
+		if err := rows.Scan(&e.ID, &e.Actor, &e.Action, &e.Target, &e.Detail, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, nil
+}

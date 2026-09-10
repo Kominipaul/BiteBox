@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"html/template"
+	"math"
 	"net/http"
 	"slices"
 	"strconv"
@@ -13,6 +14,72 @@ import (
 	"bitebox/internal/models"
 )
 
+// maxTip and maxSplitCount bound the two optional checkout extras — same
+// "guest-entered number, never trust it outright" reasoning as everywhere
+// else a guest supplies one (see dj.go's maxSongTip).
+const (
+	maxTip        = 500.0
+	maxSplitCount = 20
+)
+
+// parseTip reads the optional "tip" checkout field: blank/unparseable means
+// no tip (not an error — a tip is always optional), any parsed value still
+// gets the same NaN/Inf/range guard as the DJ tip.
+func parseTip(r *http.Request) (float64, bool) {
+	raw := strings.TrimSpace(r.FormValue("tip"))
+	if raw == "" {
+		return 0, true
+	}
+	tip, err := strconv.ParseFloat(raw, 64)
+	if err != nil || math.IsNaN(tip) || math.IsInf(tip, 0) || tip < 0 || tip > maxTip {
+		return 0, false
+	}
+	return tip, true
+}
+
+// parseSplitCount reads the optional "split" checkout field: blank or "1"
+// means no split (the common case). Anything else must be a sane positive
+// integer — capped at maxSplitCount since a table splitting a bill between
+// more people than could physically fit around it is a tampered request,
+// not a real use, and it's purely a display divisor so the failure mode of
+// rejecting it outright (rather than silently clamping) is the guest just
+// re-entering a sane number, not a broken order.
+func parseSplitCount(r *http.Request) (int, bool) {
+	raw := strings.TrimSpace(r.FormValue("split"))
+	if raw == "" {
+		return 1, true
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 || n > maxSplitCount {
+		return 1, false
+	}
+	return n, true
+}
+
+// resolvePaymentMethod validates the guest's chosen payment method against
+// the venue's current cash-orders setting. ok=false means the request
+// should be rejected outright: the guest checkout screen already hides the
+// cash option the moment it's disabled (see renderCartSummary), so an
+// explicit "cash" pick past that point means either a stale page (the
+// admin flipped the setting while this tab was already open, before the
+// live cart-refresh nudge caught up) or a direct/tampered POST — either
+// way, the guest needs a clear "pick something else" answer, not a
+// silently-substituted charge method they didn't choose. A blank/
+// unrecognized value isn't a rejection, just falls back to whichever of
+// cash/card is actually still on offer.
+func resolvePaymentMethod(r *http.Request, allowCashOrders bool) (method string, ok bool) {
+	switch raw := r.FormValue("payment_method"); {
+	case raw == models.PaymentMethodCash && !allowCashOrders:
+		return "", false
+	case raw == models.PaymentMethodCard:
+		return models.PaymentMethodCard, true
+	case allowCashOrders:
+		return models.PaymentMethodCash, true // preserves the original "anything but card means cash" default
+	default:
+		return models.PaymentMethodCard, true // cash is off — card is the only option left
+	}
+}
+
 // CartHandlers groups guest cart/checkout routes needing access to the
 // shared in-memory cart store.
 type CartHandlers struct {
@@ -21,13 +88,19 @@ type CartHandlers struct {
 
 // resolveHostedTable authorizes a cart mutation by resolving which table (if
 // any) the caller's guest session currently hosts — never trusting a
-// client-supplied table number.
+// client-supplied table number. Also stamps the table's activity heartbeat
+// (see db.TouchTableActivity/sweepIdleTables in main.go) — any real guest
+// action routes through here, so this one spot covers add/remove/clear/
+// checkout/DJ-request without needing a call in each of them individually.
 func resolveHostedTable(r *http.Request) (models.Table, string, error) {
 	sessionCookie, err := r.Cookie(GuestSessionCookieName)
 	if err != nil {
 		return models.Table{}, "", err
 	}
 	table, err := db.GetTableByHostSession(sessionCookie.Value)
+	if err == nil {
+		db.TouchTableActivity(table.Number)
+	}
 	return table, sessionCookie.Value, err
 }
 
@@ -94,14 +167,23 @@ func resolveCart(c models.Cart) (views []cartItemView, total float64, hasUnavail
 	return views, total, hasUnavailable, totalQty
 }
 
+// renderCartSummary fetches AllowCashOrders fresh on every render — this is
+// how the checkout screen "dynamically fetches venue settings on load":
+// #cart-summary already re-renders from scratch on page load and on every
+// live cart-refresh nudge (see menu.go's cartRefreshTrigger, pushed by
+// AdminToggleCashOrders same as any other menu-affecting change), so
+// threading the current setting through here is all a guest's checkout
+// screen needs to stay in sync — no separate settings-fetch endpoint.
 func renderCartSummary(w http.ResponseWriter, c models.Cart) {
 	views, total, hasUnavailable, totalQty := resolveCart(c)
+	settings, _ := db.GetSettings()
 	tmpl := template.Must(template.ParseFiles("templates/_cart_summary.html"))
 	tmpl.Execute(w, map[string]interface{}{
-		"Items":          views,
-		"Total":          total,
-		"HasUnavailable": hasUnavailable,
-		"TotalQty":       totalQty,
+		"Items":           views,
+		"Total":           total,
+		"HasUnavailable":  hasUnavailable,
+		"TotalQty":        totalQty,
+		"AllowCashOrders": settings.AllowCashOrders,
 	})
 }
 
@@ -161,6 +243,10 @@ func (h *CartHandlers) Add(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "You are not currently hosting a table", http.StatusForbidden)
 		return
 	}
+	if !AllowCartAction(r) {
+		http.Error(w, "Too many cart actions — please slow down", http.StatusTooManyRequests)
+		return
+	}
 
 	r.ParseForm()
 	productID, err := strconv.Atoi(r.FormValue("product_id"))
@@ -195,6 +281,10 @@ func (h *CartHandlers) Remove(w http.ResponseWriter, r *http.Request) {
 	_, sessionID, err := resolveHostedTable(r)
 	if err != nil {
 		http.Error(w, "You are not currently hosting a table", http.StatusForbidden)
+		return
+	}
+	if !AllowCartAction(r) {
+		http.Error(w, "Too many cart actions — please slow down", http.StatusTooManyRequests)
 		return
 	}
 
@@ -248,9 +338,11 @@ func (h *CartHandlers) Checkout(w http.ResponseWriter, r *http.Request) {
 		items[i] = v.OrderItem
 	}
 
-	method := r.FormValue("payment_method")
-	if method != models.PaymentMethodCard {
-		method = models.PaymentMethodCash
+	settings, _ := db.GetSettings()
+	method, methodOK := resolvePaymentMethod(r, settings.AllowCashOrders)
+	if !methodOK {
+		http.Error(w, "Cash payments are currently unavailable at this venue — please pay by card.", http.StatusForbidden)
+		return
 	}
 	// Card has no real processor behind it (matches the guest UI's own
 	// "Demo" label) — treated as instantly paid, since there's no cash to
@@ -264,7 +356,14 @@ func (h *CartHandlers) Checkout(w http.ResponseWriter, r *http.Request) {
 		note = note[:500]
 	}
 
-	_, err = db.CreateOrder(table.Number, sessionID, method, paymentStatus, note, total, items)
+	tip, tipOK := parseTip(r)
+	splitCount, splitOK := parseSplitCount(r)
+	if !tipOK || !splitOK {
+		http.Error(w, "Invalid tip amount or split count", http.StatusBadRequest)
+		return
+	}
+
+	orderID, err := db.CreateOrder(table.Number, sessionID, method, paymentStatus, note, total, tip, splitCount, items)
 	if err != nil {
 		if err == db.ErrInsufficientStock {
 			http.Error(w, "Sorry, an item in your cart just sold out — please review your cart", http.StatusConflict)
@@ -281,6 +380,8 @@ func (h *CartHandlers) Checkout(w http.ResponseWriter, r *http.Request) {
 	BroadcastPlacedOrders(table.Number, sessionID)
 	BroadcastAllMenus()
 	BroadcastAdminStats()
+	pushNewOrderAlert(orderID, table.Number, items)
+	pushOrderConfirmedAlert(sessionID, orderID, table.Number, items)
 
 	w.Header().Set("HX-Redirect", "/table/"+strconv.Itoa(table.Number))
 }

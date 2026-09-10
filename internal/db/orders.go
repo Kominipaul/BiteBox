@@ -32,8 +32,11 @@ func jsonArrayOrEmpty(items []string) (string, error) {
 // atomically in the same transaction; if any item no longer has enough
 // stock, the whole order is rolled back and ErrInsufficientStock is returned.
 // Each item's Excluded ingredients are stored as a JSON array snapshot,
-// same "immutable at order time" reasoning as name/price.
-func CreateOrder(tableNumber int, sessionID, paymentMethod, paymentStatus, note string, totalAmount float64, items []models.OrderItem) (int, error) {
+// same "immutable at order time" reasoning as name/price. tipAmount and
+// splitCount are guest-entered, informational-beyond-the-tip-itself (see
+// models.Order doc comments) — the caller is responsible for validating
+// both are sane (non-negative, splitCount >= 1) before calling this.
+func CreateOrder(tableNumber int, sessionID, paymentMethod, paymentStatus, note string, totalAmount, tipAmount float64, splitCount int, items []models.OrderItem) (int, error) {
 	tx, err := DB.Begin()
 	if err != nil {
 		return 0, err
@@ -41,8 +44,8 @@ func CreateOrder(tableNumber int, sessionID, paymentMethod, paymentStatus, note 
 	defer tx.Rollback()
 
 	res, err := tx.Exec(
-		"INSERT INTO orders (table_number, session_id, status, payment_method, payment_status, total_amount, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		tableNumber, sessionID, models.OrderStatusPending, paymentMethod, paymentStatus, totalAmount, note,
+		"INSERT INTO orders (table_number, session_id, status, payment_method, payment_status, total_amount, note, tip_amount, split_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		tableNumber, sessionID, models.OrderStatusPending, paymentMethod, paymentStatus, totalAmount, note, tipAmount, splitCount,
 	)
 	if err != nil {
 		return 0, err
@@ -63,8 +66,8 @@ func CreateOrder(tableNumber int, sessionID, paymentMethod, paymentStatus, note 
 			return 0, err
 		}
 		if _, err := tx.Exec(
-			"INSERT INTO order_items (order_id, product_id, name, price, quantity, excluded_ingredients, extra_ingredients) VALUES (?, ?, ?, ?, ?, ?, ?)",
-			orderID, item.ProductID, item.Name, item.Price, item.Quantity, excludedJSON, extrasJSON,
+			"INSERT INTO order_items (order_id, product_id, name, price, quantity, excluded_ingredients, extra_ingredients, vat_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+			orderID, item.ProductID, item.Name, item.Price, item.Quantity, excludedJSON, extrasJSON, item.VATRate,
 		); err != nil {
 			return 0, err
 		}
@@ -91,11 +94,11 @@ func CreateOrder(tableNumber int, sessionID, paymentMethod, paymentStatus, note 
 	return orderID, nil
 }
 
-const orderColumns = "id, table_number, session_id, status, payment_method, payment_status, total_amount, served_by, note, refund_requested, created_at"
+const orderColumns = "id, table_number, session_id, status, payment_method, payment_status, total_amount, served_by, note, refund_requested, created_at, tip_amount, split_count"
 
 func scanOrderRow(scan func(...interface{}) error, o *models.Order) error {
 	var refundRequested int
-	if err := scan(&o.ID, &o.TableNumber, &o.SessionID, &o.Status, &o.PaymentMethod, &o.PaymentStatus, &o.TotalAmount, &o.ServedBy, &o.Note, &refundRequested, &o.CreatedAt); err != nil {
+	if err := scan(&o.ID, &o.TableNumber, &o.SessionID, &o.Status, &o.PaymentMethod, &o.PaymentStatus, &o.TotalAmount, &o.ServedBy, &o.Note, &refundRequested, &o.CreatedAt, &o.TipAmount, &o.SplitCount); err != nil {
 		return err
 	}
 	o.RefundRequested = refundRequested != 0
@@ -129,7 +132,7 @@ func GetOrderByID(id int) (models.Order, error) {
 }
 
 func GetOrderItems(orderID int) ([]models.OrderItem, error) {
-	rows, err := DB.Query("SELECT product_id, name, price, quantity, excluded_ingredients, extra_ingredients FROM order_items WHERE order_id = ?", orderID)
+	rows, err := DB.Query("SELECT product_id, name, price, quantity, excluded_ingredients, extra_ingredients, vat_rate FROM order_items WHERE order_id = ?", orderID)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +142,7 @@ func GetOrderItems(orderID int) ([]models.OrderItem, error) {
 	for rows.Next() {
 		var it models.OrderItem
 		var excludedJSON, extrasJSON string
-		if err := rows.Scan(&it.ProductID, &it.Name, &it.Price, &it.Quantity, &excludedJSON, &extrasJSON); err != nil {
+		if err := rows.Scan(&it.ProductID, &it.Name, &it.Price, &it.Quantity, &excludedJSON, &extrasJSON, &it.VATRate); err != nil {
 			return nil, err
 		}
 		if excludedJSON != "" && excludedJSON != "[]" {
@@ -324,12 +327,13 @@ func GetActiveOrdersByCategories(categories []string) ([]models.Order, error) {
 	return orders, nil
 }
 
-// GetOrderHistory returns the most recent orders regardless of status,
-// newest first, with items populated — for the admin all-time history view.
-// limit bounds the result since history only grows; it's not pagination,
-// just a sane cap on a single scrollable panel.
-func GetOrderHistory(limit int) ([]models.Order, error) {
-	rows, err := DB.Query("SELECT "+orderColumns+" FROM orders ORDER BY created_at DESC LIMIT ?", limit)
+// GetOrderHistory returns up to limit orders regardless of status, newest
+// first, with items populated, skipping the first offset — real pagination
+// for the admin all-time history view (offset=0, called again with the next
+// offset for "Load more"). limit=-1 means unlimited (SQLite's own LIMIT -1
+// convention) — used only by AdminExportCSV, which wants everything.
+func GetOrderHistory(limit, offset int) ([]models.Order, error) {
+	rows, err := DB.Query("SELECT "+orderColumns+" FROM orders ORDER BY created_at DESC LIMIT ? OFFSET ?", limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -353,6 +357,48 @@ func GetOrderHistory(limit int) ([]models.Order, error) {
 	}
 
 	return orders, nil
+}
+
+// GetOrderHistoryCount is the total row count GetOrderHistory paginates
+// over — the admin history panel's "Load more" button hides itself once
+// offset+limit reaches this.
+func GetOrderHistoryCount() (int, error) {
+	var count int
+	err := DB.QueryRow("SELECT COUNT(*) FROM orders").Scan(&count)
+	return count, err
+}
+
+// OrderHasAnyCategory reports whether orderID contains at least one item
+// currently classified (via products.category, joined live — same
+// "current classification, not order-time snapshot" reasoning as
+// GetActiveOrdersByCategories) under any of the given category names.
+// Used to tighten a bar/kitchen worker's write access to only orders that
+// are actually theirs (see RequireDepartment's doc comment on the
+// department-boundary gap this closes) — the read-side feed already
+// filters this way; this is the same rule enforced on the mutating routes.
+func OrderHasAnyCategory(orderID int, categories []string) (bool, error) {
+	if len(categories) == 0 {
+		return false, nil
+	}
+	placeholders := make([]byte, 0, len(categories)*2)
+	args := []interface{}{orderID}
+	for i, cat := range categories {
+		if i > 0 {
+			placeholders = append(placeholders, ',')
+		}
+		placeholders = append(placeholders, '?')
+		args = append(args, cat)
+	}
+	var exists int
+	err := DB.QueryRow(
+		`SELECT EXISTS(
+			SELECT 1 FROM order_items oi
+			JOIN products p ON p.id = oi.product_id
+			WHERE oi.order_id = ? AND p.category IN (`+string(placeholders)+`)
+		)`,
+		args...,
+	).Scan(&exists)
+	return exists != 0, err
 }
 
 func UpdateOrderStatus(orderID int, status string) error {

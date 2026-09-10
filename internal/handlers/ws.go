@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"bitebox/internal/auth"
@@ -35,6 +36,18 @@ func topicTableStatus(tableNumber int) string {
 	return fmt.Sprintf("table:%d:status", tableNumber)
 }
 
+// topicSessionOrders is a per-guest-session topic for the "Your orders"
+// list — deliberately keyed by session, not table. /table/{n}/ws has no
+// access control (by design: it's how an anonymous guest gets live
+// updates before any login exists), so anything broadcast on the shared
+// table-status topic is visible to literally anyone who opens that socket,
+// host or not. A session's own order history — items, note, payment
+// status — has no business going out on a topic every visitor to that
+// table (or anyone who guesses the URL) is subscribed to.
+func topicSessionOrders(sessionID string) string {
+	return "session:" + sessionID + ":placed-orders"
+}
+
 func topicAdminStats(period string) string {
 	return fmt.Sprintf("admin:stats:%s", period)
 }
@@ -46,6 +59,11 @@ func topicWorkerOrders(department string) string {
 }
 
 const topicWorkerDJ = "worker:dj"
+
+// topicAssistance carries the guest-facing "Call waiter" alert panel — see
+// RequestAssistance (table.go) and WorkerAssistanceWS/BroadcastAssistanceAlerts
+// (worker.go).
+const topicAssistance = "worker:assistance"
 
 // oobWrap wraps an HTML fragment in an htmx out-of-band swap targeting the
 // given element id, for pushing over a websocket via the htmx ws extension.
@@ -79,21 +97,55 @@ const sessionRecheckInterval = 5 * time.Second
 // they were never kicked out.
 const wsKickCloseCode = 4001
 
+// mergeTopics fans several Hub subscriptions into one channel, so pumpWS's
+// select loop can stay single-channel regardless of how many topics a
+// connection needs (a table socket subscribes to both the shared
+// table-status topic and, when a guest session is present, that session's
+// own private orders topic — see topicSessionOrders).
+func mergeTopics(topics []string) (merged chan []byte, unsubscribe func()) {
+	chans := make([]chan []byte, len(topics))
+	for i, topic := range topics {
+		chans[i] = Hub.Subscribe(topic)
+	}
+
+	out := make(chan []byte, 16)
+	var wg sync.WaitGroup
+	wg.Add(len(chans))
+	for _, ch := range chans {
+		go func(ch chan []byte) {
+			defer wg.Done()
+			for msg := range ch {
+				out <- msg
+			}
+		}(ch)
+	}
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return out, func() {
+		for i, ch := range chans {
+			Hub.Unsubscribe(topics[i], ch)
+		}
+	}
+}
+
 // pumpWS upgrades the request, sends an initial snapshot, then relays every
-// broadcast published to topic until the client disconnects. If sessionID
-// is non-empty (staff-authenticated sockets only — guest-facing sockets
-// like table/menu pass ""), the underlying session is periodically
+// broadcast published to any of topics until the client disconnects. If
+// sessionID is non-empty (staff-authenticated sockets only — guest-facing
+// sockets like table/menu pass ""), the underlying session is periodically
 // re-validated and the connection is force-closed with wsKickCloseCode the
 // moment it's no longer valid.
-func pumpWS(w http.ResponseWriter, r *http.Request, topic string, initial []byte, sessionID string) {
+func pumpWS(w http.ResponseWriter, r *http.Request, topics []string, initial []byte, sessionID string) {
 	conn, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
 	defer conn.Close()
 
-	ch := Hub.Subscribe(topic)
-	defer Hub.Unsubscribe(topic, ch)
+	ch, unsubscribe := mergeTopics(topics)
+	defer unsubscribe()
 
 	if err := conn.WriteMessage(websocket.TextMessage, initial); err != nil {
 		return
@@ -150,7 +202,7 @@ func WorkerOrdersWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessionID, _ := auth.SessionIDFromRequest(r)
-	pumpWS(w, r, topicWorkerOrders(bucket), oobWrap("order-feed", b), sessionID)
+	pumpWS(w, r, []string{topicWorkerOrders(bucket)}, oobWrap("order-feed", b), sessionID)
 }
 
 func WorkerDJWS(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +212,7 @@ func WorkerDJWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessionID, _ := auth.SessionIDFromRequest(r)
-	pumpWS(w, r, topicWorkerDJ, oobWrap("dj-feed", b), sessionID)
+	pumpWS(w, r, []string{topicWorkerDJ}, oobWrap("dj-feed", b), sessionID)
 }
 
 func TableStatusWS(w http.ResponseWriter, r *http.Request) {
@@ -170,10 +222,17 @@ func TableStatusWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	initial := append(oobWrap("order-status", renderOrderStatusHTML(tableNum)), oobWrap("song-status", renderSongStatusHTML(tableNum))...)
+	// The shared, table-wide topic covers order-status/song-status only —
+	// nothing session-specific goes out on it (see topicSessionOrders,
+	// SEC-11). A guest's own "Your orders" list rides a separate topic
+	// scoped to their session, so no other socket on this same table can
+	// see it.
+	topics := []string{topicTableStatus(tableNum)}
 	if sessionCookie, err := r.Cookie(GuestSessionCookieName); err == nil {
 		initial = append(initial, oobWrap("placed-orders", renderPlacedOrdersHTML(sessionCookie.Value))...)
+		topics = append(topics, topicSessionOrders(sessionCookie.Value))
 	}
-	pumpWS(w, r, topicTableStatus(tableNum), initial, "")
+	pumpWS(w, r, topics, initial, "")
 }
 
 // MenuWS serves the guest-facing live menu: product availability/price/
@@ -188,7 +247,7 @@ func MenuWS(w http.ResponseWriter, r *http.Request) {
 	if djSection, err := renderDJSectionHTML(); err == nil {
 		initial = append(initial, oobWrap("dj-section", djSection)...)
 	}
-	pumpWS(w, r, topicMenu, initial, "")
+	pumpWS(w, r, []string{topicMenu}, initial, "")
 }
 
 // AdminMenuWS keeps the admin dashboard's menu/inventory list live —
@@ -202,7 +261,7 @@ func AdminMenuWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessionID, _ := auth.SessionIDFromRequest(r)
-	pumpWS(w, r, topicAdminMenu, oobWrap("menuList", b), sessionID)
+	pumpWS(w, r, []string{topicAdminMenu}, oobWrap("menuList", b), sessionID)
 }
 
 // AdminTablesWS keeps the admin dashboard's table grid live — a guest
@@ -215,7 +274,7 @@ func AdminTablesWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessionID, _ := auth.SessionIDFromRequest(r)
-	pumpWS(w, r, topicAdminTables, oobWrap("table-grid", b), sessionID)
+	pumpWS(w, r, []string{topicAdminTables}, oobWrap("table-grid", b), sessionID)
 }
 
 // AdminStatsWS keeps the admin dashboard's overview numbers live, scoped to
@@ -230,5 +289,5 @@ func AdminStatsWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessionID, _ := auth.SessionIDFromRequest(r)
-	pumpWS(w, r, topicAdminStats(period), oobWrap("admin-stats", b), sessionID)
+	pumpWS(w, r, []string{topicAdminStats(period)}, oobWrap("admin-stats", b), sessionID)
 }

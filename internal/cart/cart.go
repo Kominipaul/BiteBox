@@ -3,9 +3,24 @@ package cart
 import (
 	"sort"
 	"sync"
+	"time"
 
 	"bitebox/internal/models"
 )
+
+// cartTTL is how long an idle cart survives before the cleanup sweep drops
+// it. A guest who abandons a table without ever hitting "Leave" (see
+// TableHandlers.Leave) would otherwise keep their reservation — and the
+// map entry itself — alive forever; nothing else ever deletes a cart.
+const cartTTL = 30 * time.Minute
+
+// cartSweepInterval is how often the cleanup goroutine scans for idle carts.
+const cartSweepInterval = 5 * time.Minute
+
+type cartEntry struct {
+	cart      models.Cart
+	updatedAt time.Time
+}
 
 // Store is an in-memory, session-keyed cart store. Carts are ephemeral
 // pre-checkout state — checkout drains a cart into real orders/order_items
@@ -13,11 +28,32 @@ import (
 // order is an acceptable loss for a not-yet-placed cart.
 type Store struct {
 	mu    sync.RWMutex
-	carts map[string]*models.Cart
+	carts map[string]*cartEntry
 }
 
 func NewStore() *Store {
-	return &Store{carts: make(map[string]*models.Cart)}
+	s := &Store{carts: make(map[string]*cartEntry)}
+	go s.sweepIdleCarts()
+	return s
+}
+
+// sweepIdleCarts runs for the lifetime of the process, periodically dropping
+// carts nobody has touched in cartTTL — both to bound memory on a venue
+// server that stays up for weeks, and to stop an abandoned cart from
+// reserving stock (see ReservedQuantity) indefinitely.
+func (s *Store) sweepIdleCarts() {
+	ticker := time.NewTicker(cartSweepInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		cutoff := time.Now().Add(-cartTTL)
+		s.mu.Lock()
+		for sessionID, entry := range s.carts {
+			if entry.updatedAt.Before(cutoff) {
+				delete(s.carts, sessionID)
+			}
+		}
+		s.mu.Unlock()
+	}
 }
 
 // Get returns a snapshot of the session's cart (an empty Cart if none exists yet).
@@ -25,11 +61,11 @@ func (s *Store) Get(sessionID string) models.Cart {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	c, ok := s.carts[sessionID]
+	e, ok := s.carts[sessionID]
 	if !ok {
 		return models.Cart{}
 	}
-	return *c
+	return e.cart
 }
 
 // sameSet compares two string sets order-independently — used for both
@@ -63,11 +99,13 @@ func (s *Store) Add(sessionID string, productID int, name string, price float64,
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	c := s.getOrCreate(sessionID)
+	e := s.getOrCreate(sessionID)
+	c := &e.cart
 	for i := range c.Items {
 		if c.Items[i].ProductID == productID && sameCustomization(c.Items[i], excluded, extras) {
 			c.Items[i].Quantity++
 			recalcTotal(c)
+			e.updatedAt = time.Now()
 			return *c
 		}
 	}
@@ -80,6 +118,7 @@ func (s *Store) Add(sessionID string, productID int, name string, price float64,
 		Extras:    append([]string{}, extras...),
 	})
 	recalcTotal(c)
+	e.updatedAt = time.Now()
 	return *c
 }
 
@@ -89,7 +128,8 @@ func (s *Store) Remove(sessionID string, productID int, excluded, extras []strin
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	c := s.getOrCreate(sessionID)
+	e := s.getOrCreate(sessionID)
+	c := &e.cart
 	for i := range c.Items {
 		if c.Items[i].ProductID == productID && sameCustomization(c.Items[i], excluded, extras) {
 			c.Items[i].Quantity--
@@ -100,6 +140,7 @@ func (s *Store) Remove(sessionID string, productID int, excluded, extras []strin
 		}
 	}
 	recalcTotal(c)
+	e.updatedAt = time.Now()
 	return *c
 }
 
@@ -121,8 +162,8 @@ func (s *Store) ReservedQuantity(productID int) int {
 	defer s.mu.RUnlock()
 
 	total := 0
-	for _, c := range s.carts {
-		for _, item := range c.Items {
+	for _, e := range s.carts {
+		for _, item := range e.cart.Items {
 			if item.ProductID == productID {
 				total += item.Quantity
 			}
@@ -131,13 +172,13 @@ func (s *Store) ReservedQuantity(productID int) int {
 	return total
 }
 
-func (s *Store) getOrCreate(sessionID string) *models.Cart {
-	c, ok := s.carts[sessionID]
+func (s *Store) getOrCreate(sessionID string) *cartEntry {
+	e, ok := s.carts[sessionID]
 	if !ok {
-		c = &models.Cart{}
-		s.carts[sessionID] = c
+		e = &cartEntry{updatedAt: time.Now()}
+		s.carts[sessionID] = e
 	}
-	return c
+	return e
 }
 
 // recalcTotal always recomputes TotalAmount from Items — a client never

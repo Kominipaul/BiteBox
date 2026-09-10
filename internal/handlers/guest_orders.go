@@ -29,11 +29,15 @@ func renderPlacedOrdersHTML(sessionID string) []byte {
 	return buf.Bytes()
 }
 
-// BroadcastPlacedOrders pushes a fresh "Your orders" list to whoever's
-// connected on a table's websocket — called whenever one of that guest's
-// orders changes (new order, status update, cancel, refund request).
+// BroadcastPlacedOrders pushes a fresh "Your orders" list to the one guest
+// session it belongs to — called whenever one of that guest's orders
+// changes (new order, status update, cancel, refund request). This rides
+// topicSessionOrders, not the shared per-table topic: order history,
+// payment status, and notes are this guest's own, and /table/{n}/ws has no
+// access control gating who else can subscribe to a given table (see
+// topicSessionOrders and TableStatusWS).
 func BroadcastPlacedOrders(tableNumber int, sessionID string) {
-	Hub.Broadcast(topicTableStatus(tableNumber), oobWrap("placed-orders", renderPlacedOrdersHTML(sessionID)))
+	Hub.Broadcast(topicSessionOrders(sessionID), oobWrap("placed-orders", renderPlacedOrdersHTML(sessionID)))
 }
 
 // GuestCancelOrder lets a guest cancel their own not-yet-served order.

@@ -3,28 +3,42 @@
 <div class="menu-list" data-cat="{{ .Name }}">
   {{ range .Products }}
   <div class="item-card" data-name="{{ .Name }}">
-    <div class="item-top">
-      <span class="item-name">{{ .Name }}</span>
-      <span class="item-leader"></span>
-      <span class="item-price">€{{ printf "%.2f" .Price }}</span>
-    </div>
-    {{ if eq .AvailableStock 0 }}
-    <div class="item-desc" style="color:var(--danger);">Sold out</div>
-    {{ else if and (ge .AvailableStock 0) (le .AvailableStock 5) }}
-    <div class="item-desc" style="color:var(--danger);">Only {{ .AvailableStock }} left</div>
-    {{ else if .Description }}
-    <div class="item-desc">{{ .Description }}</div>
-    {{ end }}
-    <div class="item-actions">
+    <div class="item-main">
+      <div class="item-top">
+        <span class="item-name">{{ .Name }}</span>
+        <span class="item-leader"></span>
+        <span class="item-price">€{{ printf "%.2f" .Price }}</span>
+      </div>
       {{ if eq .AvailableStock 0 }}
-      <button class="add-btn" disabled style="opacity:.5;cursor:default;">Sold Out</button>
-      {{ else }}
-      <button class="add-btn" hx-post="/cart/add" hx-vals='{"product_id": "{{ .ID }}"}' hx-target="#cart-summary" hx-swap="innerHTML">+ Add</button>
+      <div class="item-desc" style="color:var(--danger);">Sold out</div>
+      {{ else if and (ge .AvailableStock 0) (le .AvailableStock 5) }}
+      <div class="item-desc" style="color:var(--danger);">Only {{ .AvailableStock }} left</div>
+      {{ else if .Description }}
+      <div class="item-desc">{{ .Description }}</div>
       {{ end }}
-      {{ if .HasCustomizableIngredient }}
-      <button type="button" class="customize-link" data-action="open-customize" data-product-id="{{ .ID }}" data-name="{{ .Name }}" data-price="{{ printf "%.2f" .Price }}">Customize</button>
-      {{ end }}
+      <div class="item-actions">
+        {{ if eq .AvailableStock 0 }}
+        <button class="add-btn" disabled style="opacity:.5;cursor:default;">Sold Out</button>
+        {{ else }}
+        <button class="add-btn" hx-post="/cart/add" hx-vals='{"product_id": "{{ .ID }}"}' hx-target="#cart-summary" hx-swap="innerHTML">+ Add</button>
+        {{ end }}
+        {{ if .HasCustomizableIngredient }}
+        <button type="button" class="customize-link" data-action="open-customize" data-product-id="{{ .ID }}" data-name="{{ .Name }}" data-price="{{ printf "%.2f" .Price }}">Customize</button>
+        {{ end }}
+      </div>
     </div>
+    {{ if .ImageURL }}
+    <div class="item-photo-wrap">
+      <!-- ThumbURL, not ImageURL: this box is ~110-130px — no reason to
+           make a guest's phone download the full ~1600px copy (see
+           imageproc.FullMaxDimension) just to show a thumbnail. Both are
+           always present together (writeProductPhoto/thumbURLFor, see
+           internal/handlers/photo.go) whenever ImageURL is our own
+           uploaded photo; ThumbURL just equals ImageURL for an admin-
+           pasted external URL, which never went through that pipeline. -->
+      <img class="item-photo" src="{{ .ThumbURL }}" alt="" loading="lazy" onerror="this.closest('.item-photo-wrap').remove()">
+    </div>
+    {{ end }}
     {{ if .HasCustomizableIngredient }}
     <!-- Source chips for the customize modal: hidden here, cloned into
          #customizeChips on open (see host_menu.html) rather than requiring a

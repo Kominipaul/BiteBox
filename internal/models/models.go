@@ -1,11 +1,28 @@
 package models
 
-import "time"
+import (
+	"fmt"
+	"sort"
+	"time"
+)
 
 // Settings is a venue-wide singleton row of feature toggles.
 type Settings struct {
 	DJRequestsEnabled bool
 	VenueName         string
+	// AllowCashOrders lets a venue turn cash off at checkout — some venues
+	// go card/digital-only for cash-handling reasons. Defaults to true
+	// (see db.go's migration) so local dev and every existing cash flow
+	// keep working unchanged unless an admin deliberately switches it off.
+	// Card is never toggleable — it's the one payment method every guest
+	// can always fall back to.
+	AllowCashOrders bool
+	// BusinessVATNumber/TaxOffice (ΑΦΜ/ΔΟΥ) are demo-structure fields for
+	// the Greek-receipt-shaped printout (see Order.Receipt) — NOT a real
+	// tax registration and NOT connected to myDATA/ΑΑΔΕ in any way. See
+	// db.go's migration for the obviously-fake defaults.
+	BusinessVATNumber string
+	TaxOffice         string
 }
 
 type Product struct {
@@ -31,6 +48,15 @@ type Product struct {
 	// name (e.g. "Grilled octopus, fava cream, cuttlefish ink..."). Blank
 	// means no description line is rendered.
 	Description string `json:"description"`
+	// ImageURL is optional guest-facing menu art — a plain URL, not an
+	// upload (this app has no file storage for guest-supplied binaries).
+	// Blank means no photo; the guest menu falls back to a placeholder.
+	ImageURL string `json:"image_url,omitempty"`
+	// VATRate is a percentage (24, 13, or 6 — Greece's standard/reduced/
+	// super-reduced rates) used only to build the demo receipt's VAT
+	// breakdown table (see Order.VATBreakdown) — display structure, not a
+	// real tax calculation feeding any actual filing or myDATA submission.
+	VATRate float64 `json:"vat_rate"`
 }
 
 // CategoryOther is the one fallback category always guaranteed to exist
@@ -56,6 +82,10 @@ type Table struct {
 	Number        int    `json:"number"`
 	Status        string `json:"status"` // "available" or "occupied"
 	HostSessionID string `json:"host_session_id"`
+	// AssistanceRequested is set by the guest-facing "Call waiter" button
+	// and cleared when a staff member acknowledges it (see
+	// TableHandlers.RequestAssistance/AcknowledgeAssistance).
+	AssistanceRequested bool `json:"assistance_requested"`
 }
 
 type OrderItem struct {
@@ -69,6 +99,10 @@ type OrderItem struct {
 	// the current catalog on every cart render, see cart.go's resolveCart),
 	// not tracked separately per name here.
 	Extras []string `json:"extras,omitempty"`
+	// VATRate snapshots the product's VAT rate at order time (same
+	// "immutable once ordered" reasoning as Name/Price) — see
+	// Product.VATRate's doc comment on what this is and isn't for.
+	VATRate float64 `json:"vat_rate,omitempty"`
 }
 
 // Ingredient tags a product with something guests can customize.
@@ -151,6 +185,17 @@ func IsValidDepartment(d string) bool {
 }
 
 
+// AuditEntry is one row of the append-only staff-management trail (account
+// create/update/deactivate/reactivate/password-reset) — see db.LogAudit.
+type AuditEntry struct {
+	ID        int       `json:"id"`
+	Actor     string    `json:"actor"`
+	Action    string    `json:"action"`
+	Target    string    `json:"target"`
+	Detail    string    `json:"detail,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type User struct {
 	ID           int        `json:"id"`
 	Username     string     `json:"username"`
@@ -163,18 +208,111 @@ type User struct {
 }
 
 type Order struct {
-	ID              int       `json:"id"`
-	TableNumber     int       `json:"table_number"`
-	SessionID       string    `json:"session_id"`
-	Status          string    `json:"status"`
-	PaymentMethod   string    `json:"payment_method"`
-	PaymentStatus   string    `json:"payment_status"`
-	TotalAmount     float64   `json:"total_amount"`
-	ServedBy        string    `json:"served_by,omitempty"`
-	Note            string    `json:"note,omitempty"`
-	RefundRequested bool      `json:"refund_requested,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID            int     `json:"id"`
+	TableNumber   int     `json:"table_number"`
+	SessionID     string  `json:"session_id"`
+	Status        string  `json:"status"`
+	PaymentMethod string  `json:"payment_method"`
+	PaymentStatus string  `json:"payment_status"`
+	TotalAmount   float64 `json:"total_amount"`
+	// TipAmount is a separate, optional add-on a guest can leave at
+	// checkout — kept apart from TotalAmount (which stays "sum of line
+	// items" so every stock/revenue-per-item computation elsewhere is
+	// unaffected). GrandTotal() below is what the guest actually pays.
+	TipAmount float64 `json:"tip_amount,omitempty"`
+	// SplitCount is purely informational — "divide this by N on the
+	// receipt." This app has no per-guest payment collection; one host's
+	// session always pays for the whole table.
+	SplitCount      int         `json:"split_count,omitempty"`
+	ServedBy        string      `json:"served_by,omitempty"`
+	Note            string      `json:"note,omitempty"`
+	RefundRequested bool        `json:"refund_requested,omitempty"`
+	CreatedAt       time.Time   `json:"created_at"`
 	Items           []OrderItem `json:"items,omitempty"`
+}
+
+// GrandTotal is what the guest actually pays — items plus tip.
+func (o Order) GrandTotal() float64 {
+	return o.TotalAmount + o.TipAmount
+}
+
+// PerPersonTotal divides GrandTotal by SplitCount — informational only,
+// display-side (see Order.SplitCount doc comment). SplitCount is always
+// >= 1 (the DB column defaults to 1, and checkout never accepts less).
+func (o Order) PerPersonTotal() float64 {
+	if o.SplitCount <= 1 {
+		return o.GrandTotal()
+	}
+	return o.GrandTotal() / float64(o.SplitCount)
+}
+
+// VATLine is one row of a Greek-receipt-style VAT breakdown table — every
+// item taxed at the same rate, summed together. A real Greek retail
+// receipt (Απόδειξη Λιανικής) itemizes tax by rate category rather than
+// one blended tax line, since food/drink items can legitimately carry
+// different VAT rates (standard 24%, reduced 13%, super-reduced 6%) on
+// the same order.
+//
+// DEMO STRUCTURE ONLY — see Order.VATBreakdown.
+type VATLine struct {
+	Rate  float64 // percentage, e.g. 24, 13, 6
+	Net   float64 // pre-VAT subtotal at this rate
+	VAT   float64 // VAT amount at this rate
+	Gross float64 // Net + VAT — what these items actually cost the guest
+}
+
+// VATBreakdown groups an order's items by VAT rate — the structural core
+// of the demo Greek receipt (see templates/_receipt.html). Item.Price
+// throughout this app is already VAT-inclusive (it's just "the price" a
+// guest sees and pays), so this backs out the net/VAT split from that
+// gross figure using the standard rate-extraction method a VAT-inclusive
+// retail price actually uses: net = gross / (1 + rate/100).
+//
+// This is demo-structure math for a printout, nothing more: it doesn't
+// feed any tax filing, isn't validated against real Greek VAT category
+// rules for specific goods, and has no connection to myDATA/ΑΑΔΕ.
+// o.Items must already be populated (see db.GetOrderItems) — this is a
+// pure function over whatever's already loaded, it doesn't query anything
+// itself.
+func (o Order) VATBreakdown() []VATLine {
+	byRate := make(map[float64]*VATLine)
+	var rates []float64
+	for _, item := range o.Items {
+		line, ok := byRate[item.VATRate]
+		if !ok {
+			line = &VATLine{Rate: item.VATRate}
+			byRate[item.VATRate] = line
+			rates = append(rates, item.VATRate)
+		}
+		gross := item.Price * float64(item.Quantity)
+		net := gross / (1 + item.VATRate/100)
+		line.Gross += gross
+		line.Net += net
+		line.VAT += gross - net
+	}
+	sort.Float64s(rates)
+	lines := make([]VATLine, len(rates))
+	for i, r := range rates {
+		lines[i] = *byRate[r]
+	}
+	return lines
+}
+
+// ReceiptNumber formats a sequential-looking receipt number for the demo
+// printout — this app's orders.id autoincrement already *is* sequential
+// and gapless per venue, which is the actual structural property a real
+// Greek receipt number needs; this just formats it to look like one.
+func (o Order) ReceiptNumber() string {
+	return fmt.Sprintf("%06d", o.ID)
+}
+
+// DemoMARK fabricates a myDATA-shaped "unique registration mark" (ΜΑΡΚ) —
+// a real one is assigned by myDATA when a receipt is actually transmitted
+// there, which this app never does. Deterministic per order (not random)
+// so reprinting the same receipt shows the same value, the way a real
+// MARK would.
+func (o Order) DemoMARK() string {
+	return fmt.Sprintf("DEMO-%010d", o.ID)
 }
 
 const (

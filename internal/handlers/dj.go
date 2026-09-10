@@ -3,16 +3,27 @@ package handlers
 import (
 	"fmt"
 	"html"
+	"math"
 	"net/http"
 	"strconv"
 
 	"bitebox/internal/db"
 )
 
+// maxSongTip bounds a guest-entered tip against both nonsense (NaN/Inf slip
+// past a bare tip <= 0 check — strconv.ParseFloat happily parses "NaN" and
+// "+Inf", and NaN compares false against everything, including <= 0) and
+// implausible amounts reaching the database and the admin revenue stats.
+const maxSongTip = 1000.0
+
 func DJRequest(w http.ResponseWriter, r *http.Request) {
 	table, _, err := resolveHostedTable(r)
 	if err != nil {
 		http.Error(w, "You are not currently hosting a table", http.StatusForbidden)
+		return
+	}
+	if !AllowDJRequest(r) {
+		http.Error(w, "Too many song requests — please slow down", http.StatusTooManyRequests)
 		return
 	}
 
@@ -26,8 +37,8 @@ func DJRequest(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html")
 
-	if song == "" || err != nil || tip <= 0 {
-		w.Write([]byte(`<p class="empty-note" style="color:var(--danger);">Please enter a song and a valid tip amount.</p>`))
+	if song == "" || err != nil || math.IsNaN(tip) || math.IsInf(tip, 0) || tip <= 0 || tip > maxSongTip {
+		w.Write([]byte(`<p class="empty-note" style="color:var(--danger);">Please enter a song and a valid tip amount (max €1000).</p>`))
 		return
 	}
 

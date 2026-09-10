@@ -1,0 +1,6 @@
+{{ range .Tables }}
+<div class="assistance-banner">
+  <span>🙋 <strong>Table #{{ .Number }}</strong> is asking for help</span>
+  <button type="button" class="btn btn-ghost btn-sm" hx-post="/worker/tables/{{ .Number }}/assist/clear" hx-swap="none">Got it</button>
+</div>
+{{ end }}

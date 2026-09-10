@@ -130,6 +130,16 @@ func renderStaffList(w http.ResponseWriter, r *http.Request) {
 	tmpl.Execute(w, map[string]interface{}{"Staff": buildStaffViews(users, currentUser.ID)})
 }
 
+// actorUsername returns the acting admin's own username for audit logging,
+// falling back to "unknown" rather than panicking if somehow called outside
+// RequireRole (which is what actually populates the user in context).
+func actorUsername(r *http.Request) string {
+	if u, ok := UserFromContext(r); ok {
+		return u.Username
+	}
+	return "unknown"
+}
+
 // AdminCreateStaff adds a new staff account. The form's single "role" field
 // carries both role and department in one choice, matching the dashboard's
 // one dropdown ("Admin" or "Worker — Bar/Kitchen/DJ/Staff"): the literal
@@ -140,8 +150,8 @@ func AdminCreateStaff(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	roleParam := r.FormValue("role")
 
-	if username == "" || len(password) < 6 {
-		http.Error(w, "Username required and password must be at least 6 characters", http.StatusBadRequest)
+	if username == "" || len(username) > 50 || len(password) < 6 {
+		http.Error(w, "Username required (max 50 characters) and password must be at least 6 characters", http.StatusBadRequest)
 		return
 	}
 
@@ -169,6 +179,87 @@ func AdminCreateStaff(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to create account", http.StatusInternalServerError)
 		return
 	}
+	db.LogAudit(actorUsername(r), "create", username, "role="+role+" department="+department)
+	renderStaffList(w, r)
+}
+
+// AdminUpdateStaff renames an account and/or moves it between departments —
+// role (admin vs. worker) is deliberately not editable here, see
+// db.UpdateUserProfile's doc comment.
+func AdminUpdateStaff(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid staff id", http.StatusBadRequest)
+		return
+	}
+	target, err := db.GetUserByID(id)
+	if err != nil {
+		http.Error(w, "Staff account not found", http.StatusNotFound)
+		return
+	}
+
+	username := strings.TrimSpace(r.FormValue("username"))
+	if username == "" || len(username) > 50 {
+		http.Error(w, "Username required (max 50 characters)", http.StatusBadRequest)
+		return
+	}
+
+	department := target.Department
+	if target.Role != models.RoleAdmin {
+		deptParam := r.FormValue("department")
+		if !models.IsValidDepartment(deptParam) {
+			http.Error(w, "Invalid department", http.StatusBadRequest)
+			return
+		}
+		department = deptParam
+	}
+
+	if err := db.UpdateUserProfile(id, username, department); err != nil {
+		if err == db.ErrDuplicateUsername {
+			http.Error(w, "That username is already taken", http.StatusConflict)
+			return
+		}
+		http.Error(w, "Failed to update account", http.StatusInternalServerError)
+		return
+	}
+	db.LogAudit(actorUsername(r), "update", username, fmt.Sprintf("was %q/%s, now %q/%s", target.Username, target.Department, username, department))
+	renderStaffList(w, r)
+}
+
+// AdminResetStaffPassword sets a new password for a staff account directly —
+// there's no self-service reset flow (no email system exists in this app),
+// so this is the only way to recover an account whose password is forgotten
+// short of deactivate-and-recreate. Also force-closes any session the
+// account currently has open, same reasoning as deactivation: a password
+// reset should invalidate whatever session was authenticated under the old
+// one.
+func AdminResetStaffPassword(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid staff id", http.StatusBadRequest)
+		return
+	}
+	target, err := db.GetUserByID(id)
+	if err != nil {
+		http.Error(w, "Staff account not found", http.StatusNotFound)
+		return
+	}
+	password := r.FormValue("password")
+	if len(password) < 6 {
+		http.Error(w, "Password must be at least 6 characters", http.StatusBadRequest)
+		return
+	}
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		http.Error(w, "Failed to reset password", http.StatusInternalServerError)
+		return
+	}
+	if err := db.SetUserPassword(id, hash); err != nil {
+		http.Error(w, "Failed to reset password", http.StatusInternalServerError)
+		return
+	}
+	db.DeleteAuthSessionsForUser(id)
+	db.LogAudit(actorUsername(r), "reset_password", target.Username, "")
 	renderStaffList(w, r)
 }
 
@@ -186,11 +277,13 @@ func AdminDeactivateStaff(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "You can't deactivate your own account", http.StatusBadRequest)
 		return
 	}
+	target, _ := db.GetUserByID(id)
 	if err := db.SetUserActive(id, false); err != nil {
 		http.Error(w, "Failed to deactivate account", http.StatusInternalServerError)
 		return
 	}
 	db.DeleteAuthSessionsForUser(id)
+	db.LogAudit(currentUser.Username, "deactivate", target.Username, "")
 	renderStaffList(w, r)
 }
 
@@ -200,9 +293,28 @@ func AdminActivateStaff(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid staff id", http.StatusBadRequest)
 		return
 	}
+	target, _ := db.GetUserByID(id)
 	if err := db.SetUserActive(id, true); err != nil {
 		http.Error(w, "Failed to activate account", http.StatusInternalServerError)
 		return
 	}
+	db.LogAudit(actorUsername(r), "activate", target.Username, "")
 	renderStaffList(w, r)
+}
+
+// auditLimit bounds the audit trail panel — most-recent-first, not full
+// pagination, same reasoning as the order-history cap before it got real
+// pagination: this one's low-volume enough (staff-management actions only,
+// not every order) that a sane cap is still the right call.
+const auditLimit = 100
+
+// AdminAuditLog serves the #audit-log fragment for its initial hx-get load.
+func AdminAuditLog(w http.ResponseWriter, r *http.Request) {
+	entries, err := db.GetRecentAuditLog(auditLimit)
+	if err != nil {
+		http.Error(w, "Failed to load audit log", http.StatusInternalServerError)
+		return
+	}
+	tmpl := template.Must(template.ParseFiles("templates/_audit_log.html"))
+	tmpl.Execute(w, map[string]interface{}{"Entries": entries})
 }

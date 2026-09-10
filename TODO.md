@@ -5,6 +5,703 @@ Update this as things change — it's meant to be read before picking up work ag
 
 ## Done
 
+### Real image-compression pipeline: two variants, EXIF-aware, hash-named, HEIC handled client-side
+Follow-up to the earlier "photos rotated 90°" fix — this replaces the
+single-resize pipeline with the two-variant, content-hashed one a spec
+asked for explicitly. `internal/imageproc.Process` now returns a `Result`
+(`Full`, `Thumb`, `Hash`) instead of one `[]byte`:
+
+- **Two variants, not one**: `full` capped at 1600px longest edge (same as
+  before), a new `thumb` capped at 640px — derived by downscaling the
+  *already-resized, already-oriented* full image rather than re-decoding
+  the original, so the expensive part (orientation correction, a full
+  pixel walk) only ever runs once per upload regardless of how many
+  variants come out of it.
+- **Resampling**: switched `resizeToMax` from `draw.BiLinear` to
+  `draw.CatmullRom` — the highest-quality kernel `x/image/draw` ships.
+  There's no true Lanczos in that package; a dedicated resampling library
+  for just that one filter wasn't worth it for a difference a few-hundred-
+  px food photo won't show.
+- **Hash-named storage**: `<hash>_full.jpg`/`<hash>_thumb.jpg` under a new
+  per-product subdirectory (`static/uploads/products/<id>/...`), replacing
+  the old `<id>-<timestamp>.jpg` scheme — a re-upload of unchanged bytes
+  now lands on the same URL instead of manufacturing a new one, which
+  matters because `main.go`'s static-file `Cache-Control` for this
+  directory is `immutable, max-age=31536000`: safe specifically because a
+  hash-named URL's content genuinely never changes.
+- **Size-budget sanity check**: `checkSizeBudget` logs a warning (not an
+  error — never blocks the upload) when a variant comes out more than 2x
+  its target (full ~250KB, thumb ~40KB) — a bad quality setting or a
+  pathological source image, not something to reject over.
+- **Schema**: kept `models.Product.ImageURL` as the only photo column —
+  added a `ThumbURL` field to the *display-only* `productView` struct
+  (admin.go), derived from `ImageURL` by filename convention
+  (`thumbURLFor`, photo.go) rather than a second DB column/migration. The
+  smallest change that gets a real thumbnail URL to both templates
+  (`_guest_product_list.html`'s menu-list photo, `_product_list.html`'s
+  admin preview) — an admin-pasted external URL (never processed by this
+  pipeline) just returns unchanged from `thumbURLFor`, since there's no
+  separate thumbnail file for it to point at.
+- **EXIF**: already stripped as a side effect of re-encoding through
+  `image/jpeg` (which never writes an EXIF segment of its own) — no
+  separate strip step needed, just confirmed and documented.
+
+**HEIC/HEIF — went with option (c), client-side conversion + a clear
+server-side rejection, not a cgo binding (libvips/libheif) or shelling out
+to `heif-convert`.** Both of those need an actual C library present on the
+deploy host, which this app's own stated deploy story (README: "one Go
+binary, one SQLite file, no external services... runs on a Raspberry Pi")
+doesn't allow for — Debian/Pi base images don't ship libvips/libheif by
+default, and cross-compiling a cgo dependency for ARM adds real friction
+this app has otherwise avoided everywhere (self-hosted fonts instead of a
+CDN, no Docker/Compose, etc.). Practically: HEIC is ~exclusively an iPhone
+Safari problem (Android cameras are essentially always JPEG) — and Safari
+is also the *only* browser that can actually decode a HEIC file to draw it
+into a `<canvas>`, so `admin_dashboard.html`'s upload JS now detects a
+`.heic`/`.heif` file (by extension or reported MIME type) and redraws it
+through a canvas into a real JPEG before it's ever sent, in exactly the
+one browser where that's possible. Anywhere else, that conversion attempt
+just fails silently and the original file goes through — caught server-
+side by `imageproc.ErrHEICNotSupported`, a complete, actionable sentence
+imageproc.go's error already is, not a generic "process the photo failed."
+Progressive JPEG encoding was skipped for the identical reason (Go's
+stdlib `image/jpeg` has no progressive mode; libjpeg-turbo does, same
+cgo/system-library tradeoff) — baseline JPEG at this file size loads fine
+in practice. WebP output (the brief's stretch goal) was skipped too — Go
+has no WebP *encoder* without cgo either, only a decoder.
+
+Verified live against a real running server, not just `go test`: a real
+3000x2000 JPEG upload produced a 164KB full + 46KB thumb (both under their
+2x warning thresholds, no warning logged), both served with the
+`immutable` cache header, and a hand-built fake-HEIC upload (real
+ISO-BMFF `ftyp` box with a `heic` brand) got rejected with exactly the
+HEIC-specific message, not a generic one. Tests:
+`internal/imageproc/imageproc_test.go` (both variants' dimension caps
+including no-upscale, HEIC detection via a real `ftyp`/`heic` box,
+hash stability/uniqueness, the budget-warning log logic in isolation, and
+a synthetic "photo-like" — smooth multi-frequency, not flat or pure-noise
+— image staying within budget) and `internal/handlers/photo_test.go`
+(both variants written to and deleted from disk together, HEIC rejected
+through the real HTTP handler with the actual message in the response
+body).
+
+### Guest menu restyle (v3) — new palette/type/spacing system, applied from a hand-edited mockup
+User took the standalone snapshot from the previous entry, restyled it
+externally (their own real browser/devtools), and pasted the result back
+to apply for real. Confirmed first that it was a pure `<style>`-block
+change (plus the venue-mark SVG's stroke reading `var(--accent)` instead
+of a literal hex) — every `hx-*`, `ws-connect`, id, class, and `data-*`
+attribute the JS/htmx depend on was untouched, and `_guest_product_list.html`
+needed zero changes (same item-card DOM, just newly-hidden `.item-leader`
+and restyled classes) — so this was a clean drop-in, not a re-architecture.
+
+- New design tokens: a real 8px spacing scale (`--sp-1..--sp-8`) and type
+  scale (`--tx-2xs..--tx-2xl`) replace one-off pixel values throughout;
+  tuned warm-dark palette; every "chip" control (cat tabs, tip amounts,
+  payment method, ingredients) now a consistent pill shape.
+- New type system: Playfair Display (section titles/modal titles only),
+  Work Sans (body + item names — previously a competing serif), Poppins
+  (venue wordmark only), IBM Plex Mono (prices/codes) — replacing
+  Fraunces/Archivo/JetBrains Mono in those roles.
+- Menu item rows: flat hairline-divided list instead of a bordered card,
+  bigger (112px) photo thumbnail.
+- Hero panel simplified: dropped a wood-plank/tribal-pattern treatment
+  from an intermediate draft, now a plain raised panel with a soft top
+  glow and a thin gold rule under the venue name.
+- **Fonts: self-hosted, not the Google Fonts `@import` the pasted draft's
+  own `<style>` block led with.** That import would have reintroduced
+  exactly the CDN round-trip this file's *existing* font comment already
+  documents fixing once (~2.35s/235kB per load) — the pasted draft's own
+  comment even flagged this as optional ("swap for self-hosted... if
+  you'd rather"). Fetched the actual woff2 files
+  (`static/fonts/{playfair-display,work-sans,work-sans-latin-700,ibm-plex-mono,poppins}-latin.woff2`,
+  latin subset only, same convention as the existing three) and added
+  matching `@font-face` rules instead. Old Archivo/Fraunces/JetBrains Mono
+  files/rules were *kept*, not deleted — every new `--font-*` stack lists
+  the old family as its fallback (the pasted draft's own intent), so
+  they're still load-bearing.
+- **Not carried over, on the pasted draft's own explicit instruction**: an
+  `onerror` handler on the demo photo that swapped in a hardcoded inline
+  placeholder SVG on load failure. That was a snapshot-only workaround (the
+  photo's URL pointed at a dev server nothing was listening on wherever the
+  file was being previewed) — real templates keep the original "remove the
+  `.item-photo-wrap` entirely on error" behavior.
+- Verified: rendered the real page through the real handler (not just the
+  snapshot) against a full 172-product seed — fonts resolve to the new
+  self-hosted files (no `fonts.googleapis.com` reference anywhere in the
+  response), venue-mark SVG uses `var(--accent)`, item-card markup
+  unchanged, `<style>` block's braces balance. `go build`/`vet`/`test`
+  clean.
+
+### Fixed: uploaded photos came out rotated 90°
+Reported as "the images are rotated 90 degrees to the left." Root cause:
+`internal/imageproc.Process` decodes an upload with Go's stdlib
+`image.Decode` and re-encodes it with `image/jpeg` — neither reads nor
+writes the EXIF `Orientation` tag. A phone held upright while shooting
+doesn't rotate the sensor data before saving; it writes the frame as
+captured and sets that tag so a viewer knows to rotate it for display.
+Ignoring the tag on decode and dropping it on re-encode meant the "as
+captured" (sideways) pixel grid became the *only* copy this app ever
+stored or served — correct metadata lost, wrong pixels kept, every viewer
+(admin dashboard, guest menu) shows it rotated.
+
+Fixed with a small self-contained EXIF-orientation reader
+(`internal/imageproc/orientation.go` — hand-rolled JPEG-marker + TIFF-IFD0
+walk for just the one tag, rather than pulling in a general-purpose EXIF
+dependency for it) plus the 8 EXIF orientation transforms (rotate 90°
+CW/CCW/180°, horizontal/vertical flip, and the 3 flip+rotate combinations).
+Applied *after* `resizeToMax`, not before — a 90°-multiple transform costs
+the same either way, but running it on the already-shrunk (≤1600px) image
+instead of the up-to-40MP original keeps it cheap. Covers all 8 orientation
+values, not just the common "phone held upright" case (6), since a half-
+done fix here would just trade one silently-wrong rotation for another.
+
+Tests (`internal/imageproc/orientation_test.go`): the tag parser against
+all 8 values embedded in a real (spliced-together) EXIF JPEG, defaulting to
+"normal" for a JPEG with no EXIF / a PNG / garbage input, and a real
+end-to-end `Process()` check — build a landscape red/blue-split JPEG tagged
+"rotate 90° CW," confirm the output comes out portrait with the color split
+landing on the correct edges (not just that the dimensions swapped).
+
+### Fixed: uploaded photos and any edit at all got stuck on a product that already had one (the real cause of "stock won't save")
+Follow-up to the entry directly below, which cleared the backend/template
+logic for the stock stepper and Unlimited toggle but couldn't reproduce a
+real failure — because it never sent a resubmitted local image_url the way
+the real form does. Reported again against real data ("Omelette is stuck
+sold out, nothing brings it back" + "uploaded images don't work"), and this
+time it reproduced immediately.
+
+**Root cause**: `_product_list.html`'s hidden `image_url` input always
+carries the product's *current* value and gets resubmitted on *every* Save
+— including a plain stock change that never touches the photo. The moment
+a product has an uploaded photo (or the seeded demo one), that value is a
+local `/static/uploads/...` (or `/static/demo/...`) path, not a pasted
+http(s) URL. `parseImageURL` only accepted blank or http(s), so that
+resubmitted local path failed validation and the whole update 400'd —
+silently, since htmx doesn't swap in an error response by default. Net
+effect: once *any* photo ever got attached to a product, that product was
+frozen — Save, the stock stepper, the Unlimited toggle, none of it could
+ever change again (visibility toggling still worked; it's a separate
+endpoint that never touches image_url) — matching both "my uploads don't
+work" (the *next* edit after an upload looks broken) and "stock won't
+save" from the earlier entry, which happened not to hit this because its
+test payloads never included a resubmitted local path.
+
+Fixed by having `parseImageURL` also accept the two paths this app itself
+ever generates (`internal/handlers/admin.go`'s new
+`localImagePathPrefixes`: the upload dir and the demo asset dir) round-
+tripping unchanged, alongside blank and http(s). Neither is admin-typed —
+accepting them back isn't trusting new input, it's the same value this
+handler (or the seed) wrote in the first place. Added
+`TestAdminUpdateProductRoundTripsExistingLocalPhotoURL`
+(`internal/handlers/photo_test.go`) reproducing the exact request shape
+(upload a photo, then a plain stock-only edit that resubmits the resulting
+local path) — confirmed it fails with the old code (400) and passes with
+the fix.
+
+Verified against the real venue database, not just a scratch copy (after a
+checksummed `PRAGMA wal_checkpoint` + file-copy backup to `backups/`, same
+as `scripts/backup-db.sh` does): the real Omelette row was actually stuck
+exactly as reported (stock 0, Save/Unlimited both silently rejected);
+replaying its real Save request against the fixed binary returned 200 and
+the guest menu no longer shows it sold out. Also found and removed one
+leftover row, `SmokeTestItem` (id 173) — dead test data from an earlier
+session's "verified live end-to-end" pass that got hidden rather than
+cleaned up, cluttering the real admin product list. `order_items` rows
+denormalize `name`/`price` at order time and don't foreign-key against
+`products`, so deleting it left order history intact. There's still no
+in-app way to delete a product at all (only hide) — noted below, not
+built, since it wasn't asked for.
+
+### Investigated "stock doesn't save / Unlimited doesn't work," fixed a real broken-image bug + admin mobile layout regressions
+The stock stepper + Save and the ∞/Unlimited toggle were reported broken.
+Reproduced the exact form submissions AdminUpdateProduct's own template
+sends (`internal/handlers/admin.go`, `_product_list.html`) against a real
+running server, both with an explicit stock value and with the field
+omitted (disabled input, the ∞-checked case) — both persisted correctly and
+round-tripped through a re-render (`go test ./...` also covers this). No
+code change was needed there; if this is still happening for a real user,
+the next step is confirming which server binary/process they're actually
+hitting, not more backend changes.
+
+While verifying that in a real browser-shaped request, found and fixed
+three actual bugs along the way:
+
+- **The one seeded demo product photo (Omelette) rendered as a broken
+  image everywhere** — admin dashboard *and* the guest menu. It was stored
+  as an inline `data:image/svg+xml;base64,...` URI (`seed_ego.go`'s
+  `demoBrunchPhoto`); Go's `html/template` contextually auto-escapes any
+  `src="{{ .ImageURL }}"` and only ever passes through `http:`, `https:`,
+  and `mailto:` schemes, silently defanging everything else (including
+  `data:`) to `#ZgotmplZ`. Fixed by moving that seed image to a real file
+  (`static/demo/omelette-demo.svg`, referenced by path — no scheme, so
+  nothing to filter) instead of inlining it, which also stops re-sending
+  that ~1KB string in every hidden `image_url` field and every
+  `admin/menu/ws` push touching that row. Added a one-time, idempotent
+  `UPDATE` in `db.go`'s migrations to repair any database already seeded
+  with the broken value — a fresh reseed alone wouldn't have fixed an
+  existing install's data. (Real admin-uploaded photos and pasted URLs were
+  never affected — `parseImageURL` already restricts pasted URLs to
+  http(s), and uploads are written to `/static/uploads/...` paths, neither
+  of which this filter touches.)
+- **Two of the three admin settings forms didn't actually collapse to one
+  column on a phone** (Venue settings, Business details), despite the
+  shared `.add-form` grid having exactly that responsive behavior. Cause:
+  both the initial page render *and* their post-Save re-render fragments
+  (`_venue_panel.html`, `_business_panel.html`) used an inline
+  `style="grid-template-columns:..."`, which — same as the `.add-form-*`
+  modifier-class comment already on this file explains for the pattern
+  this duplicated — always overrides the stylesheet's `@media` rule no
+  matter what it says. The initial SSR render of the Venue panel happened
+  to also carry the correct `add-form-venue` class already, masking the bug
+  until the first Save swapped in the broken inline-style version; Business
+  details never had a modifier class at all. Fixed by giving Business
+  details its own `.add-form-business` modifier (added to the same mobile
+  breakpoint as the others) and pointing both fragments and both inline
+  admin_dashboard.html forms at their modifier classes instead of a literal
+  style attribute — one definition of each form's column layout, used
+  consistently on first load and every re-render.
+- **Topbar could push "Live"/"Log out" off-screen on a phone with a long
+  venue name** — `.brand`/`.topbar-right` had no shrink behavior, so a
+  venue name near the 80-char cap plus a narrow viewport had nowhere to
+  give. `.venue-name` now truncates with an ellipsis instead of forcing its
+  siblings out of the visible area.
+
+Also, not bugs but genuine rough edges given the mobile-UX complaint:
+touch targets on the stock stepper, ingredient-tag remove button, and
+category/period tab buttons were sized for a mouse cursor (some as small as
+18px); added a `@media (pointer:coarse)` block sizing those up for a
+fingertip specifically (not a viewport-width breakpoint, so a touch laptop
+or landscape phone at a wide viewport still gets them, and a narrow desktop
+window doesn't). And for "don't let big photos slow the site": server-side
+resizing/re-encoding already existed (`internal/imageproc`, ≤1600px
+longest edge, JPEG q82) — what was missing was cache headers, so a
+returning guest re-fetched every product photo from disk on every page
+load. Added `Cache-Control: public, max-age=31536000, immutable` for
+uploaded photos (each upload gets a unique filename — see
+`writeProductPhoto` — so a given URL's bytes genuinely never change) and a
+day's cache for vendored JS, fonts, demo assets, and PWA icons.
+
+Verified end-to-end against a real running server (not just `go test`):
+fresh install and a deliberately-broken existing database for the image
+migration; the actual multipart POSTs `_product_list.html`'s Save button
+and the ∞ toggle send, with and without the disabled stock field; the
+post-Save HTML for both settings forms; `Cache-Control` headers on real
+responses. No headed browser/devtools available in this environment, so
+the mobile layout changes are verified by reading the rendered HTML/CSS
+and reasoning through the cascade, not a real-device screenshot.
+
+### Guest-side phone notifications ("your order is ready") — the customer half of Web Push
+The staff-side entry directly below covers a kitchen/bar/waiter's phone.
+This is the other half of the same ask: the *guest* who ordered gets a real
+lock-screen notification too, without keeping the table page open — "Order
+confirmed" the instant checkout succeeds, "Your order is ready! 🎉" the
+instant staff flips it to ready. Same mechanism (VAPID Web Push, no
+third-party provider), same VAPID identity as the staff feature, deliberately
+kept as a separate subscription table and code path rather than reusing
+`push_subscriptions` — a guest is never an authenticated `users` row.
+
+- `guest_push_subscriptions` (session_id, endpoint UNIQUE, p256dh, auth) +
+  `internal/db/push.go`'s guest-prefixed functions — keyed off the same
+  anonymous `bitebox_session` cookie every other guest action already keys
+  off (`GuestSessionCookieName`/`resolveHostedTable`), not a user_id.
+  Upserts on endpoint like the staff table does.
+- `handlers.GuestPushSubscribe`/`GuestPushUnsubscribe`
+  (`POST /table/{number}/push/{subscribe,unsubscribe}` — the `{number}` is
+  cosmetic, same "resolve from the session cookie, never trust the URL"
+  rule `RequestAssistance`/`Leave` already follow) and `notifyGuestSession`,
+  which mirrors `notifyDepartments` exactly: best-effort per device, drops a
+  subscription the moment its push service answers 404/410. Rate-limited
+  (`guestPushLimiter`, 20/min/IP) the same way cart actions/DJ requests are.
+  Same SSRF-guard endpoint allowlist (`isAllowedPushEndpoint`) applies —
+  it's shared code, not duplicated.
+- Wired at the same two moments as the staff alerts, right next to them:
+  `cart.go`'s `Checkout` → `pushOrderConfirmedAlert`, `worker.go`'s
+  `WorkerUpdateOrderStatus` → `pushOrderReadyAlert` when the new status is
+  `ready`. Both tag the notification `guest-order-{id}`, so a guest with two
+  orders open gets two distinct notifications, and "ready" replaces
+  "confirmed" for the *same* order instead of stacking a second one.
+- **Per-table PWA manifest, not the staff dashboard's fixed one.**
+  `handlers.GuestWebManifest` (`GET /manifest-guest.json?table=N`) generates
+  `start_url` as `/table/{N}` on the fly — `host_menu.html` links it with
+  its own table number in the query string. This matters more than it
+  sounds: iOS relaunches a home-screen-installed PWA at the manifest's
+  start_url, not wherever "Add to Home Screen" was tapped from — without a
+  per-table start_url every guest's icon would reopen the same fixed page
+  regardless of which table they scanned. Same iOS legacy meta tags as the
+  staff dashboard (`apple-touch-icon`, `apple-mobile-web-app-capable`,
+  `-status-bar-style`) added to `host_menu.html`'s head; reuses the
+  existing origin-root `sw.js` as-is (its push/notificationclick handlers
+  were already generic — no worker-specific assumptions to change).
+- **`host_menu.html`'s own enable-alerts UI**, separate from the worker
+  dashboard's small icon-only toggle since a customer isn't staff: a
+  dismissible card ("🔔 Order alerts — get a real notification... — Enable
+  order alerts") that only ever appears when push is actually usable, with
+  copy explaining *why* before the permission prompt ever fires — the
+  browser-permission prompt itself only ever fires from that button's own
+  click handler, never blind on page load, since a denied prompt has no
+  second chance on iOS or anywhere else. On iOS in a plain Safari tab
+  (where push is categorically unavailable, permission or not) this shows
+  a different, mutually-exclusive card instead: "Tap Share → Add to Home
+  Screen." Both dismiss to `sessionStorage` (not `localStorage`) — "not
+  now" means "don't ask again this visit," matching the guest session
+  cookie's own session-only lifetime.
+- **Fallback hook, deliberately a no-op.** `notifyGuestFallback` — called
+  from `notifyGuestSession` when a session has no subscription at all (iOS
+  Safari tab, declined permission, unsupported browser) — is where an
+  SMS/email fallback would go. Left as a documented TODO rather than
+  guessed at: it implies collecting a phone number/email at checkout (a
+  product decision not asked for here) and a real third-party account
+  (Twilio, an email provider) this app has no credentials for. Signature
+  matches `notifyGuestSession`'s own payload so wiring one in later is a
+  one-line call.
+- Tests: `internal/db/push_test.go` (guest upsert-on-endpoint, session
+  filtering, scoped-delete-can't-touch-another-session, unconditional
+  delete) and `internal/handlers/push_test.go` (subscribe/unsubscribe
+  round-trip, bad-body rejection including the SSRF-endpoint case, no-
+  session-cookie rejection, cross-session unsubscribe can't delete another
+  guest's device). Verified live end-to-end against the running server too:
+  created a real table via the admin API, subscribed a fake device to it,
+  placed a real order (checkout succeeded, `pushOrderConfirmedAlert` fired
+  and attempted a real encrypted send — failed only because the test
+  device's keys were fabricated garbage, not real EC points, same
+  non-crashing failure mode the staff feature's own manual verification
+  hit), confirmed `/manifest-guest.json?table=777` returned
+  `start_url: "/table/777"`, confirmed the SSRF guard 400s a non-push-
+  service endpoint on the guest path too. Test artifacts (table, product,
+  order) cleaned up afterward through the app's own admin endpoints, not by
+  hand-editing the DB file.
+
+### Real phone notifications for new orders / ready-for-pickup (Web Push)
+Follow-up to the in-page order-feed alert banner+chime: that only helps
+someone already looking at the dashboard screen. This is the actual "don't
+have to open the app" ask — a lock-screen-visible push, the same mechanism
+an SMS or chat app's notification uses, via the standard Web Push API
+(VAPID, no third-party push provider account needed).
+
+- `settings.vapid_public_key`/`vapid_private_key` — this server's Web Push
+  identity, generated once on first run (`handlers.InitPush`, called from
+  `main.go` right after `db.InitDB`) and persisted, since a subscription is
+  only ever valid for the public key it was created against.
+- `push_subscriptions` table + `internal/db/push.go` — one row per device a
+  staff member has enabled alerts on, tied to their account.
+  `GetPushSubscriptionsForDepartments` mirrors the order feed's own
+  admin/superworker "sees everything" rule (`orderFeedBuckets`) rather than
+  requiring an exact department match.
+  `internal/handlers/push.go` — `PushSubscribe`/`PushUnsubscribe`
+  (`POST /worker/push/{subscribe,unsubscribe}`, any logged-in staff
+  account) and `notifyDepartments`, which sends via
+  `github.com/SherClockHolmes/webpush-go` and cleans up a subscription the
+  moment its push service returns 404/410 (endpoint's dead) rather than
+  retrying it forever.
+- Wired at the two moments that matter: `cart.go`'s `Checkout` →
+  `pushNewOrderAlert` (department resolved the same way
+  `authorizeDepartmentMutation` already does, via
+  `db.OrderHasAnyCategory` — a mixed order reaches both kitchen and bar),
+  and `worker.go`'s `WorkerUpdateOrderStatus` → `pushReadyAlert` when the
+  new status is "ready" (waiter department).
+- `static/sw.js` (service worker, served at the origin root by
+  `handlers.ServiceWorker` — not under `/static/*`, so its control scope
+  covers the whole app) + `static/manifest.json` + generated
+  `static/icons/icon-{192,512}.png` (flat recreation of the dashboard's own
+  brand-mark shape, in-theme colors — `scripts/gen-icons.go` regenerates
+  them if the brand colors ever change).
+  `worker_dashboard.html` registers the service worker and adds a topbar
+  toggle (📵/📱) that requests `Notification.requestPermission()` and
+  `pushManager.subscribe()`s, POSTing the result to `/worker/push/subscribe`.
+- **iOS caveat, not fixable from this side**: Safari only allows Push once
+  the page has been added to the Home Screen and is opened from there
+  (16.4+) — a plain browser tab can't subscribe at all, permission or not.
+  The toggle detects this (`navigator.standalone` / `display-mode:
+  standalone`) and shows an explanatory toast instead of a broken
+  permission prompt. Android Chrome/Edge and desktop browsers work
+  directly, no install step needed.
+- **HTTPS caveat**: Web Push is a secure-context API — it works today
+  against `localhost` for browser-based testing, but a real phone needs
+  the server reachable over real HTTPS (a deployed domain, or a tunnel
+  like ngrok/cloudflared for local testing on a device) before this does
+  anything on that device. Not a code gap — the browser platform itself
+  refuses to subscribe over plain HTTP to a non-localhost origin.
+- `PUSH_CONTACT` env var sets the VAPID JWT's operator contact (defaults to
+  a placeholder) — deliberately not the logged-in user's own email; a real
+  contact only matters once this is actually deployed behind HTTPS.
+- Tests: `internal/db/push_test.go` (upsert-on-endpoint, department
+  filtering, admin/superworker always included, deactivated accounts
+  excluded, delete), `internal/handlers/push_test.go` (subscribe/
+  unsubscribe handler round-trip, bad-body rejection, item summary
+  formatting). Manually verified end-to-end: subscribed a fake device,
+  placed a bar-category order, confirmed `pushNewOrderAlert` correctly
+  resolved the bar department and attempted a real encrypted send (which
+  failed only because the test device's keys were fabricated garbage, not
+  real EC points — failed exactly the way it should: logged, no crash,
+  checkout still succeeded).
+
+### Order-feed alert banner + chime (in-page, no phone required)
+The first pass at "notify staff when an order comes in" — before the ask
+was clarified to mean *real* phone notifications (above), this covers
+anyone actually looking at the worker dashboard. Still valuable on its own
+(a mounted kitchen screen doesn't have a "phone" to push to), and stacks
+with the Web Push alert rather than being replaced by it.
+
+- `_order_feed.html` order cards carry `data-status` (the real status, not
+  the decorative NEW/READY badge — client JS prunes that after 5 minutes,
+  which would make a same-element detector miss a late ready flip).
+- `worker_dashboard.html`: diffs each order-feed re-render against what it
+  saw last time (`checkForNewOrderAlerts`) — a never-before-seen card is a
+  new order (or, on the waiter's ready-only feed, a ready one); an
+  already-known card flipping not-ready → ready (possible on the
+  superworker/admin combined view) fires the ready alert too. A themed
+  slide-in banner (red for new, purple for ready — matching the existing
+  `.action-ready` color) plus a synthesized Web Audio chime (no audio
+  asset to ship), a mute toggle persisted in `localStorage`, and a
+  flashing tab title when the tab isn't focused. First page load only
+  primes the diff state — no banner storm for orders already on screen.
+
+### Demo Greek-receipt structure (VAT breakdown, ΑΦΜ/ΔΟΥ, sequential number, fabricated MARK)
+Explicitly a demo/project ask, not for the real EGO venue — confirmed with
+the user before building anything: dummy data only, no real business
+details, and critically **no myDATA/ΑΑΔΕ integration or connection to any
+Greek government system**. That distinction matters enough that it's
+enforced at every layer, not just described in a comment: a giant on-page
+banner (screen *and* print — if this is ever actually printed on paper, it
+still says DEMO in red), doc comments on every model method that produces
+receipt content, and a handler test that fails if that banner text is ever
+accidentally removed from the template.
+
+Real compliance (myDATA transmission, certified fiscal mechanism) isn't
+something this app attempts or claims — that requires an actual regulatory
+relationship with a licensed provider, not more Go code. This is
+structure only: what the *shape* of a Greek retail receipt (Απόδειξη
+Λιανικής) looks like, for a project/demo context.
+
+- `products.vat_rate` / `order_items.vat_rate` (snapshotted at order time,
+  same "immutable once ordered" reasoning as name/price) — 24/13/6,
+  Greece's real three rates, admin-selectable per product (add-form and
+  each row's own edit form). Seed data varies rates by department (kitchen
+  → 13%, bar → 24%) specifically so the demo receipt shows a real
+  multi-line breakdown instead of one flat rate.
+- `settings.business_vat_number`/`tax_office` (ΑΦΜ/ΔΟΥ) — new "Business
+  details (demo)" admin panel, obviously-fake defaults out of the box.
+- `models.Order.VATBreakdown()` — groups items by rate, backs out net/VAT
+  from the VAT-inclusive gross price via the standard extraction formula
+  (net = gross / (1 + rate/100)). `ReceiptNumber()` formats the existing
+  `orders.id` (already sequential/gapless — the actual structural property
+  a real receipt number needs) to look like one; `DemoMARK()` fabricates a
+  myDATA-shaped registration mark, deterministic per order.
+- `AdminOrderReceipt` (`GET /admin/orders/{id}/receipt`) — standalone
+  printable page (own `_receipt.html`, not a dashboard fragment), linked
+  from every order-history row. Narrow/monospace/dashed-line styling
+  deliberately reads as "this is a receipt," which is exactly why the
+  demo banner has to be unmissable on it.
+- Tests: `VATBreakdown` (single rate, multi-rate grouping/sorting, empty
+  order), settings/product/order-item round-trips, and a handler test that
+  explicitly asserts the DEMO banner and the myDATA disclaimer are present
+  in the rendered page — the one test in this whole session written
+  specifically to prevent a *content* regression, not just a logic one.
+
+### Admin-configurable cash-orders toggle
+Asked for as a new `venue_settings` table with its own validation
+middleware — implemented on the existing `settings` singleton instead
+(same row as `dj_requests_enabled`/`venue_name`), and as inline validation
+in `CartHandlers.Checkout` rather than net/http middleware: this codebase
+already has exactly this pattern (`DJRequest` checks
+`settings.DJRequestsEnabled` inline the same way), and generic middleware
+wrapping just one endpoint's one form field would mean either double-
+parsing the request body or awkwardly stashing state between middleware
+and handler for no real benefit over the one-line check the existing
+pattern already gets for free.
+
+- `settings.allow_cash_orders` (migration, default 1/on — matches the ask:
+  local dev and every existing venue's cash flow keep working unless an
+  admin deliberately turns it off). `db.SetAllowCashOrders`.
+- `AdminToggleCashOrders` (mirrors `AdminToggleDJRequests` exactly) — new
+  "Payment methods" panel on the admin dashboard. Broadcasts by reusing
+  `BroadcastAllMenus`'s existing cart-refresh nudge (see menu.go's
+  `cartRefreshTrigger`) rather than a new broadcast path: any guest with
+  checkout already open re-fetches `#cart-summary` — and therefore this
+  setting — the same way it already does for a price/stock change. This
+  is what "dynamically fetches venue settings on load" turned into: no
+  separate settings-fetch endpoint, the existing live-refresh mechanism
+  already covers it.
+- `resolvePaymentMethod` (cart.go): an explicit "cash" pick while it's
+  disabled is rejected outright (403, clear message) — the checkout screen
+  already hides that option, so reaching this means a stale tab (admin
+  toggled it after the guest's page loaded, before the live nudge caught
+  up) or a direct/tampered POST, not a case to silently paper over. A
+  blank/unrecognized value isn't a rejection, just falls back to whichever
+  of cash/card is still actually offered — preserves the pre-existing
+  "blank means cash" default when cash is on, falls back to card when it's
+  off.
+- `_cart_summary.html`: cash chip simply isn't rendered when disabled
+  (card becomes the sole, pre-selected option), with a one-line "This
+  venue is currently card-only" note — same "genuine absence, not a
+  greyed-out state" pattern the DJ-request form already uses.
+- Tests: `resolvePaymentMethod` (all four allowed/blocked × cash/card/
+  blank combinations), a full-handler `Checkout` test (cash rejected while
+  off, succeeds immediately once re-enabled), and a settings round-trip
+  test. Verified live end-to-end too: toggled off, cash chip disappeared
+  from a real checkout screen, an explicit cash POST got a real 403, a
+  blank one placed a card order correctly, toggled back on.
+
+*(A trailing, unrelated fragment on this request — "pdf user resits for
+greece law" — didn't parse into anything actionable connected to this
+feature. Flagged back to the user rather than guessed at or acted on.)*
+
+### Fixed: product photos didn't render at all + real photo uploads (camera + gallery), server-side resizing
+Two problems, reported together. First, **every product photo was broken**
+since the security pass two sessions ago: `img-src 'self' data:` in the CSP
+silently blocked any externally-hosted photo URL (the whole point of the
+`image_url` field) — browser just refused to load it, no visible error
+past a broken-image icon. Widened to `img-src 'self' data: https:`; images
+can't execute script, so this doesn't carry the risk a broader
+script-src/connect-src relaxation would.
+
+Second, and the bigger ask: real uploads, not just a URL field.
+
+- **`internal/imageproc`** — every uploaded photo, whatever a phone camera
+  or gallery actually produced, comes out a resized, re-encoded JPEG.
+  Guards, in order: raw upload capped at 20MB; `image.DecodeConfig` (reads
+  only the header) checked against a 40-megapixel cap *before* the real
+  decode, specifically against a small file claiming an enormous
+  resolution — decoding that fully first would allocate gigabytes for
+  what's only a few KB on disk; then resized (`golang.org/x/image/draw`,
+  bilinear) so the longer edge is at most 1600px, which is the actual
+  answer to "don't store photos at some crazy camera resolution" — a
+  modern phone shoots 3000-4000px+ per side, and this app never displays a
+  product photo wider than a few hundred px even at high DPI. Never trusts
+  the client to have already resized anything, same "never trust client
+  input" rule as prices/table numbers/ingredient names elsewhere in this
+  app.
+- **Two ways in, from the same file input**: "📷 Take photo" toggles the
+  hidden `<input type=file>`'s `capture="environment"` attribute before
+  clicking it (opens the phone's camera directly), "🖼️ Choose file"
+  clears that attribute first (opens the normal picker/gallery) — one
+  element, no `DataTransfer` trickery needed to merge two inputs into one
+  form field. Live thumbnail preview via `FileReader`, client-side only
+  (the server-side resize is what's actually authoritative).
+- **Storage**: `static/uploads/products/{id}-{nanotime}.jpg`, served by
+  the existing static file handler — no new route needed. Filenames are
+  timestamped so a re-upload can't collide with (or get browser/live-push
+  cached over) the previous one. Replacing or clearing a photo deletes its
+  old file; `AdminCreateProduct` validates and decodes the photo *before*
+  the DB write, so a bad upload rejects the whole request cleanly instead
+  of creating the product and silently dropping the photo.
+- **URL field kept** as an alternative (now that CSP actually allows it) —
+  an upload takes priority if both are given. This is the actual
+  "practical ways to add photos" the ask was after: upload from the device
+  in hand, or point at wherever a venue's photos already live.
+- **One seeded demo photo** — the "add a photo to the brunch [items]" ask.
+  Deliberately a small inline SVG data URI, not a hotlinked external image:
+  nothing to go dead, get rate-limited, or silently break the exact "photos
+  don't render" complaint this session started with. Real venue photos go
+  through the upload flow or a pasted URL; this is demo data only.
+- Tests: `internal/imageproc` (resize-down math, small-image passthrough,
+  PNG input, non-image/oversized/decompression-bomb rejection) and
+  handler-level multipart upload tests (create-with-photo end to end
+  against a real temp file on disk, invalid-photo-blocks-the-whole-request,
+  replace-deletes-the-old-file, remove_photo clears both the DB field and
+  the file). Verified live against the running server too: a real
+  3000×2000 JPEG uploaded via curl came back stored at 1600×1066, correctly
+  aspect-ratio-preserved, served with the right content-type.
+
+### Security audit follow-through (SEC-01–15) + the "what's missing besides card payment" backlog
+Two connected passes in the same session. First, worked through
+`SECURITY_AUDIT.md` end to end — verified every finding against the actual
+code rather than trusting the audit's own claims (two, SEC-04 and SEC-11,
+turned out worse in practice than described: both were exploitable with
+*no* auth at all), fixed 14 of 15, deliberately left SEC-09 (hardcoded seed
+credentials) as an intentional, documented dev-convenience bypass rather
+than fake-fixing it, and diverged from the audit's own suggested fix on
+SEC-10 after checking Go's `net/http` source: `ReadTimeout`/`WriteTimeout`
+would have silently killed every WebSocket ~15s after connecting (gorilla's
+`Upgrade` only clears the write deadline post-handshake, never the read
+one) — this app's entire live-update mechanism. See `SECURITY_AUDIT.md`
+itself for the per-finding detail; each entry there is now tagged
+`✅ DONE`, left as the full original write-up (SEC-09, tagged
+`<!-- STATUS: DEV_ONLY - CONVENIENCE BYPASS -->`), or untouched pending a
+product decision (SEC-13 — see below).
+
+Then, asked "what's missing besides card payment," answered from a real
+read of the code (not TODO.md's own possibly-stale list — caught and fixed
+one drift below), and built everything from that list the user said yes to:
+
+- **Table auto-release.** New `tables.last_activity_at`, touched on every
+  real guest action (view, cart add/remove/checkout, DJ request — all
+  funnel through `resolveHostedTable` in cart.go, one spot covers all of
+  them). A background sweep (`StartIdleTableSweep`, table.go) force-releases
+  anything idle 45+ minutes, clearing its cart too. **Caught a real bug
+  writing the test for this**: the first cutoff comparison bound a Go
+  `time.Time` directly against `last_activity_at` (written by SQLite's own
+  `CURRENT_TIMESTAMP`) — different string formats (`T`-separator vs. space,
+  timezone offset vs. none), so SQLite's text comparison doesn't sort them
+  chronologically at all; every occupied table would've looked idle within
+  the first sweep. Same underlying class of bug as the UTC-vs-localtime
+  revenue fix further down this file — fixed the same way, doing the
+  cutoff arithmetic in SQLite's own `datetime()` instead of Go's.
+- **Automated tests, for real this time.** `go test ./...` now runs 30+
+  tests across every package — auth (password hashing, cookie Secure-flag
+  derivation), wshub (pub/sub isolation — the SEC-11 class of bug), cart
+  (concurrency-safe under `-race`, customization-line separation), models,
+  and handler-level regression tests for the two access-control fixes
+  above (SEC-04's Leave IDOR, the new bar/kitchen mutation boundary). DB
+  and handler tests run against a throwaway SQLite file in a temp
+  directory (handler tests additionally symlink in the real
+  `templates`/`static` dirs, since `template.ParseFiles` and the DB both
+  use paths relative to the process's working directory) — never the real
+  `bitebox.db`.
+- **Order history pagination.** `GetOrderHistory` takes `limit, offset`
+  now; the admin panel loads 50 at a time with a "Load more" button
+  (`AdminOrderHistoryPage`) instead of the old flat 200-row cutoff.
+- **Staff password reset + account editing + an audit trail.**
+  `AdminResetStaffPassword` (admin sets a new password directly — no
+  email system exists for self-service), `AdminUpdateStaff` (rename,
+  change department; role is deliberately not editable this way — see its
+  doc comment), and a new `audit_log` table logged from every staff-
+  management action, surfaced as its own dashboard panel.
+- **A DB backup story.** `scripts/backup-db.sh` (cron-friendly, uses
+  sqlite3's own `.backup`, prunes beyond 30) plus an admin dashboard
+  "Download backup" button (`VACUUM INTO` a temp file, streams it, deletes
+  it) for an ad-hoc copy with no CLI needed.
+- **Staff tipping.** Optional tip at checkout (flat-amount chips, same
+  interaction pattern as the DJ tip — deliberately a separate chip
+  group/ids so the two don't cross-talk), stored as `orders.tip_amount`,
+  kept separate from `total_amount` so every existing stock/revenue-per-
+  item computation stays untouched. `Order.GrandTotal()`/`PerPersonTotal()`
+  are what guest-facing/CSV totals actually use now.
+- **Split-bill, informational only.** Optional `orders.split_count` at
+  checkout, shown as "€X per person" on the receipt. No per-guest payment
+  collection exists or was added — one host's session still pays for the
+  whole table; this is purely a display divisor.
+- **The bar/kitchen mutation boundary, closed.** Previously read-side
+  only (flagged as accepted-for-now in this file) — a bar worker who knew
+  or guessed a kitchen order's id could still `POST` a status/paid/cancel
+  mutation on it directly. `authorizeDepartmentMutation` (worker.go) now
+  checks the same way the read-side feed already filters.
+- **Guest-facing rate limiting**, previously fully absent (see "Maybe
+  later" below — now resolved): cart add/remove and DJ requests both
+  throttled per-IP, reusing the same limiter the login/table-claim
+  endpoints already had.
+- **Product photos.** `products.image_url` — a plain URL field, not an
+  upload (no file-storage infra exists for guest- or admin-supplied
+  binaries); blank falls back to the existing text-only card.
+- **"Call waiter."** Guest-facing button (`RequestAssistance`,
+  resolved from the caller's own session like every other guest action,
+  never a client-supplied table number), surfaced live to staff two ways:
+  a banner on the worker dashboard (new `worker:assistance` topic) and a
+  badge + one-tap acknowledge on the admin table grid.
+- **SEC-13, partially.** Sequential `/table/{n}` URLs are still guessable
+  (unchanged) — asked the user whether to add per-table secret tokens
+  (which means reprinting every physical QR code at a live venue, EGO)
+  and they chose to keep the existing rate-limit-only mitigation rather
+  than take on that reprint. Documented as the deliberate final state in
+  `SECURITY_AUDIT.md`, not left ambiguous.
+
+**Caught and fixed one doc-drift bug along the way**: this file's own
+"Missing / rough edges" list below still said *"'Extra' ingredients have
+no guest-facing flow"* — checked the actual template and that's been false
+since the ingredient-customization session further down this file; the
+line was just never removed after that fix landed. Removed below.
+
 ### Verified two previously-unconfirmed behaviors in a real browser; ops hygiene + cosmetic cleanup pass
 Walked the "Missing / rough edges" list with the user and knocked out the
 cheap/safe items, plus actually verified (not guessed) the two things that
@@ -730,14 +1427,17 @@ templates.
 
 ## Missing / rough edges
 
-- **"Extra" ingredients have no guest-facing flow.** Admin can tag one, but
-  nothing on the guest menu lets someone add it (no add-on picker, no
-  pricing-for-extras concept exists). The data model supports it; only the
-  guest UI/pricing logic is missing, if that's ever actually wanted.
+- **No way to actually delete a product**, only hide it (`AdminToggleProduct`)
+  — came up while cleaning up a leftover test row (see the image_url-bug
+  entry above), which needed a direct DB statement since there's no admin
+  endpoint for it. Add one if a real venue asks to permanently remove a
+  discontinued item rather than just hiding it.
 - **No pagination on "Your orders."** Capped at the most recent 20 per
   session (`placedOrdersLimit`) — fine for a single table visit, would
   need real pagination if guests ever accumulate more than that in one
-  sitting (unlikely, but noted).
+  sitting (unlikely, but noted). Order *history* (the admin panel) got
+  real pagination this session — this is specifically the guest-facing
+  per-session list, which didn't.
 - **Customize-panel/category-tab state resets on every live menu push.**
   If a guest has a customize panel open and someone *else's* action
   triggers a menu broadcast (e.g. admin edits a different product), the
@@ -750,50 +1450,43 @@ templates.
   that window it could theoretically describe a table/order that's since
   changed further. Narrow edge case at this app's traffic level, not
   something to over-build for now.
-- **Cart stock reservations never time out.** If a guest adds something to
-  their cart and then just abandons the table (closes the tab without
-  hitting "Leave Table" or getting force-released), whatever's in their
-  cart stays counted as "reserved" — and therefore unavailable to everyone
-  else — indefinitely. Only an explicit remove/checkout/leave/force-release
-  clears it. Fine at this app's scale (a venue admin can always force-
-  release a table), but a real reservation-expiry timer would close the gap.
-- **No tests.** Nothing in `internal/` or `cmd/` has unit or integration
-  tests — not the wshub, not the handlers, not the cart logic.
-- **Default seeded passwords** (`admin123` / `staff123`) — the server logs a
-  warning about this on every fresh seed, but there's no forced change flow.
-  Fine for local/demo use; must change before any real deployment.
-- **No table auto-release.** If a guest just closes the tab without hitting
-  "Leave Table", the table stays occupied until a worker/admin force-releases
-  it from `/admin`. No timeout, no heartbeat.
-- **No account management beyond create/deactivate/activate.** No password
-  reset/change flow (an admin can't fix a staff member's forgotten
-  password — only they could, and only by knowing the old one), no way to
-  edit a username or move someone between departments after creation, no
-  audit trail of who created/deactivated which account.
-- **Bar/kitchen order-feed filtering is a *view* boundary, not a mutation
-  one.** A bar-department worker who knows/guesses another department's
-  order id can still `POST /worker/orders/{id}/status` or `/paid` on it —
-  `RequireDepartment` only gates the DJ/non-DJ split (a real job-function
-  boundary), not bar-vs-kitchen (treated as an organizational filter, not a
-  security boundary, since staff routinely cover for each other in a small
-  venue). Tighten this if that assumption turns out wrong — the check would
-  be "does this order contain an item in my category" before allowing the
-  mutation, symmetric to the read-side filter.
+- **Default seeded passwords** (`admin123` etc.) — intentional, documented
+  dev/demo convenience, not an oversight. See `SECURITY_AUDIT.md`'s SEC-09
+  (tagged `DEV_ONLY - CONVENIENCE BYPASS`) for the full reasoning on why
+  this stays as-is rather than getting a fake-fix. Must change before any
+  real deployment.
+- **Sequential, guessable `/table/{n}` URLs** (`SECURITY_AUDIT.md`'s
+  SEC-13) — rate-limited (20 new claims/IP/10min) but not actually closed;
+  closing it for real means per-table secret tokens, which means
+  reprinting every physical QR code at a live venue. Asked, user chose to
+  keep the mitigation rather than take on that reprint — this is the
+  deliberate final state, not a gap waiting on a decision.
 - **DJ song-status only tracks the latest request per table.** If a guest
   sends a second request before the first is resolved, the widget switches
   to showing the new one; the first's outcome is still in the DB but no
   longer surfaced to that guest.
 - **No "DJ tip paid" workflow.** Unlike orders (`payment_status` + "Mark
   Paid"), an accepted song request has no staff-side way to record the tip
-  as collected. Only add this if actually asked for — see above.
+  as collected. Only add this if actually asked for.
+- **No split-bill payment collection** — `orders.split_count` is purely a
+  "divide the total by N on the receipt" display, since there's no
+  per-guest payment collection in this app at all (one host session always
+  pays for the whole table, same as before).
 
 ## Maybe later (not needed now, just noted)
 
 - If this ever sits behind a reverse proxy / HTTPS, confirm the proxy passes
   through `Upgrade`/`Connection` headers for the websocket routes, and that
   the `ws://` vs `wss://` scheme htmx infers from the page matches.
-- Rate limiting / abuse protection on guest-facing endpoints (cart add/remove,
-  DJ tip requests) — currently unlimited.
-- Real pagination for order history once a venue has done more than
-  `orderHistoryLimit` (200) orders all-time — right now the 201st-oldest
-  order onward just isn't shown, there's no "load more."
+- A real "call waiter" acknowledgment audit trail (who acknowledged which
+  request, how long it sat) — right now it's just a live flag, cleared with
+  no record of who cleared it or when.
+- A forced password-change flow for the seeded default accounts, so a
+  fresh install can't stay on `admin123` indefinitely just because nobody
+  remembered to change it (see SEC-09 above).
+- **`internal/imageproc` only decodes JPEG/PNG/GIF** (Go stdlib's built-in
+  set) — no WEBP, no HEIC. Most phones/browsers convert to JPEG on upload
+  automatically, but an iPhone with "Keep Original" format set could hand
+  the browser a raw HEIC file, which would get rejected with "please
+  upload a JPEG, PNG, or GIF" rather than silently working. Would need a
+  WEBP/HEIC decoder dependency to close.

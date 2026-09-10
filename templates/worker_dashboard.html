@@ -4,6 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BiteBox Worker — {{ .Username }}</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#D9A441">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png?v={{ .IconVersion }}">
+<!-- iOS ignores the manifest's own display:standalone unless these legacy
+     tags are also present — both are load-bearing for "Add to Home Screen"
+     actually opening in standalone mode, which push notifications require
+     on iOS (16.4+) before Safari will subscribe at all. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BiteBox">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -60,6 +70,9 @@
   .count-badge{background:var(--bg-raised);border:1px solid var(--border);color:var(--text-secondary);
     font-size:12.5px;font-weight:800;padding:3px 10px;border-radius:99px;}
   .empty-note{color:var(--text-muted);font-size:13px;padding:8px 4px;}
+  .assistance-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    background:var(--danger-soft);border:1px solid rgba(194,91,72,.4);color:var(--danger);
+    font-weight:700;font-size:13.5px;padding:10px 14px;border-radius:var(--radius-md);margin-bottom:10px;}
 
   .order-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;}
 
@@ -113,6 +126,49 @@
 
   @media (max-width:640px){ .order-grid{grid-template-columns:1fr;} .dashboard{padding:20px 14px 100px;} }
 
+  /* ---------------------------------------------------------------
+     Order alerts: a banner + chime for "new order in" (kitchen/bar) and
+     "ready for pickup" (waiter), so whoever's on this screen notices
+     without reading every card — see checkForNewOrderAlerts() below.
+     --------------------------------------------------------------- */
+  .sound-toggle{display:flex;align-items:center;justify-content:center;width:38px;height:38px;
+    border-radius:var(--radius-sm);background:transparent;border:1px solid var(--border);
+    color:var(--text-secondary);cursor:pointer;margin-right:10px;font-size:16px;flex:none;}
+  .sound-toggle:hover{color:var(--text-primary);border-color:var(--text-muted);}
+  .sound-toggle.muted{color:var(--text-muted);}
+  .sound-toggle:disabled{opacity:.45;cursor:not-allowed;}
+
+  .alert-stack{position:fixed;top:84px;right:20px;z-index:100;display:flex;flex-direction:column;
+    gap:10px;width:340px;max-width:calc(100vw - 28px);pointer-events:none;}
+  .alert-banner{pointer-events:auto;display:flex;align-items:flex-start;gap:12px;padding:14px 16px;
+    border-radius:var(--radius-md);background:var(--bg-raised);border:1px solid var(--border);
+    border-left:4px solid var(--border);box-shadow:0 12px 32px rgba(0,0,0,.45);
+    opacity:0;transform:translateX(24px);transition:opacity .25s ease,transform .25s ease;}
+  .alert-banner.show{opacity:1;transform:translateX(0);}
+  .alert-new{border-left-color:var(--danger);}
+  .alert-ready{border-left-color:var(--purple);}
+  .alert-icon{font-size:20px;line-height:1;flex:none;margin-top:1px;}
+  .alert-body{display:flex;flex-direction:column;gap:3px;min-width:0;}
+  .alert-body strong{font-size:13.5px;font-weight:800;}
+  .alert-new .alert-body strong{color:var(--danger);}
+  .alert-ready .alert-body strong{color:var(--purple);}
+  .alert-items{font-size:12.5px;color:var(--text-secondary);overflow-wrap:anywhere;}
+  /* A real tap target, not faint text — the old version (font-size:13px,
+     2px/4px padding, no background) was genuinely hard to hit on a phone,
+     the exact "hard to close like a popup ad" complaint. 30px circular hit
+     area (WCAG/HIG both want ~44px for a primary action; this is a
+     secondary dismiss on an already-transient banner, so a bit smaller is
+     fine) with a visible background so it reads as a button at a glance,
+     not just stray text in the corner. */
+  .alert-dismiss{background:rgba(255,255,255,.07);border:none;color:var(--text-secondary);
+    font-size:15px;line-height:1;cursor:pointer;margin-left:auto;flex:none;
+    width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    transition:background .15s ease,color .15s ease;}
+  .alert-dismiss:hover{background:rgba(255,255,255,.14);color:var(--text-primary);}
+  .alert-dismiss:active{background:rgba(255,255,255,.2);}
+
+  @media (max-width:640px){ .alert-stack{left:14px;right:14px;width:auto;top:76px;} }
+
   .print-btn{background:none;border:1px dashed var(--border);color:var(--text-secondary);
     font-size:12px;font-weight:700;padding:8px 10px;border-radius:var(--radius-sm);cursor:pointer;
     align-self:flex-start;}
@@ -162,13 +218,23 @@
   </div>
   <div class="topbar-right">
     <span class="live-pill"><span class="pulse-dot"></span>Live</span>
+    {{ if .ShowOrders }}
+    <button type="button" class="sound-toggle" id="phoneAlertToggle" aria-pressed="false" title="Checking phone alert support…">📵</button>
+    <button type="button" class="sound-toggle" id="alertSoundToggle" aria-pressed="true" title="Sound alerts on — click to mute">🔔</button>
+    {{ end }}
     <form method="POST" action="/logout"><button class="btn-ghost" type="submit">Log out</button></form>
   </div>
 </header>
 
+<div class="alert-stack" id="alert-stack" aria-live="polite"></div>
+
 <main class="dashboard">
 
   {{ if .ShowOrders }}
+  <div hx-ext="ws" ws-connect="/worker/assistance/ws">
+    <div id="assistance-alerts"></div>
+  </div>
+
   <div class="section-heading">
     <div class="section-title">
       <span class="section-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></span>
@@ -283,8 +349,329 @@
   // else) — htmx fires oobAfterSwap for the websocket's OOB push and
   // afterSwap for this worker's own direct hx-post response; re-run the
   // (idempotent) client-side enhancements after either.
-  document.body.addEventListener('htmx:afterSwap', tickOrders);
-  document.body.addEventListener('htmx:oobAfterSwap', tickOrders);
+  function onOrderFeedUpdate(){ tickOrders(); checkForNewOrderAlerts(); }
+  document.body.addEventListener('htmx:afterSwap', onOrderFeedUpdate);
+  document.body.addEventListener('htmx:oobAfterSwap', onOrderFeedUpdate);
+
+  // ---------------------------------------------------------------
+  // Order alerts — a banner + chime for "new order in" and "ready for
+  // pickup", so kitchen/bar/waiter notice without staring at the screen.
+  // Driven off each card's real data-order-id/data-status (see
+  // _order_feed.html), diffed against what we saw last render:
+  //   - an id we've never seen before: brand-new card. "ready" means the
+  //     waiter feed (which only ever holds ready orders) just got one;
+  //     anything else means kitchen/bar/superworker just got a fresh order.
+  //   - an id we already know, flipping from not-ready to ready: the
+  //     superworker feed shows every status in one place, so an existing
+  //     order can turn "ready" without a new card ever appearing.
+  // The very first render (page load) only primes this map — nobody
+  // needs a banner per order that was already sitting there.
+  // ---------------------------------------------------------------
+  const orderAlertState = new Map(); // orderId -> was it "ready" last time we saw it
+  let orderAlertsPrimed = false;
+
+  // Set by initPhoneAlerts below (both on load and on every subscribe/
+  // unsubscribe) — read by notifyOrder to skip the in-page banner+chime
+  // entirely once this device already gets the real thing. Real push and
+  // this in-page fallback exist for the same reason (notice an order
+  // without staring at the screen); once a device has the real one, the
+  // in-page copy is just a second, redundant alert for the exact same
+  // event — this is what keeps it to a fallback for a device that's never
+  // enabled push at all (a mounted kitchen screen with no "phone" of its
+  // own to push to), not something layered on top for every device.
+  let phoneAlertsSubscribed = false;
+
+  function summarizeOrderItems(card){
+    return Array.from(card.querySelectorAll('.order-items .order-item')).map(item => {
+      const clone = item.cloneNode(true);
+      clone.querySelectorAll('.po-excl').forEach(el => el.remove());
+      const qty = clone.querySelector('.qty');
+      const qtyText = qty ? qty.textContent.trim() : '';
+      if (qty) qty.remove();
+      return [qtyText, clone.textContent.trim()].filter(Boolean).join(' ');
+    }).join(', ');
+  }
+
+  function checkForNewOrderAlerts(){
+    const grid = document.getElementById('order-feed');
+    if (!grid) return;
+    const seenIds = new Set();
+    grid.querySelectorAll('.order-card').forEach(card => {
+      const id = card.dataset.orderId;
+      const isReady = card.dataset.status === 'ready';
+      seenIds.add(id);
+      const wasReady = orderAlertState.get(id);
+      if (orderAlertsPrimed) {
+        if (wasReady === undefined) notifyOrder(isReady ? 'ready' : 'new', card);
+        else if (!wasReady && isReady) notifyOrder('ready', card);
+      }
+      orderAlertState.set(id, isReady);
+    });
+    // Drop ids that fell out of the feed (served, cancelled, handed off) —
+    // if that same id ever came back it'd be a different order in practice.
+    Array.from(orderAlertState.keys()).forEach(id => { if (!seenIds.has(id)) orderAlertState.delete(id); });
+    orderAlertsPrimed = true;
+  }
+
+  // --- sound: synthesized in-browser, no audio asset to ship/license ---
+  const ALERT_SOUND_KEY = 'biteboxAlertSoundEnabled';
+  let audioCtx = null;
+  let alertSoundEnabled = localStorage.getItem(ALERT_SOUND_KEY) !== 'off'; // on by default
+
+  function ensureAudioContext(){
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { return null; }
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+  // Browsers refuse to play audio before any user gesture on the page — an
+  // alert fired by a websocket push has no gesture of its own, so the first
+  // tap/click anywhere primes the context in advance.
+  document.addEventListener('click', () => ensureAudioContext(), { once: true });
+
+  function playTone(ctx, freq, startTime, duration, gainPeak = 0.18){
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, startTime);
+    gain.gain.linearRampToValueAtTime(gainPeak, startTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(startTime);
+    osc.stop(startTime + duration + 0.02);
+  }
+
+  function playAlertChime(kind){
+    if (!alertSoundEnabled) return;
+    const ctx = ensureAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    if (kind === 'ready') {
+      playTone(ctx, 660, now, 0.16);        // rising two-note chime: "it's done"
+      playTone(ctx, 990, now + 0.16, 0.22);
+    } else {
+      playTone(ctx, 760, now, 0.18);        // single beep: "new ticket in"
+    }
+  }
+
+  function setAlertSoundEnabled(on){
+    alertSoundEnabled = on;
+    localStorage.setItem(ALERT_SOUND_KEY, on ? 'on' : 'off');
+    const btn = document.getElementById('alertSoundToggle');
+    if (!btn) return;
+    btn.textContent = on ? '🔔' : '🔕';
+    btn.classList.toggle('muted', !on);
+    btn.setAttribute('aria-pressed', String(on));
+    btn.title = on ? 'Sound alerts on — click to mute' : 'Sound alerts muted — click to unmute';
+  }
+  const alertSoundToggle = document.getElementById('alertSoundToggle');
+  if (alertSoundToggle) {
+    setAlertSoundEnabled(alertSoundEnabled);
+    alertSoundToggle.addEventListener('click', () => {
+      ensureAudioContext();
+      setAlertSoundEnabled(!alertSoundEnabled);
+      if (alertSoundEnabled) playAlertChime('new'); // audible confirmation it's back on
+    });
+  }
+
+  // ---------------------------------------------------------------
+  // Real phone notifications — a lock-screen-visible alert via Web Push,
+  // the same mechanism a chat app's push uses, not just this page's own
+  // in-page banner. Requires a browser that supports it (Chrome/Edge on
+  // Android and desktop work directly; iOS Safari only after the page has
+  // been added to the Home Screen and opened from there — iOS won't
+  // subscribe from a plain browser tab, permission or not).
+  // ---------------------------------------------------------------
+  (function initPhoneAlerts(){
+    const btn = document.getElementById('phoneAlertToggle');
+    if (!btn) return; // DJ-only dashboard has no order feed, nothing to alert on
+
+    const VAPID_PUBLIC_KEY = "{{ .VAPIDPublicKey }}";
+    const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent);
+    const isStandalone = navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+
+    // Disable the button with a real, specific reason instead of just
+    // hiding it — silently vanishing when unsupported looks identical to
+    // "broken," and gives whoever's looking at the phone no way to tell
+    // "this browser/connection can't do it" from an actual bug.
+    function disableWithReason(reason){
+      btn.disabled = true;
+      btn.classList.add('muted');
+      btn.title = reason;
+    }
+
+    // Push is a secure-context-only browser API — it's refused outright
+    // over plain HTTP to anything but localhost, no server-side workaround
+    // exists. This is the single most likely reason a phone on the venue's
+    // own WiFi (hitting the server's LAN IP over http://) sees this
+    // disabled: it needs the server behind real HTTPS (or a tunnel like
+    // ngrok for testing) before a phone — as opposed to a desktop browser
+    // on localhost — can subscribe at all.
+    if (!window.isSecureContext) {
+      disableWithReason('Phone alerts need this site loaded over HTTPS (localhost is exempt for testing) — plain HTTP is blocked by the browser itself, not by this app.');
+      return;
+    }
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+      disableWithReason('This browser doesn’t support phone push notifications.');
+      return;
+    }
+    if (!VAPID_PUBLIC_KEY) {
+      disableWithReason('Phone alerts aren’t set up on this server yet (missing VAPID key) — ask whoever runs the server to check it started cleanly.');
+      return;
+    }
+    if (isIOS && !isStandalone) {
+      disableWithReason('On iPhone: tap Share → "Add to Home Screen", then open BiteBox from there — Safari only allows push for an installed home-screen app, not a regular tab.');
+      return;
+    }
+
+    function urlBase64ToUint8Array(base64String){
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = atob(base64);
+      const out = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; i++) out[i] = rawData.charCodeAt(i);
+      return out;
+    }
+
+    function setPhoneButtonState(subscribed){
+      phoneAlertsSubscribed = subscribed;
+      btn.textContent = subscribed ? '📱' : '📵';
+      btn.setAttribute('aria-pressed', String(subscribed));
+      btn.title = subscribed ? 'Phone alerts on — click to turn off' : 'Get order alerts on this phone, even locked';
+      btn.classList.toggle('muted', !subscribed);
+    }
+
+    let swRegistration = null;
+    navigator.serviceWorker.register('/sw.js')
+      .then(reg => { swRegistration = reg; return reg.pushManager.getSubscription(); })
+      .then(sub => setPhoneButtonState(!!sub))
+      .catch(() => disableWithReason('Could not set up phone alerts in this browser (service worker registration failed).'));
+
+    async function subscribe(){
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        showToast('Notifications are blocked — allow them for this site in your browser settings to use phone alerts');
+        return;
+      }
+      try {
+        const reg = swRegistration || await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        });
+        await fetch('/worker/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sub.toJSON()),
+        });
+        setPhoneButtonState(true);
+        showToast('Phone alerts enabled on this device');
+      } catch (e) {
+        showToast('Could not enable phone alerts on this device');
+      }
+    }
+
+    async function unsubscribe(){
+      try {
+        const reg = swRegistration || await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          await fetch('/worker/push/unsubscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: sub.endpoint }),
+          });
+          await sub.unsubscribe();
+        }
+        setPhoneButtonState(false);
+        showToast('Phone alerts turned off on this device');
+      } catch (e) {
+        showToast('Could not turn off phone alerts on this device');
+      }
+    }
+
+    btn.addEventListener('click', () => {
+      if (btn.getAttribute('aria-pressed') === 'true') unsubscribe();
+      else subscribe();
+    });
+  })();
+
+  // --- tab-title flash: catches a worker who's looked away from the tab ---
+  const baseTitle = document.title;
+  let titleFlashTimer = null;
+  function flashTitle(kind){
+    if (!document.hidden) return;
+    const label = kind === 'ready' ? '✅ Ready for pickup' : '🔔 New order';
+    let showingAlert = false;
+    clearInterval(titleFlashTimer);
+    titleFlashTimer = setInterval(() => {
+      document.title = showingAlert ? baseTitle : label;
+      showingAlert = !showingAlert;
+    }, 1000);
+    document.addEventListener('visibilitychange', function stop(){
+      if (!document.hidden) {
+        clearInterval(titleFlashTimer);
+        document.title = baseTitle;
+        document.removeEventListener('visibilitychange', stop);
+      }
+    });
+  }
+
+  function dismissAlertBanner(banner){
+    banner.classList.remove('show');
+    setTimeout(() => banner.remove(), 250);
+  }
+
+  function notifyOrder(kind, card){
+    // A device with real phone alerts on already gets this exact event as
+    // a lock-screen push — see phoneAlertsSubscribed's own comment. Skip
+    // the in-page banner/chime/title-flash entirely rather than layer a
+    // second alert for the same order on top of it.
+    if (phoneAlertsSubscribed) return;
+
+    const table = card.querySelector('.table-tag')?.textContent.trim() || 'Table —';
+    const items = summarizeOrderItems(card);
+    playAlertChime(kind);
+    flashTitle(kind);
+
+    const stack = document.getElementById('alert-stack');
+    if (!stack) return;
+    const banner = document.createElement('div');
+    banner.className = 'alert-banner ' + (kind === 'ready' ? 'alert-ready' : 'alert-new');
+
+    const icon = document.createElement('span');
+    icon.className = 'alert-icon';
+    icon.textContent = kind === 'ready' ? '✅' : '🔔';
+
+    const body = document.createElement('div');
+    body.className = 'alert-body';
+    const heading = document.createElement('strong');
+    // table/items come from product & ingredient names (admin-entered, not
+    // guest-authored) via textContent, but built as real text nodes here
+    // rather than innerHTML anyway — cheap insurance against a stray "<".
+    heading.textContent = (kind === 'ready' ? 'Ready for pickup' : 'New order') + ' — ' + table;
+    const itemsLine = document.createElement('span');
+    itemsLine.className = 'alert-items';
+    itemsLine.textContent = items || 'No items';
+    body.append(heading, itemsLine);
+
+    const dismissBtn = document.createElement('button');
+    dismissBtn.className = 'alert-dismiss';
+    dismissBtn.type = 'button';
+    dismissBtn.setAttribute('aria-label', 'Dismiss');
+    dismissBtn.textContent = '✕';
+    dismissBtn.addEventListener('click', () => dismissAlertBanner(banner));
+
+    banner.append(icon, body, dismissBtn);
+    stack.prepend(banner);
+    requestAnimationFrame(() => banner.classList.add('show'));
+    setTimeout(() => dismissAlertBanner(banner), 9000);
+  }
+
+  checkForNewOrderAlerts(); // prime the map with whatever's already on screen at load
 
   // ---------------------------------------------------------------
   // Toast + undo. The undo button always performs a real request (the
@@ -298,9 +685,11 @@
   function showToast(msg, undoFn){
     const toast = document.getElementById('toast');
     document.getElementById('toastMsg').textContent = msg;
+    const undoBtn = document.getElementById('toastUndo');
+    undoBtn.hidden = !undoFn; // plain status messages (e.g. phone-alert setup) have nothing to undo
     toast.classList.add('show');
     clearTimeout(toastTimer);
-    document.getElementById('toastUndo').onclick = () => { undoFn && undoFn(); toast.classList.remove('show'); };
+    undoBtn.onclick = () => { undoFn && undoFn(); toast.classList.remove('show'); };
     toastTimer = setTimeout(() => toast.classList.remove('show'), 4000);
   }
 

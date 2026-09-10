@@ -38,7 +38,7 @@ func LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth.SetSessionCookie(w, sessionID)
+	auth.SetSessionCookie(w, r, sessionID)
 
 	redirect := "/worker"
 	if user.Role == "admin" {
@@ -51,6 +51,6 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 	if sessionID, ok := auth.SessionIDFromRequest(r); ok {
 		db.DeleteAuthSession(sessionID)
 	}
-	auth.ClearSessionCookie(w)
+	auth.ClearSessionCookie(w, r)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }

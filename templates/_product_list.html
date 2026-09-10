@@ -4,12 +4,40 @@
 
   {{ range .Products }}
   <div class="product-row-wrap">
-    <form class="product-row {{ if not .IsAvailable }}is-hidden{{ end }}" data-status="{{ if not .IsAvailable }}hidden{{ else if eq .AvailableStock -1 }}unlimited{{ else if eq .AvailableStock 0 }}out{{ else if le .AvailableStock 5 }}low{{ else }}available{{ end }}">
+    <form class="product-row {{ if not .IsAvailable }}is-hidden{{ end }}" data-status="{{ if not .IsAvailable }}hidden{{ else if eq .AvailableStock -1 }}unlimited{{ else if eq .AvailableStock 0 }}out{{ else if le .AvailableStock 5 }}low{{ else }}available{{ end }}" hx-encoding="multipart/form-data">
       <input type="hidden" name="name" value="{{ .Name }}">
       <input type="hidden" name="price" value="{{ printf "%.2f" .Price }}">
       <input type="hidden" name="category" value="{{ .Category }}">
       <input type="hidden" name="description" value="{{ .Description }}">
+      <input type="hidden" name="image_url" value="{{ .ImageURL }}">
       <div class="product-main">
+        <!-- What this row actually is: the product's current photo (if
+             any), a way to take/choose a new one, and — only once a photo
+             exists — a checkbox to remove it on next Save. Grouped into
+             one labeled, bordered cluster (same pattern as the add-item
+             form's own .photo-cluster) instead of 3-4 bare icons floating
+             above the name with no container of their own. -->
+        <div class="photo-field photo-row-cluster">
+          <span class="photo-row-cluster-label">Photo</span>
+          <!-- ThumbURL for this ~26px inline preview — see the same note
+               in _guest_product_list.html; the hidden "image_url" field
+               above still round-trips the *full* URL, since that's the
+               one column actually stored on the product. -->
+          <img class="photo-preview-thumb" src="{{ .ThumbURL }}" {{ if not .ImageURL }}hidden{{ end }} alt="" loading="lazy" onerror="this.hidden=true">
+          <input type="file" class="photo-file-input" name="photo" accept="image/*" hidden>
+          <!-- title alone only ever surfaces on :hover — invisible on a
+               touchscreen, which is what every admin device here actually
+               is. aria-label carries the same text as an always-present
+               accessible name (screen reader or not) for these icon-only
+               buttons. -->
+          <button type="button" class="btn btn-ghost photo-take-btn" title="Take a new photo with your camera" aria-label="Take a new photo with your camera">📷</button>
+          <button type="button" class="btn btn-ghost photo-choose-btn" title="Choose a new photo" aria-label="Choose a new photo">🖼️</button>
+          {{ if .ImageURL }}
+          <label class="checkbox-label photo-remove-label" title="Remove this product's photo">
+            <input type="checkbox" name="remove_photo" value="1" aria-label="Remove this product's photo"> ✕ Remove
+          </label>
+          {{ end }}
+        </div>
         <span class="product-name">{{ .Name }}</span>
         <span class="product-price">€{{ printf "%.2f" .Price }}</span>
         {{ if gt .Reserved 0 }}
@@ -35,18 +63,26 @@
         <input class="stepper-input" type="number" name="stock" value="{{ if eq .Stock -1 }}0{{ else }}{{ .Stock }}{{ end }}" min="0" {{ if eq .Stock -1 }}disabled{{ end }} title="Raw inventory count (not counting cart reservations)">
         <button type="button" class="stepper-btn" data-action="inc" {{ if eq .Stock -1 }}disabled{{ end }}>+</button>
       </div>
-      {{ if not .IsAvailable }}
-      <span class="status-pill status-hidden">Hidden</span>
-      {{ else if eq .AvailableStock -1 }}
-      <span class="status-pill status-unlimited">Unlimited</span>
-      {{ else if eq .AvailableStock 0 }}
-      <span class="status-pill status-out">Out of stock</span>
-      {{ else if le .AvailableStock 5 }}
-      <span class="status-pill status-low">Low stock</span>
-      {{ else }}
-      <span class="status-pill status-available">Available</span>
-      {{ end }}
-      <div class="row-actions">
+      <select class="field-select vat-rate-select" name="vat_rate" title="VAT rate — demo receipt structure only, not a real tax filing">
+        <option value="24" {{ if eq .VATRate 24.0 }}selected{{ end }}>VAT 24%</option>
+        <option value="13" {{ if eq .VATRate 13.0 }}selected{{ end }}>VAT 13%</option>
+        <option value="6" {{ if eq .VATRate 6.0 }}selected{{ end }}>VAT 6%</option>
+      </select>
+      <!-- Status + actions, grouped as one cluster: what the item's
+           availability currently is, and the two things you'd do about
+           it, read together instead of as two unrelated grid cells. -->
+      <div class="row-status-actions">
+        {{ if not .IsAvailable }}
+        <span class="status-pill status-hidden">Hidden</span>
+        {{ else if eq .AvailableStock -1 }}
+        <span class="status-pill status-unlimited">Unlimited</span>
+        {{ else if eq .AvailableStock 0 }}
+        <span class="status-pill status-out">Out of stock</span>
+        {{ else if le .AvailableStock 5 }}
+        <span class="status-pill status-low">Low stock</span>
+        {{ else }}
+        <span class="status-pill status-available">Available</span>
+        {{ end }}
         <button type="button" class="btn btn-ghost btn-sm" hx-post="/admin/products/{{ .ID }}" hx-target="#menuList">Save</button>
         <button type="button" class="btn btn-ghost btn-sm toggle-visibility" hx-post="/admin/products/{{ .ID }}/toggle" hx-target="#menuList">
           {{ if .IsAvailable }}Hide from menu{{ else }}Show on menu{{ end }}

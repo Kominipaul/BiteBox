@@ -35,6 +35,10 @@
     --radius-sm:9px;
     --font-display:'IBM Plex Mono',ui-monospace,monospace;
     --font-body:'Manrope',system-ui,sans-serif;
+    /* Apple HIG's 44px minimum hit area (Material's 48dp rounds to the
+       same value here) — see the (pointer:coarse) block further down for
+       where this actually gets applied. */
+    --tap-min:44px;
   }
   *{box-sizing:border-box;}
   html{-webkit-text-size-adjust:100%;}
@@ -62,7 +66,7 @@
 
   /* ---------- Topbar ---------- */
   .topbar{
-    display:flex;align-items:center;justify-content:space-between;
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
     padding:20px 32px;
     border-bottom:1px solid var(--border-soft);
     position:sticky;top:0;
@@ -70,7 +74,12 @@
     backdrop-filter:blur(8px);
     z-index:10;
   }
-  .brand{display:flex;align-items:center;gap:14px;}
+  /* min-width:0 lets this side of the topbar actually shrink below its
+     content size — the flex default (min-width:auto) is "as wide as the
+     venue name needs," which on a long venue name ("EGO Rooftop Bar &
+     Lounge") plus a narrow phone pushed .topbar-right (Live pill, Log out)
+     off-screen instead of the venue name ever truncating. */
+  .brand{display:flex;align-items:center;gap:14px;min-width:0;flex:1 1 auto;}
   .brand-mark{
     width:40px;height:40px;flex:none;
     border-radius:11px;
@@ -79,13 +88,25 @@
     display:flex;align-items:center;justify-content:center;
     color:var(--accent);
   }
-  .brand-text{display:flex;flex-direction:column;line-height:1.25;}
+  .brand-text{display:flex;flex-direction:column;line-height:1.25;min-width:0;}
+  /* Same overflow:hidden/ellipsis treatment as .venue-name below it, for
+     the same reason: on a narrow phone with min-width:0 letting .brand
+     shrink, "BITEBOX ADMIN" (13 chars, letter-spaced, no wrap control of
+     its own) is wider than the space left once a real venue name and
+     .topbar-right have taken theirs — it wrapped to 2 lines, misaligning
+     against the single-line venue name directly under it. */
   .brand-eyebrow{
     font-size:11px;letter-spacing:.09em;text-transform:uppercase;
     color:var(--text-muted);font-weight:700;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;
   }
-  .venue-name{font-size:19px;font-weight:800;letter-spacing:-.01em;}
-  .topbar-right{display:flex;align-items:center;gap:14px;}
+  /* Truncates instead of wrapping/overflowing — an admin can set an
+     arbitrarily long venue name (see AdminUpdateVenueName's 80-char cap),
+     and this is the one place it has to fit next to Live/Log out no matter
+     the screen width. */
+  .venue-name{font-size:19px;font-weight:800;letter-spacing:-.01em;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;}
+  .topbar-right{display:flex;align-items:center;gap:14px;flex:none;}
   .live-pill{
     display:flex;align-items:center;gap:7px;
     font-size:12.5px;font-weight:700;color:var(--success);
@@ -111,7 +132,7 @@
     border-radius:var(--radius-sm);border:1px solid transparent;
     padding:9px 16px;cursor:pointer;white-space:nowrap;
     transition:filter .12s ease, transform .05s ease;
-    display:inline-flex;align-items:center;gap:6px;
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
   }
   .btn:active{transform:translateY(1px);}
   .btn-sm{padding:7px 12px;font-size:12.5px;}
@@ -125,8 +146,14 @@
 
   /* ---------- Layout ---------- */
   .dashboard{max-width:1180px;margin:0 auto;padding:32px 32px 80px;}
+  /* align-items:center, not baseline: heading-controls is a row of pills
+     and buttons (not text), and a text baseline aligned against a
+     non-text box's own fallback baseline (its bottom margin edge, per
+     spec) reads as a few px of vertical misalignment wherever the two
+     share a row — center is the predictable choice for a mixed
+     heading+controls row like this. */
   .section-heading{
-    display:flex;align-items:baseline;justify-content:space-between;
+    display:flex;align-items:center;justify-content:space-between;
     margin-bottom:16px;flex-wrap:wrap;gap:10px;
   }
   .section-heading h2{font-size:16px;font-weight:800;}
@@ -242,6 +269,18 @@
   .category-pill-kitchen .category-pill-dept{background:var(--accent-soft);color:var(--accent-strong);}
   .category-pill-bar .category-pill-dept{background:var(--info-soft);color:var(--info);}
   .staff-status{font-size:12px;color:var(--text-muted);white-space:nowrap;}
+  .staff-manage{position:relative;}
+  .staff-manage summary{list-style:none;cursor:pointer;}
+  .staff-manage summary::-webkit-details-marker{display:none;}
+  .staff-manage-body{
+    position:absolute;right:0;top:calc(100% + 6px);z-index:5;width:260px;
+    display:flex;flex-direction:column;gap:10px;
+    background:var(--bg-raised);border:1px solid var(--border);border-radius:var(--radius-md);
+    padding:14px;box-shadow:0 8px 24px rgba(0,0,0,.25);
+  }
+  .staff-edit-form,.staff-reset-form{display:flex;gap:6px;}
+  .staff-edit-form .field-input,.staff-edit-form .field-select{width:auto;flex:1;min-width:0;}
+  .staff-reset-form .field-input{flex:1;min-width:0;}
 
   /* ---------- Panels ---------- */
   .panel{
@@ -282,9 +321,86 @@
     border-radius:var(--radius-md);padding:14px;margin-bottom:22px;
   }
   .add-form-venue{grid-template-columns:1fr auto;}
+  .add-form-business{grid-template-columns:1fr 1fr auto;}
   .add-form-staff{grid-template-columns:1fr 1fr 1fr auto;}
   .add-form-category{grid-template-columns:1fr auto auto;}
-  .add-form-product{grid-template-columns:1.4fr .7fr .9fr 1.6fr auto .8fr auto;}
+
+  /* .add-form-product used to be a 9-column grid with hand-picked fr
+     ratios (1.4fr/.7fr/.9fr/.85fr/.8fr for name/price/category/vat/stock)
+     sized against a guess at the *desktop* container width, with two
+     "auto" columns (the Unlimited checkbox, the submit button) eating an
+     uneven chunk of what was left before the fr tracks ever divided it.
+     The math didn't hold: at a realistic panel width the price column
+     landed around 69px against "Price €"'s own ~73px, the VAT column
+     around 84px against "VAT 24% (standard)"'s ~150px+ — every one of
+     those cells was clipping its own placeholder/selected-option text,
+     which is exactly the "Pric", "VAT 24...", clipped "Stock" symptom.
+     A grid also had no way to just *wrap* a field that didn't fit; it
+     could only ever squeeze it into whatever fraction of the row was
+     left.
+
+     Replaced with flex rows instead: each field gets a real flex-basis
+     sized to its own placeholder/option text (not a fraction of
+     something else), flex-shrink:0 so it's never squeezed below that,
+     and flex-wrap on the row so a field that doesn't fit drops to its
+     own line instead of clipping. Grouped into rows by what the fields
+     actually are (identity+pricing, description, media+inventory,
+     submit) rather than one flat 9-wide line — which also directly
+     answers the brief's #2/#3: the photo controls get their own
+     labeled cluster instead of floating as 3 unrelated buttons, and the
+     submit button gets its own action row instead of sitting in
+     between inline-with-the-inputs and truly separate. */
+  .add-form-product{display:flex;flex-direction:column;align-items:stretch;gap:12px;}
+  .product-form-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+  .product-form-row .field-input,
+  .product-form-row .field-select{width:auto;}
+  /* Only the item name actually benefits from extra room on a wide
+     desktop window (names are open-ended free text; price/category/vat/
+     stock all have a bounded, predictable content length) — so name is
+     the only field with flex-grow here. The other four settle at their
+     own min-width instead of stretching to fill leftover space just
+     because it's there, which is what was making "Price €" balloon out
+     to 200px+ of mostly-empty input on a wide screen. */
+  /* max-width caps how far this grows on a very wide panel — nothing
+     wrong with a row not stretching edge-to-edge; a product-name input
+     wider than ~420px doesn't get more useful, just emptier-looking. */
+  .field-item-name{flex:2 0 180px;max-width:420px;}
+  .field-price{flex:0 0 100px;}
+  .field-category{flex:0 0 150px;}
+  .product-form-row .vat-rate-select{flex:0 0 175px;}
+  .field-description{flex:1 1 100%;}
+  .field-stock{flex:0 0 130px;}
+  .form-actions{display:flex;justify-content:flex-end;}
+
+  /* ---------- Photo cluster: one labeled control, three ways to fill it
+     (take/choose/paste-URL) — instead of 3 differently-shaped buttons
+     with no visual relationship to each other or to the inputs beside
+     them. The label + consistent height is what makes it read as "one
+     decision," not the exact widget choice — a dropdown would hide the
+     paste-URL option behind an extra click for what's actually the most
+     common path (an admin's own phone camera), so this keeps all three
+     visible but grouped instead. */
+  /* max-width caps this the same way .field-item-name is capped above —
+     the grow budget on a wide panel should go to the one field inside
+     here that actually uses it (the paste-URL input), not turn the whole
+     cluster into a mostly-empty bar. */
+  .photo-cluster{display:flex;align-items:center;flex-wrap:wrap;gap:8px;flex:2 0 280px;max-width:480px;}
+  .photo-cluster-label{
+    font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--text-muted);flex:none;
+  }
+  .photo-cluster-actions{
+    display:flex;flex:none;background:var(--bg-surface);
+    border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;
+  }
+  .photo-cluster-actions .btn{
+    border-radius:0;border:none;border-right:1px solid var(--border);
+    background:transparent;padding:9px 12px;font-size:13px;
+  }
+  .photo-cluster-actions .btn:last-child{border-right:none;}
+  .photo-cluster .photo-url-input{flex:1 1 170px;margin:0;}
+  .photo-cluster .photo-preview-thumb{width:34px;height:34px;border-radius:6px;object-fit:cover;flex:none;border:1px solid var(--border);}
+
   .field-input, .field-select{
     background:var(--bg-surface);border:1px solid var(--border);
     color:var(--text-primary);border-radius:var(--radius-sm);
@@ -311,6 +427,14 @@
     border-radius:99px;padding:1px 8px;font-size:11px;
   }
 
+  /* 4 columns, not 5: status (a pill) and actions (Save/Hide) used to be
+     two separate grid cells sitting right next to each other with
+     nothing to say they were related — now one .row-status-actions
+     cluster (see below), so the row reads as product-info / stock /
+     tax / status+actions — 3 clearly separated control groups, each
+     with visibly more space between groups (this grid's own 16px gap)
+     than between controls *within* a group (8px, see .stock-stepper and
+     .row-status-actions below). */
   .product-row{
     display:grid;
     grid-template-columns:1fr auto auto auto;
@@ -319,17 +443,53 @@
     transition:opacity .15s ease;
     margin:0;
   }
+  /* Shared by both the per-row select here and the add-item form's (see
+     .product-form-row .vat-rate-select) — padding bumped from 6px/8px to
+     reach the same ~36-40px control height as the stepper and the
+     status+actions cluster beside it (previously ~28px tall, visibly
+     shorter than its ~32-40px neighbors). Font-size untouched: the fix
+     is the box's height, not making the text bigger. */
+  .vat-rate-select{padding:10px 10px;font-size:12px;width:auto;}
   .product-row:last-child{border-bottom:none;}
   .product-row.is-hidden{opacity:.45;}
   .product-main{display:flex;flex-direction:column;gap:2px;min-width:0;}
   .product-name{font-weight:700;font-size:14px;}
   .product-price{font-family:var(--font-display);font-size:12.5px;color:var(--text-secondary);}
 
-  .stock-stepper{display:flex;align-items:center;gap:0;border:1px solid var(--border);
-    border-radius:var(--radius-sm);overflow:hidden;background:var(--bg-raised);}
+  /* ---------- Per-row photo control ----------
+     Used to be 4 bare, unlabeled pieces sitting directly above the item
+     name with no border/grouping of their own — a raw thumbnail-or-
+     nothing image, two icon-only buttons, and (only when a photo already
+     exists) a checkbox+"✕" — which is genuinely what they do (show the
+     current photo, take/choose a new one, mark the current one for
+     removal), just with no visual container tying them together, which
+     is what read as leftover dev UI rather than a real control. Same
+     bordered cluster treatment as .photo-cluster on the add-item form,
+     scaled down for a table row: a small "Photo" label makes the group's
+     purpose legible at a glance instead of guessable from 3 icons. */
+  .photo-row-cluster{
+    display:flex;align-items:center;gap:6px;margin-bottom:6px;
+    background:var(--bg-surface);border:1px solid var(--border-soft);
+    border-radius:var(--radius-sm);padding:4px 8px 4px 4px;width:fit-content;
+  }
+  .photo-row-cluster-label{
+    font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--text-muted);padding-left:4px;
+  }
+  .photo-row-cluster .photo-preview-thumb{width:26px;height:26px;border-radius:5px;object-fit:cover;flex:none;border:1px solid var(--border);}
+  .photo-row-cluster .btn{padding:5px 8px;font-size:12px;}
+  .photo-remove-label{font-size:11px;color:var(--text-muted);display:inline-flex;align-items:center;gap:2px;white-space:nowrap;}
+
+  /* height:38px + align-items:stretch (not center) makes every child —
+     the ∞ toggle, both stepper buttons, the qty input — fill the same
+     height automatically, instead of each sizing to its own padding/
+     font and landing at a slightly different height than its neighbors
+     inside the same bordered pill. */
+  .stock-stepper{display:flex;align-items:stretch;gap:0;border:1px solid var(--border);
+    border-radius:var(--radius-sm);overflow:hidden;background:var(--bg-raised);height:38px;}
   .stepper-btn{
     background:none;border:none;color:var(--text-secondary);
-    width:28px;height:30px;cursor:pointer;font-size:15px;font-weight:700;
+    width:30px;cursor:pointer;font-size:15px;font-weight:700;
   }
   .stepper-btn:hover{color:var(--text-primary);background:rgba(255,255,255,.04);}
   .stepper-input{
@@ -341,7 +501,7 @@
   /* font-size must stay >=16px: iOS/Android auto-zoom the whole page on
      focus for any text input under 16px, assuming it's too small to read. */
   .unlimited-tag{font-size:12px;color:var(--info);font-weight:700;padding:0 6px;}
-  .stock-unlimited-toggle{padding:0 8px 0 10px;border-right:1px solid var(--border);font-size:11.5px;}
+  .stock-unlimited-toggle{padding:0 8px 0 10px;border-right:1px solid var(--border);font-size:11.5px;display:flex;align-items:center;}
   .stock-unlimited-toggle input{width:13px;height:13px;}
 
   .status-pill{
@@ -356,9 +516,27 @@
   .status-occupied{background:var(--danger-soft);color:var(--danger);}
 
   .row-actions{display:flex;gap:8px;flex-wrap:wrap;}
+  /* Status pill + Save + Hide-from-menu, grouped into one cluster (used
+     to be two separate grid cells sitting side by side with nothing
+     marking them as related). Pill stays a pill (state/status badges are
+     a pill everywhere else in this app too — role-badge, category-pill,
+     live-pill — so keeping that shape here is consistency, not
+     inconsistency; the fix this row actually needed was height and
+     grouping, not forcing a badge into a rectangle). Padding bumped on
+     both so the pill and the buttons land within a px or two of the same
+     ~36-40px height as the stepper/VAT select beside them, without
+     touching font-size on either. */
+  .row-status-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .row-status-actions .status-pill{flex:none;padding:12px 14px;}
+  .row-status-actions .btn{padding:10px 14px;}
 
   /* ---------- Menu category tabs ---------- */
-  .menu-cat-tabs{display:flex;gap:6px;margin-bottom:18px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none;}
+  /* padding-right matches .menu-scroll-panel's own right inset directly
+     below this in the same panel (both 0.6rem) — the two used to have
+     different effective right edges, which combined with the scroll
+     panel's real OS scrollbar visually read as "the scrollbar sits right
+     up against the last tab's count badge." */
+  .menu-cat-tabs{display:flex;gap:6px;margin-bottom:18px;padding-right:0.6rem;overflow-x:auto;padding-bottom:2px;scrollbar-width:none;}
   .menu-cat-tabs::-webkit-scrollbar{display:none;}
   .menu-cat-tab{flex:none;background:var(--bg-raised);border:1px solid var(--border);color:var(--text-secondary);
     font-weight:700;font-size:12.5px;padding:7px 8px 7px 14px;border-radius:99px;cursor:pointer;
@@ -415,13 +593,23 @@
   .ingredient-tag.is-extra{background:var(--info-soft); color:var(--info); border-color:rgba(107,140,174,.25);}
   .ingredient-tag-price{font-weight:800;opacity:.85;}
   .ingredient-tag-price-free{font-weight:600;text-transform:uppercase;font-size:10.5px;letter-spacing:.03em;opacity:.65;}
+  /* Reported as "a stray bullet trailing the label" — the ✕ icon (a real,
+     working hx-delete, not a bug) was only ever an SVG rendered at 10px
+     with a ~1.25px effective stroke, in var(--success)/var(--info) — a
+     pastel green/blue — on a barely-there rgba(0,0,0,.15) circle. At that
+     size/contrast it reads as an indistinct dot, not a legible ✕. Fixed
+     with contrast (a solid, always-high-contrast text-primary icon
+     instead of inheriting the tag's own pastel color) and a slightly
+     bigger glyph — not a bigger *button* (18px → 20px is barely a size
+     change; the real fix is legibility of what's already inside it). */
   .ingredient-tag-remove{
-    background:rgba(0,0,0,.15); border:none; cursor:pointer; color:inherit;
-    width:18px;height:18px;border-radius:50%;flex:none;
+    background:rgba(0,0,0,.22); border:none; cursor:pointer; color:var(--text-primary);
+    width:20px;height:20px;border-radius:50%;flex:none;
     display:flex; align-items:center; justify-content:center;
     transition:background .12s ease;
   }
-  .ingredient-tag-remove:hover{background:rgba(0,0,0,.32);}
+  .ingredient-tag-remove svg{width:12px;height:12px;}
+  .ingredient-tag-remove:hover{background:rgba(0,0,0,.4);}
 
   .ingredient-empty-note{font-size:12.5px;color:var(--text-muted);margin:0;}
 
@@ -449,9 +637,20 @@
 
   .empty-note{color:var(--text-muted);font-size:13px;padding:8px 4px;}
 
-  /* ---------- Order history (kept from before, restyled to match) ---------- */
+  /* ---------- Order history (kept from before, restyled to match) ----------
+     scrollbar-gutter:stable reserves a scrollbar's own width as space
+     genuinely inside the box, rather than letting an OS scrollbar (15-17px
+     on Windows without overlay scrollbars) paint directly over the last
+     few px of padding — which on this panel's mere 0.25rem/4px padding is
+     enough to visually crowd (in the menu panel below, the category tab
+     row's last pill/count) or clip-looking content right at the edge.
+     padding-right is bumped as a fallback for the one shipping browser
+     (older Safari) without scrollbar-gutter support — harmless no-op
+     double-reservation on anything that does support it, since that
+     browser already accounts for the gutter itself. */
   .scroll-panel{
-    max-height:420px;overflow-y:auto;padding:0.25rem;
+    max-height:420px;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable;
+    padding:0.25rem 0.6rem 0.25rem 0.25rem;
     display:flex;flex-direction:column;gap:10px;
   }
 
@@ -462,9 +661,10 @@
      item runs noticeably taller than a history-card. 720px is tuned to
      comfortably fit ~4 such rows before scrolling kicks in, not a handful
      squeezed in — nudge it if your actual rows run shorter/taller than
-     that. ---------- */
+     that. Same scrollbar-gutter reasoning as .scroll-panel above. ---------- */
   .menu-scroll-panel{
-    max-height:720px;overflow-y:auto;padding:0.25rem;
+    max-height:720px;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable;
+    padding:0.25rem 0.6rem 0.25rem 0.25rem;
   }
   .history-card{
     background:var(--bg-raised);border:1px solid var(--border-soft);
@@ -476,7 +676,6 @@
   /* ---------- Responsive ---------- */
   @media (max-width:920px){
     .kpi-grid{grid-template-columns:repeat(2,1fr);}
-    .add-form-product{grid-template-columns:1fr 1fr;}
     .add-form-staff{grid-template-columns:1fr 1fr;}
   }
   @media (max-width:640px){
@@ -485,8 +684,28 @@
     .panel{padding:16px;}
     .kpi-grid{grid-template-columns:1fr 1fr;gap:10px;}
     .product-row{grid-template-columns:1fr;gap:8px;align-items:flex-start;}
-    .row-actions{width:100%;}
-    .add-form-venue,.add-form-staff,.add-form-product,.add-form-category{grid-template-columns:1fr;}
+    /* Collapsing .product-row to one column turns every "auto"-sized
+       desktop cell into a full-width Grid track — Grid's default
+       justify-items:stretch then stretches each of THESE specific cells
+       (none has its own explicit width) to fill it, since they're
+       naturally-compact controls, not full-width content: .stock-stepper
+       became a bordered pill with its ∞/–/qty/+ controls jammed to the
+       left and a dead empty strip on the right. justify-self:start opts
+       each back out of stretch — scoped to these specific children (not
+       a blanket justify-items on .product-row) because .product-main
+       genuinely *needs* the stretch, to give its description text real
+       width to work with, and .row-status-actions *wants* the stretch —
+       see its own rule below. */
+    .product-row>.stock-stepper,
+    .product-row>.vat-rate-select{justify-self:start;}
+    /* .row-status-actions (status pill + Save + Hide/Show, see the
+       #5 grouping fix) keeps the default full-width stretch — the pill
+       stays its own compact size (flex:none, right below), but Save/
+       Hide-from-menu splitting the rest of that width evenly reads as a
+       real two-action bar instead of two natural-width buttons left-
+       packed with a dead gap after them. */
+    .row-status-actions .btn{flex:1;justify-content:center;}
+    .add-form-venue,.add-form-business,.add-form-staff,.add-form-category{grid-template-columns:1fr;}
 
     /* Chart reads better full-width and stacked than squeezed sideways —
        .trend-bars already has min-width:0 so it wouldn't overflow either
@@ -502,6 +721,22 @@
        its own line below rather than forcing horizontal scroll. */
     .staff-row{display:flex;flex-wrap:wrap;row-gap:8px;}
     .staff-row>div{flex:1 1 140px;min-width:0;}
+    /* .staff-manage-body anchors position:absolute; right:0 to its own
+       <details> trigger (correct on desktop, where the fixed 5-column
+       grid always puts that trigger at the row's right edge) — but the
+       flex-wrap row above can land the "Manage" trigger anywhere,
+       including near the row's *left* edge on its own wrapped line. A
+       260px popover anchored right:0 to a trigger sitting at, say, x=86
+       would render from x=-174 to x=86 — mostly or entirely off-screen
+       and untappable, not just visually cramped (the width cap below
+       only ever addressed the *width* of that problem, not this
+       positioning root cause). margin-left:auto is the standard flex-wrap
+       trick for "always sit at the row's right edge, even after
+       wrapping" — it consumes the leftover space on whatever line this
+       item ends up the last one of, which restores the right:0 anchor's
+       original assumption regardless of where the row's other content
+       pushed this item. */
+    .staff-manage{margin-left:auto;}
 
     /* Ingredient add-form's fixed-width fields (200px name, auto-width
        select/button) already wrap via flex-wrap, but stacked full-width
@@ -511,6 +746,55 @@
     .ingredient-add-form .field-input,
     .ingredient-add-form .field-select,
     .ingredient-add-form .ingredient-price-input{width:100%;}
+
+    /* .staff-manage-body anchors right:0 off its trigger, which the mobile
+       .staff-row flex-wrap above can place anywhere in the row — a fixed
+       260px box measured from there could run past a narrow phone's left
+       edge. Capping the width (position/anchor unchanged, so it stays
+       reliably below the trigger) at least keeps it from being wider than
+       there's ever room for. */
+    .staff-manage-body{width:min(260px, calc(100vw - 48px));}
+  }
+
+  /* ---------- Touch targets (coarse pointer = finger, not mouse) ----------
+     A mouse cursor can land precisely on a 28px button; a fingertip can't.
+     Scoped to (pointer:coarse) rather than a max-width breakpoint — a touch
+     laptop or a phone in landscape at a wide viewport still has a finger on
+     the glass, and a narrow desktop window shouldn't get bigger buttons it
+     doesn't need. Applies everywhere these controls appear (admin, worker,
+     guest), not just this file's own selectors, since the classes are
+     shared, but only admin_dashboard.html defines .stepper-btn/.ingredient-
+     tag-remove/.stock-unlimited-toggle at all.
+
+     --tap-min (defined in :root at the top of this file, alongside the
+     other tokens) is Apple HIG's 44px minimum hit area (Material's 48dp
+     rounds to the same value here) — the previous pass landed on
+     40/38/36/33px in different places, all short of it by a little. One
+     token instead of a different guess per selector, so every control
+     here actually clears the same bar. */
+  @media (pointer:coarse){
+    .btn{min-height:var(--tap-min);min-width:var(--tap-min);}
+    .btn-sm{min-height:var(--tap-min);min-width:var(--tap-min);}
+    .stepper-btn{width:var(--tap-min);height:var(--tap-min);font-size:17px;}
+    .stepper-input{width:52px;height:var(--tap-min);}
+    .stock-unlimited-toggle{padding-block:13px;}
+    .stock-unlimited-toggle input{width:18px;height:18px;}
+    .menu-cat-tab,.period-tab{min-height:var(--tap-min);padding-top:0;padding-bottom:0;}
+  }
+  /* .ingredient-tag-remove is a "×" on an inline chip in a tight,
+     flex-wrapped row (7px gaps) — growing its own *visible* box to 44px
+     would make each ingredient tag look bloated and start colliding with
+     its neighbors, the exact "bigger icon instead of padding" outcome the
+     brief calls out. Kept visually small on purpose; the ::before instead
+     gives it a genuinely invisible 44x44 hit area (20px visible + 12px
+     halo each side) that costs nothing else on the page — safe to bleed a
+     little into a neighboring tag's own body, since nothing on a tag
+     *besides* its own remove button is clickable, so there's nothing to
+     mis-tap into. Not gated to (pointer:coarse): an invisible larger
+     click zone doesn't hurt a mouse either. */
+  .ingredient-tag-remove{position:relative;}
+  .ingredient-tag-remove::before{
+    content:'';position:absolute;inset:-12px;
   }
 </style>
 </head>
@@ -577,6 +861,20 @@
 
   <section class="panel">
     <div class="panel-header">
+      <h2>Business details <span style="font-weight:400;color:var(--text-muted);font-size:12px;">(demo)</span></h2>
+    </div>
+    <div id="businessSettingsPanel">
+      <form class="add-form add-form-business" hx-post="/admin/settings/business-details" hx-target="#businessSettingsPanel" hx-swap="innerHTML">
+        <input class="field-input" name="business_vat_number" value="{{ .BusinessVATNumber }}" maxlength="100" placeholder="ΑΦΜ (VAT number)" aria-label="VAT number">
+        <input class="field-input" name="tax_office" value="{{ .TaxOffice }}" maxlength="100" placeholder="Δ.Ο.Υ. (Tax office)" aria-label="Tax office">
+        <button type="submit" class="btn btn-primary">Save</button>
+      </form>
+      <p class="empty-note" style="margin-top:10px;">Shown on the demo receipt printout (see an order's "🧾 Receipt" link in Order history) — <strong>not a real tax registration</strong>, and never transmitted anywhere. Structure only.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
       <h2>DJ song requests</h2>
     </div>
     <div id="djTogglePanel">
@@ -588,6 +886,23 @@
       <span class="status-pill status-hidden">Disabled</span>
       <p class="empty-note" style="margin:10px 0 14px;">Guests don't see any song-request option on the menu page.</p>
       <button type="button" class="btn btn-primary btn-sm" hx-post="/admin/settings/dj-requests/toggle" hx-target="#djTogglePanel" hx-swap="innerHTML">Enable song requests</button>
+      {{ end }}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h2>Payment methods</h2>
+    </div>
+    <div id="cashTogglePanel">
+      {{ if .AllowCashOrders }}
+      <span class="status-pill status-available">Enabled</span>
+      <p class="empty-note" style="margin:10px 0 14px;">Guests can choose cash or card at checkout.</p>
+      <button type="button" class="btn btn-ghost btn-sm" hx-post="/admin/settings/cash-orders/toggle" hx-target="#cashTogglePanel" hx-swap="innerHTML">Disable cash orders</button>
+      {{ else }}
+      <span class="status-pill status-hidden">Disabled</span>
+      <p class="empty-note" style="margin:10px 0 14px;">Guests only see card at checkout — the cash option is hidden.</p>
+      <button type="button" class="btn btn-primary btn-sm" hx-post="/admin/settings/cash-orders/toggle" hx-target="#cashTogglePanel" hx-swap="innerHTML">Enable cash orders</button>
       {{ end }}
     </div>
   </section>
@@ -664,16 +979,42 @@
     </div>
 
     <span class="form-heading">Add a new item</span>
-    <form class="add-form add-form-product" id="addProductForm" hx-post="/admin/products" hx-target="#menuList" hx-on::after-request="if(event.detail.successful) this.reset()">
-      <input class="field-input" name="name" placeholder="Item name" aria-label="Item name" required>
-      <input class="field-input" name="price" type="number" step="0.50" min="0" placeholder="Price €" aria-label="Price in euros" required>
-      <select class="field-select" name="category" aria-label="Category">
-        {{ range .Categories }}<option value="{{ .Name }}">{{ .Name }}</option>{{ end }}
-      </select>
-      <input class="field-input" name="description" placeholder="Description (optional, shown to guests)" aria-label="Description">
-      <label class="checkbox-label"><input type="checkbox" id="newItemUnlimited"> Unlimited</label>
-      <input class="field-input" id="newItemStock" name="stock" type="number" min="0" placeholder="Stock qty" aria-label="Stock quantity">
-      <button type="submit" class="btn btn-primary">Add product</button>
+    <form class="add-form add-form-product" id="addProductForm" hx-post="/admin/products" hx-target="#menuList" hx-encoding="multipart/form-data" hx-on::after-request="if(event.detail.successful) this.reset(), clearPhotoPreview(this)">
+      <div class="product-form-row">
+        <input class="field-input field-item-name" name="name" placeholder="Item name" aria-label="Item name" required>
+        <input class="field-input field-price" name="price" type="number" step="0.50" min="0" placeholder="Price €" aria-label="Price in euros" required>
+        <select class="field-select field-category" name="category" aria-label="Category">
+          {{ range .Categories }}<option value="{{ .Name }}">{{ .Name }}</option>{{ end }}
+        </select>
+        <select class="field-select vat-rate-select" name="vat_rate" aria-label="VAT rate (demo receipt only)" title="Demo receipt structure only — not a real tax filing">
+          <option value="24" selected>VAT 24% (standard)</option>
+          <option value="13">VAT 13% (reduced)</option>
+          <option value="6">VAT 6% (super-reduced)</option>
+        </select>
+      </div>
+
+      <div class="product-form-row">
+        <input class="field-input field-description" name="description" placeholder="Description (optional, shown to guests)" aria-label="Description">
+      </div>
+
+      <div class="product-form-row">
+        <div class="photo-field photo-cluster">
+          <span class="photo-cluster-label">Photo</span>
+          <img class="photo-preview-thumb" hidden alt="">
+          <input type="file" class="photo-file-input" name="photo" accept="image/*" hidden>
+          <div class="photo-cluster-actions">
+            <button type="button" class="btn photo-take-btn" title="Take a photo with your camera" aria-label="Take a photo with your camera">📷 Take</button>
+            <button type="button" class="btn photo-choose-btn" title="Choose an existing photo" aria-label="Choose an existing photo">🖼️ Choose</button>
+          </div>
+          <input class="field-input photo-url-input" name="image_url" type="url" placeholder="...or paste a photo URL" aria-label="Photo URL">
+        </div>
+        <label class="checkbox-label"><input type="checkbox" id="newItemUnlimited"> Unlimited</label>
+        <input class="field-input field-stock" id="newItemStock" name="stock" type="number" min="0" placeholder="Stock qty" aria-label="Stock quantity">
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Add product</button>
+      </div>
     </form>
 
     <div class="menu-cat-tabs" role="tablist" aria-label="Menu categories">
@@ -695,44 +1036,71 @@
   <section class="panel">
     <div class="panel-header">
       <h2>📜 Order history</h2>
-      <span class="section-sub">Most recent {{ len .History }} orders</span>
+      <span class="section-sub">Newest first — "Load more" fetches the next page</span>
     </div>
-    <div class="scroll-panel">
-      {{ range .History }}
-      <div class="history-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <strong>Table #{{ .TableNumber }} — Order #{{ .ID }}</strong>
-          <span class="history-time">{{ .CreatedAt.Local.Format "2006-01-02 15:04" }}</span>
-        </div>
-        <ul>
-          {{ range .Items }}
-          <li>{{ .Quantity }}x {{ .Name }} (€{{ printf "%.2f" .Price }} each)</li>
-          {{ end }}
-        </ul>
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
-          <div class="row-actions">
-            {{ if eq .Status "cancelled" }}
-            <span class="status-pill status-out">cancelled</span>
-            {{ else }}
-            <span class="status-pill status-unlimited">{{ .Status }}</span>
-            {{ end }}
-            {{ if eq .PaymentStatus "paid" }}
-            <span class="status-pill status-available">paid</span>
-            {{ else }}
-            <span class="status-pill status-hidden">unpaid</span>
-            {{ end }}
-            {{ if .ServedBy }}
-            <span class="status-pill status-unlimited" style="background:var(--info-soft);color:var(--info);">served by {{ .ServedBy }}</span>
-            {{ end }}
-          </div>
-          <strong>€{{ printf "%.2f" .TotalAmount }}</strong>
-        </div>
-      </div>
-      {{ else }}
-      <p class="empty-note">No orders yet.</p>
-      {{ end }}
+    <div class="scroll-panel" id="orderHistoryList">
+      {{ template "order-history-rows" . }}
     </div>
   </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <h2>🗂️ Audit log</h2>
+      <span class="section-sub">Staff account changes — who did what, and when</span>
+    </div>
+    <div id="audit-log" hx-get="/admin/audit-log" hx-trigger="load" hx-swap="innerHTML">
+      <p class="empty-note">Loading audit log...</p>
+    </div>
+  </section>
+
+{{ define "order-history-rows" }}
+  {{ range .History }}
+  <div class="history-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <strong>Table #{{ .TableNumber }} — Order #{{ .ID }}</strong>
+      <span class="history-time">{{ .CreatedAt.Local.Format "2006-01-02 15:04" }}</span>
+    </div>
+    <ul>
+      {{ range .Items }}
+      <li>{{ .Quantity }}x {{ .Name }} (€{{ printf "%.2f" .Price }} each)</li>
+      {{ end }}
+    </ul>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+      <div class="row-actions">
+        {{ if eq .Status "cancelled" }}
+        <span class="status-pill status-out">cancelled</span>
+        {{ else }}
+        <span class="status-pill status-unlimited">{{ .Status }}</span>
+        {{ end }}
+        {{ if eq .PaymentStatus "paid" }}
+        <span class="status-pill status-available">paid</span>
+        {{ else }}
+        <span class="status-pill status-hidden">unpaid</span>
+        {{ end }}
+        {{ if .ServedBy }}
+        <span class="status-pill status-unlimited" style="background:var(--info-soft);color:var(--info);">served by {{ .ServedBy }}</span>
+        {{ end }}
+        {{ if gt .TipAmount 0.0 }}
+        <span class="status-pill status-available" style="background:var(--info-soft);color:var(--info);">+€{{ printf "%.2f" .TipAmount }} tip</span>
+        {{ end }}
+        {{ if gt .SplitCount 1 }}
+        <span class="status-pill status-unlimited">split {{ .SplitCount }} ways</span>
+        {{ end }}
+        <a class="btn btn-ghost btn-sm" href="/admin/orders/{{ .ID }}/receipt" target="_blank" title="Demo receipt printout — not a real fiscal document">🧾 Receipt</a>
+      </div>
+      <strong>€{{ printf "%.2f" .GrandTotal }}</strong>
+    </div>
+  </div>
+  {{ else }}
+  <p class="empty-note">No orders yet.</p>
+  {{ end }}
+  {{ if .HasMoreHistory }}
+  <button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;"
+    hx-get="/admin/history/page?offset={{ .NextHistoryOffset }}" hx-target="this" hx-swap="outerHTML">
+    Load more
+  </button>
+  {{ end }}
+{{ end }}
 
 </main>
 
@@ -822,6 +1190,90 @@
     priceInput.style.display = isExtra ? '' : 'none';
     if (!isExtra) priceInput.value = '';
   });
+
+  // ---- photo-field: two buttons sharing one hidden <input type=file>,
+  // toggling its `capture` attribute so "Take photo" opens the phone's
+  // camera directly while "Choose file" opens the normal picker/gallery —
+  // same element either way, no need to merge two separate inputs into
+  // one form field. Delegated from document since every product row's own
+  // edit form gets this same control too (see _product_list.html), each
+  // rendered/replaced live over /admin/menu/ws. ----
+  document.addEventListener('click', (e) => {
+    const takeBtn = e.target.closest('.photo-take-btn');
+    const chooseBtn = e.target.closest('.photo-choose-btn');
+    if (!takeBtn && !chooseBtn) return;
+    const field = e.target.closest('.photo-field');
+    const input = field.querySelector('.photo-file-input');
+    if (takeBtn) input.setAttribute('capture', 'environment');
+    else input.removeAttribute('capture');
+    input.click();
+  });
+  // HEIC/HEIF (what an iPhone camera submits by default) can't be decoded
+  // server-side here — see internal/imageproc's own doc comment on why
+  // (short version: real decoding needs a libheif/libvips system
+  // dependency this app's single-binary deploy story deliberately
+  // avoids). The one place that conversion CAN happen is the one browser
+  // that can actually decode a HEIC file at all: Safari, which is also
+  // the only browser that ever produces one in the first place (Android
+  // cameras are essentially always JPEG). So: detect it here, redraw it
+  // through a <canvas> into a real JPEG, and swap that in before the file
+  // ever leaves the browser. Anywhere else (a browser that can't decode
+  // HEIC either), this quietly fails and the original file goes through
+  // untouched — the server's own rejection message (imageproc.
+  // ErrHEICNotSupported) still explains what to do about it.
+  function looksLikeHEIC(file){
+    return /\.hei[cf]$/i.test(file.name) || /^image\/hei[cf]/i.test(file.type || '');
+  }
+  function heicFileToJPEG(file){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(url);
+          if (!blob) { reject(new Error('canvas produced no blob')); return; }
+          resolve(new File([blob], file.name.replace(/\.hei[cf]$/i, '.jpg'), { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.92);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('this browser cannot decode HEIC')); };
+      img.src = url;
+    });
+  }
+  document.addEventListener('change', async (e) => {
+    if (!e.target.classList.contains('photo-file-input')) return;
+    const input = e.target;
+    const field = input.closest('.photo-field');
+    const preview = field.querySelector('.photo-preview-thumb');
+    let file = input.files && input.files[0];
+    if (!file) { preview.hidden = true; return; }
+
+    if (looksLikeHEIC(file)) {
+      try {
+        file = await heicFileToJPEG(file);
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+      } catch (err) {
+        // Can't convert here — let it through as-is; the server will
+        // reject it with a clear, actionable message.
+      }
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => { preview.src = reader.result; preview.hidden = false; };
+    reader.readAsDataURL(file);
+  });
+  // Called after a successful "Add product" submit (see hx-on::after-request
+  // on #addProductForm) — the native form.reset() clears the file input's
+  // value but not this preview <img>'s own src/hidden state.
+  function clearPhotoPreview(form){
+    const preview = form.querySelector('.photo-preview-thumb');
+    if (preview) { preview.hidden = true; preview.src = ''; }
+  }
 
   // ---- kicked out live: the server closes any of our websockets with
   // close code 4001 the moment our own account gets deactivated (checked

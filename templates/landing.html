@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BiteBox</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 90vh;
+      text-align: center;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      background: var(--background-alt);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>🍽️ {{ .VenueName }}</h2>
+    <p>Scan the QR code on your table to see the menu and order.</p>
+    <p style="font-size: 0.9rem; color: var(--text-muted);">
+      <a href="/login">Staff &amp; admin login</a>
+    </p>
+  </div>
+
+</body>
+</html>

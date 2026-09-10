@@ -4,6 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Table #{{ .TableNumber }} — {{ .VenueName }}</title>
+<!-- ?table={{ .TableNumber }} makes GuestWebManifest emit a start_url of
+     /table/{{ .TableNumber }} — see its doc comment: iOS reopens a
+     home-screen-installed page at the manifest's start_url, not wherever
+     "Add to Home Screen" was tapped from, so without this every table's
+     icon would reopen the same fixed page instead of that table's own. -->
+<link rel="manifest" href="/manifest-guest.json?table={{ .TableNumber }}">
+<!-- iOS ignores the manifest's own display:standalone unless these legacy
+     Apple-specific meta tags are also present — belt-and-suspenders with
+     the manifest above, not a replacement for it (Android/desktop read the
+     manifest and ignore these). -->
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png?v={{ .IconVersion }}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="{{ .VenueName }}">
 <script src="/static/vendor/htmx.min.js"></script>
 <script src="/static/vendor/htmx-ws.js"></script>
 <style>
@@ -15,7 +29,15 @@
      see the @font-face's font-weight range), so this is a straight copy, not
      a re-subset; only the vietnamese/cyrillic/greek subsets Google also
      listed were dropped, since this page never renders those characters and
-     the browser was never fetching them either. */
+     the browser was never fetching them either.
+
+     archivo-latin/fraunces-latin/jetbrains-mono-latin are the *previous*
+     palette's fonts — kept and still loaded (not dead weight: every
+     --font-* stack below lists them as its fallback family, e.g.
+     'Playfair Display','Fraunces',ui-serif,serif) so the page still reads
+     close to correct typography if the new fonts ever fail to load, same
+     reasoning as any font stack's system fallback, just with a self-hosted
+     step in between instead of jumping straight to ui-serif/system-ui. */
   @font-face{
     font-family:'Archivo';font-style:normal;font-weight:400 800;font-display:swap;
     src:url('/static/fonts/archivo-latin.woff2') format('woff2');
@@ -28,36 +50,78 @@
     font-family:'JetBrains Mono';font-style:normal;font-weight:500 700;font-display:swap;
     src:url('/static/fonts/jetbrains-mono-latin.woff2') format('woff2');
   }
-  /* EGO palette: warm taupe/charcoal + sand accent, olive kept as secondary */
+  /* v3 restyle's actual palette — same self-hosting approach as above, not
+     the Google Fonts @import the pasted-back draft had at the top of its
+     stylesheet (that's exactly the CDN round-trip the comment above already
+     explains this app moved away from once; reintroducing it here would
+     undo that fix). Weight ranges match what this stylesheet actually uses
+     (checked against every font-weight paired with each of these in the
+     rules below), not a blind copy of every weight Google's specimen page
+     offers. */
+  @font-face{
+    font-family:'Playfair Display';font-style:normal;font-weight:600;font-display:swap;
+    src:url('/static/fonts/playfair-display-latin.woff2') format('woff2');
+  }
+  @font-face{
+    font-family:'Work Sans';font-style:normal;font-weight:400 600;font-display:swap;
+    src:url('/static/fonts/work-sans-latin.woff2') format('woff2');
+  }
+  @font-face{
+    font-family:'Work Sans';font-style:normal;font-weight:700;font-display:swap;
+    src:url('/static/fonts/work-sans-latin-700.woff2') format('woff2');
+  }
+  @font-face{
+    font-family:'IBM Plex Mono';font-style:normal;font-weight:500 700;font-display:swap;
+    src:url('/static/fonts/ibm-plex-mono-latin.woff2') format('woff2');
+  }
+  @font-face{
+    font-family:'Poppins';font-style:normal;font-weight:600 800;font-display:swap;
+    src:url('/static/fonts/poppins-latin.woff2') format('woff2');
+  }
+
+  /* ============ TOKENS — v3: one clean, restrained palette + an actual
+     8px spacing/type scale, instead of a pile of one-off pixel values.
+     Same idea as before (warm dark, gold accent) but tuned for contrast,
+     consistency, and less "themed", more "product". ============ */
   :root{
-    --bg-base:#211D18;
-    --bg-surface:#2A251E;
-    --bg-raised:#332C23;
-    --paper:#F3EDE1;
-    --ink:#2B2620;
+    --bg-base:#17130E;
+    --bg-surface:#1F1912;
+    --bg-raised:#2A2118;
+    --bg-recessed:#241D15;
+    --paper:#F4ECDC;
+    --ink:#1B140C;           /* text sitting on gold buttons */
     --ink-soft:#5C5347;
-    --border:#3E362B;
-    --border-soft:#332C23;
-    --text-primary:#F3EDE1;
-    --text-secondary:#C4B8A3;
-    --text-muted:#8C8072;
-    --accent:#C9A876; --accent-strong:#DBC090; --accent-soft:rgba(201,168,118,.16);
-    --success:#8B9463; --success-soft:rgba(139,148,99,.16);
-    --danger:#C25B48; --danger-soft:rgba(194,91,72,.15);
-    --info:#6B8CAE; --info-soft:rgba(107,140,174,.15);
-    --neutral:#8C8072; --neutral-soft:rgba(140,131,117,.14);
-    --radius-lg:18px; --radius-md:13px; --radius-sm:9px;
-    --font-display:'Fraunces',ui-serif,serif;
-    --font-body:'Archivo',system-ui,sans-serif;
-    --font-mono:'JetBrains Mono',ui-monospace,monospace;
+    --border:#3A2E1F;
+    --border-soft:#2A2118;
+    --text-primary:#F5EFE3;
+    --text-secondary:#D9CBB0;
+    --text-muted:#9C8D74;
+    --accent:#CB9A5C; --accent-strong:#E8C084; --accent-soft:rgba(203,154,92,.16);
+    --success:#8FA36C; --success-soft:rgba(143,163,108,.16);
+    --danger:#C2604A; --danger-soft:rgba(194,96,74,.15);
+    --info:#6E93B4; --info-soft:rgba(110,147,180,.15);
+    --neutral:#9C8D74; --neutral-soft:rgba(156,141,116,.14);
+    --radius-lg:20px; --radius-md:14px; --radius-sm:10px; --radius-pill:999px;
+    /* 8px-based spacing scale — used instead of scattered 17px/22px/38px etc. */
+    --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-7:32px; --sp-8:40px;
+    /* type scale */
+    --tx-2xs:11px; --tx-xs:12px; --tx-sm:13px; --tx-base:14px; --tx-md:15px; --tx-lg:16px; --tx-xl:18px; --tx-2xl:22px;
+    /* serif reserved for the brand name + a handful of section titles —
+       everything else in the UI (item names included) is one clean sans,
+       which is what actually reads as "app" rather than "menu card". */
+    --font-display:'Playfair Display','Fraunces',ui-serif,serif;
+    --font-wordmark:'Poppins','Archivo',ui-sans-serif,sans-serif;
+    --font-body:'Work Sans','Archivo',system-ui,sans-serif;
+    --font-mono:'IBM Plex Mono','JetBrains Mono',ui-monospace,monospace;
+    --shadow-card:0 8px 20px -12px rgba(0,0,0,.45);
+    --shadow-pop:0 20px 44px -18px rgba(0,0,0,.55);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html{scroll-behavior:smooth;}
   body{margin:0;background:var(--bg-base);color:var(--text-primary);
-    font-family:var(--font-body);-webkit-font-smoothing:antialiased;min-height:100vh;
-    background-image:
-      radial-gradient(ellipse 900px 500px at 15% -5%, rgba(219,192,144,.06), transparent 60%),
-      radial-gradient(ellipse 700px 600px at 100% 30%, rgba(139,148,99,.05), transparent 55%);
+    font-family:var(--font-body);font-size:var(--tx-base);line-height:1.45;
+    -webkit-font-smoothing:antialiased;min-height:100vh;
+    background-image:radial-gradient(ellipse 900px 480px at 20% -6%, var(--accent-soft), transparent 62%);
   }
   button,input,textarea{font-family:inherit;}
   h1,h2,h3{margin:0;}
@@ -67,235 +131,293 @@
   :focus-visible{outline:2.5px solid var(--accent-strong);outline-offset:2px;border-radius:4px;}
 
   .skip-link{position:absolute;left:-9999px;top:0;background:var(--accent);color:var(--ink);
-    padding:10px 16px;border-radius:8px;z-index:100;font-weight:700;}
+    padding:var(--sp-2) var(--sp-4);border-radius:8px;z-index:100;font-weight:700;}
   .skip-link:focus{left:16px;top:16px;}
 
   .topbar{display:flex;align-items:center;justify-content:space-between;
-    padding:14px 18px;border-bottom:1px solid var(--border-soft);
-    position:sticky;top:0;background:rgba(33,29,24,.9);backdrop-filter:blur(10px);z-index:20;}
-  .table-id{display:flex;align-items:center;gap:10px;}
-  .table-id h1{font-family:var(--font-display);font-size:19px;font-weight:600;letter-spacing:-.01em;}
-  .host-tag{background:var(--accent-soft);color:var(--accent-strong);font-size:10.5px;font-weight:700;
-    padding:4px 9px;border-radius:99px;text-transform:uppercase;letter-spacing:.06em;font-family:var(--font-mono);}
+    padding:var(--sp-3) var(--sp-5);border-bottom:1px solid var(--border-soft);
+    position:sticky;top:0;background:rgba(23,19,14,.92);backdrop-filter:blur(10px);z-index:20;}
+  .table-id{display:flex;align-items:center;gap:var(--sp-2);}
+  .table-id h1{font-family:var(--font-body);font-size:var(--tx-lg);font-weight:700;letter-spacing:-.01em;}
+  .host-tag{background:var(--accent-soft);color:var(--accent-strong);font-size:var(--tx-2xs);font-weight:700;
+    padding:4px 10px;border-radius:var(--radius-pill);text-transform:uppercase;letter-spacing:.06em;font-family:var(--font-mono);
+    border:1px solid rgba(203,154,92,.4);}
   .leave-btn{background:transparent;color:var(--text-muted);border:1px solid var(--border);
-    font-weight:600;font-size:12.5px;padding:8px 13px;border-radius:var(--radius-sm);cursor:pointer;
+    font-weight:600;font-size:var(--tx-xs);padding:8px 14px;border-radius:var(--radius-pill);cursor:pointer;
     transition:all .15s ease;}
-  .leave-btn:hover{color:var(--danger);border-color:rgba(194,91,72,.4);background:var(--danger-soft);}
+  .leave-btn:hover{color:var(--danger);border-color:rgba(194,96,74,.4);background:var(--danger-soft);}
 
-  .page{max-width:720px;margin:0 auto;padding:0 16px 130px;}
+  .page{max-width:720px;margin:0 auto;padding:0 var(--sp-4) 130px;}
 
-  .venue-banner{text-align:center;padding:34px 10px 22px;}
-  .venue-mark{width:44px;height:44px;margin:0 auto 12px;opacity:.9;}
-  .venue-banner .eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--accent-strong);
-    letter-spacing:.14em;text-transform:uppercase;margin-bottom:10px;}
-  .venue-banner .name{font-family:var(--font-display);font-size:34px;font-weight:600;letter-spacing:.01em;line-height:1;}
-  .venue-banner .tagline{font-size:13.5px;color:var(--text-muted);margin-top:14px;font-style:italic;}
+  /* refined hero panel — dropped the wood-plank texture and tribal
+     zigzag from the previous pass; they read as themed decoration
+     rather than a real product surface. This is a plain raised panel
+     with a soft top glow and one thin gold rule under the name, all
+     still pure CSS (::before / ::after), no new markup. */
+  .venue-banner{
+    position:relative; text-align:center; margin:var(--sp-8) auto var(--sp-6); max-width:400px;
+    padding:var(--sp-8) var(--sp-6) var(--sp-7); border-radius:var(--radius-lg);
+    background:linear-gradient(180deg, var(--bg-raised), var(--bg-surface));
+    border:1px solid var(--border-soft);
+    box-shadow:var(--shadow-card); overflow:hidden;
+  }
+  .venue-banner::before{
+    content:''; position:absolute; inset:0; z-index:0; pointer-events:none; border-radius:inherit;
+    background:radial-gradient(240px 160px at 50% 0%, var(--accent-soft), transparent 72%);
+  }
+  .venue-mark{position:relative;z-index:1;width:48px;height:48px;margin:0 auto var(--sp-4);opacity:.95;color:var(--accent);}
+  .venue-banner .eyebrow{position:relative;z-index:1;font-family:var(--font-mono);font-size:var(--tx-2xs);font-weight:600;color:var(--accent-strong);
+    letter-spacing:.22em;text-transform:uppercase;margin-bottom:var(--sp-2);}
+  .venue-banner .name{position:relative;z-index:1;font-family:var(--font-wordmark);font-size:clamp(28px,7vw,34px);
+    font-weight:700;letter-spacing:.06em;line-height:1;color:var(--text-primary);}
+  .venue-banner .name::after{
+    content:''; display:block; width:36px; height:2px; margin:var(--sp-4) auto 0;
+    background:var(--accent); border-radius:2px;
+  }
+  .venue-banner .tagline{position:relative;z-index:1;font-size:var(--tx-sm);color:var(--text-muted);margin-top:var(--sp-4);line-height:1.6;
+    max-width:32ch;margin-inline:auto;}
 
-  .cat-tabs{display:flex;gap:6px;margin-bottom:20px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none;}
+  .cat-tabs{display:flex;gap:var(--sp-2);margin-bottom:var(--sp-6);overflow-x:auto;padding:2px 2px var(--sp-2);scrollbar-width:none;}
   .cat-tabs::-webkit-scrollbar{display:none;}
-  .cat-tab{flex:none;background:transparent;border:1px solid var(--border);color:var(--text-secondary);
-    font-weight:600;font-size:13px;padding:8px 15px;border-radius:99px;cursor:pointer;transition:all .15s ease;}
-  .cat-tab.active{background:var(--accent);color:var(--ink);border-color:var(--accent);}
-  .cat-tab:hover:not(.active){border-color:var(--text-muted);}
+  .cat-tab{flex:none;background:var(--bg-surface);border:1px solid var(--border);color:var(--text-secondary);
+    font-weight:600;font-size:var(--tx-sm);padding:9px var(--sp-4);border-radius:var(--radius-pill);cursor:pointer;transition:all .15s ease;}
+  .cat-tab.active{background:var(--accent);color:var(--ink);border-color:var(--accent);font-weight:700;}
+  .cat-tab:hover:not(.active){border-color:var(--accent-strong);}
 
-  .menu-grid{display:flex;flex-direction:column;margin-bottom:30px;}
-  /* .menu-group-super is now the only heading level — categories are flat
-     (see models.Category), there's no more per-category Subcategory
-     sub-heading (.menu-section-label used to be that; removed along with
-     the nested SubGroups it labeled, see _guest_product_list.html). */
-  .menu-group-super{font-family:var(--font-mono);font-size:10.5px;font-weight:700;color:var(--accent-strong);
-    text-transform:uppercase;letter-spacing:.14em;margin:34px 2px 4px;}
+  .menu-grid{display:flex;flex-direction:column;margin-bottom:var(--sp-7);}
+
+  .menu-group-super{font-family:var(--font-mono);font-size:var(--tx-2xs);font-weight:700;color:var(--accent-strong);
+    text-transform:uppercase;letter-spacing:.14em;margin:var(--sp-8) 2px var(--sp-2);padding-bottom:var(--sp-3);
+    border-bottom:1px solid var(--border-soft);}
   .menu-group-super:first-child{margin-top:0;}
-  .menu-list{display:flex;flex-direction:column;gap:12px;margin-bottom:8px;}
-  .item-card{background:var(--bg-surface);border:1px solid var(--border-soft);border-radius:var(--radius-md);
-    padding:15px 16px;position:relative;transition:border-color .15s ease;}
-  .item-card:hover{border-color:var(--border);}
-  .item-top{display:flex;align-items:baseline;gap:8px;}
-  .item-name{font-family:var(--font-display);font-weight:600;font-size:16px;line-height:1.25;}
-  .item-leader{flex:1;border-bottom:1.5px dotted var(--border);margin-bottom:5px;min-width:12px;}
-  .item-price{font-family:var(--font-mono);font-size:13.5px;color:var(--accent-strong);font-weight:600;white-space:nowrap;}
-  .item-desc{font-size:11.5px;color:var(--text-muted);margin-top:5px;line-height:1.45;}
-  .item-actions{margin-top:12px;display:flex;gap:8px;align-items:center;}
-  .add-btn{flex:1;background:var(--accent-soft);color:var(--accent-strong);border:1px solid rgba(201,168,118,.35);
-    font-weight:700;font-size:13.5px;padding:9px;border-radius:var(--radius-sm);cursor:pointer;transition:all .15s ease;}
-  .add-btn:hover{background:rgba(201,168,118,.26);}
-  .add-btn:active{transform:scale(.97);}
+  /* flat, divided list — a hairline under each row instead of a boxed
+     card, image bigger on the right. Item names are the same sans as
+     the rest of the UI now (not a separate serif) — one consistent
+     voice reads calmer at 170+ rows than mixing typefaces every row. */
+  .menu-list{display:flex;flex-direction:column;gap:0;margin-bottom:var(--sp-3);}
+
+  .item-card{
+    display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-5);
+    background:none;border:none;border-bottom:1px solid var(--border-soft);
+    border-radius:0;padding:var(--sp-5) var(--sp-1);position:relative;
+    transition:background .15s ease;
+  }
+  .item-card:hover{background:var(--bg-surface);border-radius:var(--radius-md);}
+  .item-main{flex:1;min-width:0;padding-top:2px;}
+  .item-top{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-3);flex-wrap:wrap;}
+  .item-name{font-family:var(--font-body);font-weight:700;font-size:var(--tx-lg);line-height:1.3;color:var(--text-primary);}
+  .item-leader{display:none;}
+  .item-price{font-family:var(--font-mono);font-size:var(--tx-base);color:var(--accent-strong);font-weight:700;white-space:nowrap;}
+  .item-desc{font-size:var(--tx-xs);color:var(--text-muted);margin-top:var(--sp-1);line-height:1.55;max-width:46ch;}
+  .item-actions{margin-top:var(--sp-4);display:flex;gap:var(--sp-2);align-items:center;flex-wrap:wrap;}
+
+  .item-photo-wrap{
+    flex:none;width:112px;height:112px;border-radius:var(--radius-md);
+    overflow:hidden;background:
+      radial-gradient(120% 120% at 50% 20%, var(--accent-soft), transparent 60%),
+      linear-gradient(165deg, var(--bg-raised), var(--bg-recessed));
+    border:1px solid var(--border);box-shadow:0 8px 18px -12px rgba(0,0,0,.55);
+  }
+  .item-photo{width:100%;height:100%;object-fit:cover;display:block;}
+  @media(max-width:380px){
+    .item-photo-wrap{width:92px;height:92px;}
+  }
+  /* Add = the real primary action, same solid-gold treatment as every
+     other primary button in this file (.checkout-btn, .place-order-btn,
+     .dj-submit). Customize is a clearly secondary, same-height pill. */
+  .add-btn{
+    flex:0 0 auto;background:var(--accent);color:var(--ink);border:none;
+    font-weight:700;font-size:var(--tx-sm);padding:10px var(--sp-4);border-radius:var(--radius-pill);cursor:pointer;
+    transition:filter .15s ease, transform .1s ease;
+  }
+  .add-btn:hover{filter:brightness(1.08);}
+  .add-btn:active{transform:scale(.96);}
   .add-btn.flash{animation:flashAdd .45s ease;}
   @keyframes flashAdd{
-    0%{background:var(--success-soft);color:var(--success);border-color:rgba(139,148,99,.5);}
-    100%{background:var(--accent-soft);color:var(--accent-strong);border-color:rgba(201,168,118,.35);}
+    0%{background:var(--success);}
+    100%{background:var(--accent);}
   }
-  .customize-link{background:none;border:1px solid var(--border);color:var(--text-muted);font-size:12px;font-weight:600;
-    cursor:pointer;padding:8px 12px;border-radius:var(--radius-sm);white-space:nowrap;transition:all .15s ease;}
-  .customize-link:hover{color:var(--text-secondary);border-color:var(--text-muted);}
+  .customize-link{
+    flex:0 0 auto;background:var(--bg-raised);border:1px solid var(--border);color:var(--text-secondary);
+    font-size:var(--tx-xs);font-weight:600;cursor:pointer;padding:10px var(--sp-4);border-radius:var(--radius-pill);
+    white-space:nowrap;transition:all .15s ease;
+  }
+  .customize-link:hover{color:var(--text-primary);border-color:var(--accent-strong);background:var(--bg-recessed);}
 
-  /* ---- Customize modal (bottom sheet) ---- */
-  .modal-overlay{position:fixed;inset:0;background:rgba(15,13,10,.72);backdrop-filter:blur(3px);
+
+  .modal-overlay{position:fixed;inset:0;background:rgba(14,11,7,.74);backdrop-filter:blur(3px);
     z-index:60;display:none;align-items:flex-end;justify-content:center;}
   .modal-overlay.show{display:flex;animation:fadeIn .18s ease;}
   @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
-  .customize-modal{background:var(--bg-surface);border:1px solid var(--border);border-top-left-radius:20px;
-    border-top-right-radius:20px;width:100%;max-width:560px;padding:22px 20px 24px;
-    animation:slideUp .22s cubic-bezier(.2,.9,.3,1);max-height:82vh;overflow-y:auto;}
+  .customize-modal{background:var(--bg-surface);border:1px solid var(--border);border-top-left-radius:var(--radius-lg);
+    border-top-right-radius:var(--radius-lg);width:100%;max-width:560px;padding:var(--sp-6) var(--sp-5) var(--sp-6);
+    animation:slideUp .22s cubic-bezier(.2,.9,.3,1);max-height:82vh;overflow-y:auto;
+    box-shadow:var(--shadow-pop);}
   @media(min-width:600px){
     .modal-overlay{align-items:center;}
     .customize-modal{border-radius:var(--radius-lg);margin:20px;}
   }
   @keyframes slideUp{from{transform:translateY(24px);opacity:.6;}to{transform:translateY(0);opacity:1;}}
-  .modal-handle{width:36px;height:4px;background:var(--border);border-radius:99px;margin:0 auto 16px;}
+  .modal-handle{width:36px;height:4px;background:var(--border);border-radius:var(--radius-pill);margin:0 auto var(--sp-4);}
   .modal-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;}
-  .modal-title{font-family:var(--font-display);font-size:20px;font-weight:600;}
-  .modal-price{font-family:var(--font-mono);color:var(--accent-strong);font-size:14px;margin-top:4px;}
+  .modal-title{font-family:var(--font-display);font-size:var(--tx-2xl);font-weight:600;}
+  .modal-price{font-family:var(--font-mono);color:var(--accent-strong);font-size:var(--tx-base);margin-top:5px;font-weight:700;}
   .modal-close{background:none;border:none;color:var(--text-muted);font-size:22px;cursor:pointer;
     line-height:1;padding:4px;}
   .modal-close:hover{color:var(--text-primary);}
-  .customize-hint{font-size:12.5px;color:var(--text-muted);margin:16px 0 10px;}
-  /* Removable ingredients start green ("included by default"); tapping
-     excludes them (muted/struck-through). Extra ingredients start blue
-     ("available, not included"); tapping adds them, turning green to match
-     the same "this is on your order" language — tapping again reverts to
-     blue. Green always means "on your order," consistently for both kinds. */
-  .ing-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;}
-  .ing-chip{background:var(--success-soft);color:var(--success);border:1px solid rgba(139,148,99,.35);
-    font-size:13px;font-weight:600;padding:8px 14px;border-radius:99px;cursor:pointer;transition:all .12s ease;}
+  .customize-hint{font-size:var(--tx-xs);color:var(--text-muted);margin:var(--sp-4) 0 var(--sp-3);}
+
+  .ing-chips{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-bottom:var(--sp-6);}
+  .ing-chip{background:var(--success-soft);color:var(--success);border:1px solid rgba(143,163,108,.35);
+    font-size:var(--tx-sm);font-weight:600;padding:9px var(--sp-4);border-radius:var(--radius-pill);cursor:pointer;transition:all .12s ease;}
   .ing-chip:hover{filter:brightness(1.15);}
   .ing-chip.excluded{background:var(--bg-raised);color:var(--text-muted);border-color:var(--border);
     text-decoration:line-through;}
-  .ing-chip.ing-chip-extra{background:var(--info-soft);color:var(--info);border-color:rgba(107,140,174,.3);}
-  .ing-chip.ing-chip-extra.included{background:var(--success-soft);color:var(--success);border-color:rgba(139,148,99,.35);}
+  .ing-chip.ing-chip-extra{background:var(--info-soft);color:var(--info);border-color:rgba(110,147,180,.3);}
+  .ing-chip.ing-chip-extra.included{background:var(--success-soft);color:var(--success);border-color:rgba(143,163,108,.35);}
   .ing-chip-price{font-weight:800;opacity:.85;}
   .add-custom-btn{width:100%;background:var(--accent);color:var(--ink);border:none;font-weight:700;
-    font-size:14.5px;padding:13px;border-radius:var(--radius-md);cursor:pointer;transition:filter .15s ease;
+    font-size:var(--tx-md);padding:var(--sp-4);border-radius:var(--radius-md);cursor:pointer;transition:filter .15s ease;
     font-family:var(--font-body);}
   .add-custom-btn:hover{filter:brightness(1.1);}
   .add-custom-btn:active{transform:scale(.98);}
 
   .section{background:var(--bg-surface);border:1px solid var(--border-soft);border-radius:var(--radius-lg);
-    padding:22px 20px;margin-bottom:18px;}
-  .section h2{font-family:var(--font-display);font-size:18px;font-weight:600;margin-bottom:16px;
-    display:flex;align-items:center;gap:10px;}
+    padding:var(--sp-6) var(--sp-5);margin-bottom:var(--sp-4);box-shadow:var(--shadow-card);}
+  .section h2{font-family:var(--font-display);font-size:var(--tx-xl);font-weight:600;margin-bottom:var(--sp-4);
+    display:flex;align-items:center;gap:var(--sp-2);}
   .section h2 .icon{color:var(--accent-strong);flex:none;}
 
-  .empty-note{color:var(--text-muted);font-size:13.5px;padding:6px 0;line-height:1.5;}
+  .empty-note{color:var(--text-muted);font-size:var(--tx-sm);padding:var(--sp-1) 0;line-height:1.5;}
 
-  .field-label{font-size:12.5px;font-weight:700;color:var(--text-secondary);margin:16px 0 7px;display:block;
+
+  .notify-card p{color:var(--text-secondary);font-size:var(--tx-sm);line-height:1.55;margin-bottom:2px;}
+  .notify-btn{width:100%;background:var(--accent);color:var(--ink);font-weight:700;font-size:var(--tx-md);
+    padding:var(--sp-4);border-radius:var(--radius-md);border:none;cursor:pointer;margin-top:var(--sp-3);
+    transition:filter .15s ease,transform .1s ease;}
+  .notify-btn:hover{filter:brightness(1.1);}
+  .notify-btn:active{transform:scale(.98);}
+  .notify-btn.subscribed{background:var(--success-soft);color:#4B5233;}
+  .notify-card.dismissed{display:none;}
+  .notify-dismiss{background:none;border:none;color:var(--text-muted);font-size:var(--tx-xs);cursor:pointer;
+    padding:9px 0 0;text-decoration:underline;font-family:var(--font-body);}
+
+  .field-label{font-size:var(--tx-sm);font-weight:700;color:var(--text-secondary);margin:var(--sp-4) 0 var(--sp-2);display:block;
     text-transform:uppercase;letter-spacing:.04em;}
   .field-label:first-of-type{margin-top:0;}
   .field-input{width:100%;background:var(--bg-raised);border:1px solid var(--border);color:var(--text-primary);
-    border-radius:var(--radius-sm);padding:12px 13px;font-size:16px;transition:border-color .15s ease;}
-  /* font-size must stay >=16px: iOS/Android auto-zoom the whole page on
-     focus for any text input under 16px, assuming it's too small to read —
-     that's the "page zooms in when I type" bug, not a viewport-meta issue. */
+    border-radius:var(--radius-sm);padding:13px var(--sp-4);font-size:16px;transition:border-color .15s ease;}
+
   .field-input:focus{border-color:var(--accent-strong);}
   .field-input::placeholder{color:var(--text-muted);}
-  textarea.field-input{resize:vertical;min-height:56px;line-height:1.45;}
+  textarea.field-input{resize:vertical;min-height:58px;line-height:1.45;}
 
-  .pay-method-row{display:flex;gap:8px;}
+  .pay-method-row{display:flex;gap:var(--sp-2);}
   .pay-method-chip{flex:1;background:var(--bg-raised);border:1.5px solid var(--border);color:var(--text-secondary);
-    font-weight:700;font-size:13.5px;padding:11px 8px;border-radius:var(--radius-sm);cursor:pointer;
+    font-weight:700;font-size:var(--tx-sm);padding:12px 8px;border-radius:var(--radius-pill);cursor:pointer;
     display:flex;align-items:center;justify-content:center;gap:6px;transition:all .15s ease;}
-  .pay-method-chip.active{background:var(--accent-soft);color:var(--accent-strong);border-color:rgba(201,168,118,.5);}
+  .pay-method-chip.active{background:var(--accent-soft);color:var(--accent-strong);border-color:rgba(203,154,92,.55);}
   .demo-tag{font-size:9px;font-weight:800;background:rgba(255,255,255,.08);color:var(--text-muted);
-    padding:2px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.03em;font-family:var(--font-mono);}
+    padding:2px 6px;border-radius:var(--radius-pill);text-transform:uppercase;letter-spacing:.03em;font-family:var(--font-mono);}
 
-  .tip-row{display:flex;gap:7px;margin-bottom:8px;flex-wrap:wrap;}
+  .tip-row{display:flex;gap:var(--sp-2);margin-bottom:var(--sp-2);flex-wrap:wrap;}
   .tip-chip{flex:1;min-width:52px;background:var(--bg-raised);border:1px solid var(--border);color:var(--text-secondary);
-    font-weight:700;font-size:13.5px;padding:10px 6px;border-radius:var(--radius-sm);cursor:pointer;
+    font-weight:700;font-size:var(--tx-sm);padding:11px 6px;border-radius:var(--radius-pill);cursor:pointer;
     font-family:var(--font-mono);transition:all .15s ease;}
-  .tip-chip.active{background:var(--accent-soft);color:var(--accent-strong);border-color:rgba(201,168,118,.45);}
-  .dj-submit{width:100%;background:var(--accent);color:var(--ink);font-weight:700;font-size:14.5px;
-    padding:14px;border-radius:var(--radius-md);border:none;cursor:pointer;margin-top:16px;
+  .tip-chip.active{background:var(--accent-soft);color:var(--accent-strong);border-color:rgba(203,154,92,.5);}
+  .dj-submit{width:100%;background:var(--accent);color:var(--ink);font-weight:700;font-size:var(--tx-md);
+    padding:15px;border-radius:var(--radius-md);border:none;cursor:pointer;margin-top:var(--sp-4);
     transition:filter .15s ease,transform .1s ease;}
   .dj-submit:hover{filter:brightness(1.1);}
   .dj-submit:active{transform:scale(.98);}
-  .dj-confirm{color:var(--success);font-size:13.5px;font-weight:600;margin-top:12px;display:none;
+  .dj-confirm{color:var(--success);font-size:13.5px;font-weight:600;margin-top:13px;display:none;
     align-items:center;gap:7px;}
   .dj-confirm.show{display:flex;animation:fadeIn .2s ease;}
 
-  .custom-tip-wrap{display:none;margin-bottom:8px;}
+  .custom-tip-wrap{display:none;margin-bottom:9px;}
   .custom-tip-wrap.show{display:block;}
 
-  /* ---- Placed orders: receipt style (paper card on the dark page) ---- */
-  .placed-order{background:var(--paper);color:var(--ink);border-radius:10px;padding:16px 16px 14px;
-    margin-bottom:12px;position:relative;font-family:var(--font-mono);
-    box-shadow:0 4px 14px rgba(0,0,0,.22);
+
+  .placed-order{background:var(--paper);color:var(--ink);border-radius:12px;padding:17px 17px 15px;
+    margin-bottom:13px;position:relative;font-family:var(--font-mono);
+    box-shadow:0 6px 18px rgba(0,0,0,.25);
     background-image:repeating-linear-gradient(transparent,transparent 27px,rgba(43,38,32,.05) 28px);}
   .placed-order::before{content:'';position:absolute;top:-1px;left:0;right:0;height:8px;
     background-image:radial-gradient(circle at 8px 0, transparent 6px, var(--paper) 6px);
     background-size:16px 8px;background-repeat:repeat-x;}
   .placed-order:last-child{margin-bottom:0;}
   .placed-order.canceled{opacity:.55;}
-  .po-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;
-    padding-bottom:9px;border-bottom:1.5px dashed rgba(43,38,32,.3);}
-  .po-status{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:99px;
+  .po-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;
+    padding-bottom:10px;border-bottom:1.5px dashed rgba(43,38,32,.3);}
+  .po-status{font-size:10.5px;font-weight:700;padding:3.5px 10px;border-radius:99px;
     background:var(--success-soft);color:#4B5233;text-transform:uppercase;letter-spacing:.05em;}
   .po-status.canceled{background:rgba(43,38,32,.1);color:var(--ink-soft);}
   .po-time{font-size:11px;color:var(--ink-soft);}
-  .po-item{font-size:13px;font-weight:600;padding:2.5px 0;color:var(--ink);}
+  .po-item{font-size:13px;font-weight:600;padding:3px 0;color:var(--ink);}
   .po-excl{font-size:10.5px;color:var(--ink-soft);font-weight:500;display:block;font-family:var(--font-body);font-style:italic;}
-  .po-note{font-size:12px;color:var(--ink-soft);font-style:italic;margin-top:10px;font-family:var(--font-body);}
-  .po-footer{display:flex;align-items:center;justify-content:space-between;margin-top:11px;
-    padding-top:10px;border-top:1.5px dashed rgba(43,38,32,.3);}
+  .po-note{font-size:12px;color:var(--ink-soft);font-style:italic;margin-top:11px;font-family:var(--font-body);}
+  .po-footer{display:flex;align-items:center;justify-content:space-between;margin-top:12px;
+    padding-top:11px;border-top:1.5px dashed rgba(43,38,32,.3);}
   .po-method{font-size:11.5px;color:var(--ink-soft);font-weight:600;}
-  .po-total{font-weight:700;color:var(--ink);font-size:14px;font-family:var(--font-mono);}
-  .po-cancel{width:100%;margin-top:12px;background:transparent;color:var(--danger);
-    border:1.5px solid rgba(194,91,72,.45);font-weight:700;font-size:12.5px;padding:9px;
-    border-radius:8px;cursor:pointer;font-family:var(--font-body);transition:all .15s ease;}
+  .po-total{font-weight:700;color:var(--ink);font-size:14.5px;font-family:var(--font-mono);}
+  .po-cancel{width:100%;margin-top:13px;background:transparent;color:var(--danger);
+    border:1.5px solid rgba(194,96,74,.45);font-weight:700;font-size:12.5px;padding:10px;
+    border-radius:9px;cursor:pointer;font-family:var(--font-body);transition:all .15s ease;}
   .po-cancel:hover{background:var(--danger-soft);}
 
-  /* ---- Sticky cart bar: tap opens the cart sheet ---- */
+
   .cart-bar{position:fixed;bottom:0;left:0;right:0;background:var(--bg-surface);
-    border-top:1px solid var(--border);padding:13px 16px;display:none;
+    border-top:1px solid var(--border);padding:14px 18px;display:none;
     align-items:center;justify-content:space-between;gap:14px;z-index:30;
-    box-shadow:0 -10px 30px rgba(0,0,0,.4);}
+    box-shadow:0 -12px 32px rgba(0,0,0,.45);}
   .cart-bar.show{display:flex;animation:slideUpBar .2s ease;}
   @keyframes slideUpBar{from{transform:translateY(100%);}to{transform:translateY(0);}}
   .cart-bar-info{display:flex;flex-direction:column;cursor:pointer;padding:4px 2px;}
   .cart-bar-count{font-size:11.5px;color:var(--text-muted);font-weight:600;display:flex;align-items:center;gap:5px;}
   .cart-bar-count svg{width:12px;height:12px;}
-  .cart-bar-total{font-family:var(--font-mono);font-size:19px;font-weight:700;color:var(--text-primary);}
+  .cart-bar-total{font-family:var(--font-mono);font-size:20px;font-weight:700;color:var(--text-primary);}
   .checkout-btn{background:var(--accent);color:var(--ink);font-weight:700;font-size:14.5px;
-    padding:13px 20px;border-radius:var(--radius-md);border:none;cursor:pointer;white-space:nowrap;
+    padding:14px 22px;border-radius:var(--radius-md);border:none;cursor:pointer;white-space:nowrap;
     transition:filter .15s ease,transform .1s ease;}
   .checkout-btn:hover{filter:brightness(1.1);}
   .checkout-btn:active{transform:scale(.97);}
 
-  /* ---- Cart sheet (bottom drawer) ---- */
-  .cart-sheet-overlay{position:fixed;inset:0;background:rgba(15,13,10,.72);backdrop-filter:blur(3px);
+
+  .cart-sheet-overlay{position:fixed;inset:0;background:rgba(14,11,7,.74);backdrop-filter:blur(3px);
     z-index:55;display:none;}
   .cart-sheet-overlay.show{display:block;animation:fadeIn .18s ease;}
   .cart-sheet{position:fixed;bottom:0;left:0;right:0;background:var(--bg-surface);
-    border-top:1px solid var(--border);border-top-left-radius:20px;border-top-right-radius:20px;
-    z-index:56;max-height:85vh;display:flex;flex-direction:column;
+    border-top:1px solid var(--border);border-top-left-radius:22px;border-top-right-radius:22px;
+    z-index:56;max-height:85vh;display:flex;flex-direction:column;box-shadow:var(--shadow-pop);
     transform:translateY(100%);transition:transform .25s cubic-bezier(.2,.9,.3,1);}
   .cart-sheet.show{transform:translateY(0);}
-  .cart-sheet-header{padding:14px 20px 10px;flex:none;}
-  .cart-sheet-body{overflow-y:auto;padding:0 20px 26px;flex:1;}
-  .cart-empty-state{text-align:center;padding:30px 10px;color:var(--text-muted);}
+  .cart-sheet-header{padding:15px 20px 11px;flex:none;}
+  .cart-sheet-body{overflow-y:auto;padding:0 20px 28px;flex:1;}
+  .cart-empty-state{text-align:center;padding:32px 10px;color:var(--text-muted);}
 
-  .order-line{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border-soft);}
+  .order-line{display:flex;align-items:center;gap:13px;padding:12px 0;border-bottom:1px solid var(--border-soft);}
   .order-line:last-child{border-bottom:none;}
   .order-line-main{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0;}
-  .order-line-name{font-weight:700;font-size:14px;}
+  .order-line-name{font-weight:700;font-size:14.5px;}
   .order-line-price{font-size:12px;color:var(--text-muted);}
   .order-line-excl{font-size:11.5px;color:var(--accent-strong);}
   .ol-controls{display:flex;align-items:center;border:1px solid var(--border);border-radius:var(--radius-sm);
     overflow:hidden;background:var(--bg-raised);flex:none;}
-  .ol-btn{background:none;border:none;color:var(--text-secondary);width:30px;height:32px;
+  .ol-btn{background:none;border:none;color:var(--text-secondary);width:32px;height:34px;
     font-weight:800;font-size:15px;cursor:pointer;transition:color .12s ease;}
   .ol-btn:hover{color:var(--text-primary);}
   .ol-qty{font-family:var(--font-mono);font-size:13px;font-weight:700;min-width:22px;text-align:center;display:inline-block;}
-  .order-line-total{font-family:var(--font-mono);font-size:14px;font-weight:700;color:var(--accent-strong);
-    width:58px;text-align:right;flex:none;}
+  .order-line-total{font-family:var(--font-mono);font-size:14.5px;font-weight:700;color:var(--accent-strong);
+    width:60px;text-align:right;flex:none;}
   .order-subtotal-row{display:none;justify-content:space-between;align-items:center;
-    padding-top:14px;margin-top:2px;border-top:1px solid var(--border);font-weight:700;font-size:16px;}
+    padding-top:15px;margin-top:2px;border-top:1px solid var(--border);font-weight:700;font-size:16.5px;}
   .order-subtotal{font-family:var(--font-mono);color:var(--accent-strong);}
-  .cancel-order-btn{display:none;width:100%;margin-top:14px;background:transparent;color:var(--danger);
-    border:1.5px solid rgba(194,91,72,.4);font-weight:700;font-size:13px;padding:11px;
+  .cancel-order-btn{display:none;width:100%;margin-top:15px;background:transparent;color:var(--danger);
+    border:1.5px solid rgba(194,96,74,.4);font-weight:700;font-size:13px;padding:12px;
     border-radius:var(--radius-md);cursor:pointer;transition:background .15s ease;}
   .cancel-order-btn:hover{background:var(--danger-soft);}
   .place-order-btn{width:100%;background:var(--accent);color:var(--ink);font-weight:700;font-size:15px;
-    padding:14px;border-radius:var(--radius-md);border:none;cursor:pointer;margin-top:16px;
+    padding:15px;border-radius:var(--radius-md);border:none;cursor:pointer;margin-top:17px;
     display:flex;align-items:center;justify-content:center;gap:8px;transition:filter .15s ease,transform .1s ease;}
   .place-order-btn:hover{filter:brightness(1.1);}
   .place-order-btn:active{transform:scale(.98);}
@@ -306,27 +428,25 @@
     border-radius:50%;animation:spin .6s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
 
-  /* ---- Toast ---- */
+
   .toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%) translateY(20px);
     background:var(--success);color:#161a0d;
-    padding:12px 20px;border-radius:var(--radius-md);font-size:13.5px;font-weight:700;
+    padding:13px 22px;border-radius:var(--radius-md);font-size:13.5px;font-weight:700;
     opacity:0;pointer-events:none;transition:all .25s cubic-bezier(.2,.9,.3,1);box-shadow:0 10px 30px rgba(0,0,0,.4);z-index:70;
     max-width:88%;text-align:center;display:flex;align-items:center;gap:8px;}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
-  /* ---- Confirm dialog (replaces the native browser confirm() for every
-     hx-confirm action, so it matches the rest of the site instead of an
-     unstyled OS popup) ---- */
-  .confirm-overlay{position:fixed;inset:0;background:rgba(15,13,10,.72);backdrop-filter:blur(3px);
+
+  .confirm-overlay{position:fixed;inset:0;background:rgba(14,11,7,.74);backdrop-filter:blur(3px);
     z-index:80;display:none;align-items:center;justify-content:center;padding:20px;}
   .confirm-overlay.show{display:flex;animation:fadeIn .18s ease;}
   .confirm-dialog{background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-lg);
-    width:100%;max-width:340px;padding:24px 22px 20px;text-align:center;
-    animation:slideUp .18s cubic-bezier(.2,.9,.3,1);box-shadow:0 20px 50px rgba(0,0,0,.5);}
-  .confirm-message{font-family:var(--font-display);font-size:16.5px;font-weight:600;line-height:1.4;
+    width:100%;max-width:340px;padding:26px 24px 22px;text-align:center;
+    animation:slideUp .18s cubic-bezier(.2,.9,.3,1);box-shadow:var(--shadow-pop);}
+  .confirm-message{font-family:var(--font-display);font-size:17px;font-weight:600;line-height:1.4;
     color:var(--text-primary);}
-  .confirm-actions{display:flex;gap:10px;margin-top:20px;}
-  .confirm-btn{flex:1;border-radius:var(--radius-sm);padding:11px;font-weight:700;font-size:13.5px;
+  .confirm-actions{display:flex;gap:10px;margin-top:21px;}
+  .confirm-btn{flex:1;border-radius:var(--radius-sm);padding:12px;font-weight:700;font-size:13.5px;
     cursor:pointer;transition:filter .15s ease,transform .1s ease;font-family:var(--font-body);}
   .confirm-btn:active{transform:scale(.97);}
   .confirm-btn-cancel{background:var(--bg-raised);border:1px solid var(--border);color:var(--text-secondary);}
@@ -344,15 +464,19 @@
     <h1>Table #{{ .TableNumber }}</h1>
     <span class="host-tag">Host</span>
   </div>
-  <button class="leave-btn" hx-post="/table/{{ .TableNumber }}/leave" hx-confirm="Leave Table #{{ .TableNumber }}? Anyone can claim this table after you leave.">Leave table</button>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <button class="leave-btn" id="assistBtn" hx-post="/table/{{ .TableNumber }}/assist" hx-target="#assistResult" hx-swap="innerHTML" hx-disabled-elt="this">🙋 Call waiter</button>
+    <button class="leave-btn" hx-post="/table/{{ .TableNumber }}/leave" hx-confirm="Leave Table #{{ .TableNumber }}? Anyone can claim this table after you leave.">Leave table</button>
+  </div>
 </header>
+<div id="assistResult" style="text-align:center;font-size:12.5px;color:var(--accent-strong);"></div>
 
 <main class="page">
 
   <div class="venue-banner">
     <svg class="venue-mark" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <circle cx="50" cy="50" r="48" stroke="#C9A876" stroke-width="1" opacity=".35"/>
-      <g stroke="#C9A876" stroke-width="1.3" stroke-linecap="round" opacity=".85">
+      <circle cx="50" cy="50" r="48" stroke="var(--accent)" stroke-width="1" opacity=".35"/>
+      <g stroke="var(--accent)" stroke-width="1.3" stroke-linecap="round" opacity=".85">
         <path d="M50 50 L50 12"/><path d="M50 50 L38 15"/><path d="M50 50 L62 15"/>
         <path d="M50 50 L28 22"/><path d="M50 50 L72 22"/><path d="M50 50 L20 32"/><path d="M50 50 L80 32"/>
         <path d="M50 50 L50 88"/><path d="M50 50 L38 85"/><path d="M50 50 L62 85"/>
@@ -378,6 +502,25 @@
   </div>
 
   <div id="cart-refresh-trigger" style="display:none;"></div>
+
+  <!-- Real phone alerts for order status — both start hidden; JS below
+       (initOrderAlerts) picks at most one to show, based on feature
+       detection (push support, standalone mode, iOS vs. not). Neither
+       appears at all on a browser/OS combo that can't do push, and on iOS
+       Safari they're mutually exclusive: the install banner while still a
+       plain tab, the enable card once opened from the Home Screen. -->
+  <section class="section notify-card" id="notifyCard" style="display:none;">
+    <h2><span class="icon" aria-hidden="true">🔔</span>Order alerts</h2>
+    <p>Get a real notification on this phone the moment your order is ready — no need to keep this page open.</p>
+    <button type="button" class="notify-btn" id="notifyEnableBtn">🔔 Enable order alerts</button>
+    <button type="button" class="notify-dismiss" id="notifyDismissBtn">Not now</button>
+  </section>
+
+  <section class="section notify-card" id="iosInstallBanner" style="display:none;">
+    <h2><span class="icon" aria-hidden="true">📲</span>Get order alerts on iPhone</h2>
+    <p>Safari only allows order alerts for an app added to your Home Screen. Tap <strong>Share</strong> (the square with an arrow, in Safari's toolbar), then <strong>"Add to Home Screen"</strong> — open BiteBox from there.</p>
+    <button type="button" class="notify-dismiss" id="iosBannerDismissBtn">Not now</button>
+  </section>
 
   <div hx-ext="ws" ws-connect="/table/{{ .TableNumber }}/ws">
     <section class="section" id="placedOrdersSection">
@@ -483,12 +626,122 @@
 
   // ---- toast ----
   function showToast(msg){
+    // msg carries a product/customization name straight from a data-*
+    // attribute — appended as a text node rather than interpolated into
+    // innerHTML, so it's never parsed as markup no matter what an admin
+    // (or anything upstream of one) named a product.
     const t = document.getElementById('toast');
-    t.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> ${msg}`;
+    t.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> ';
+    t.appendChild(document.createTextNode(msg));
     t.classList.add('show');
     clearTimeout(showToast._timer);
     showToast._timer = setTimeout(() => t.classList.remove('show'), 2600);
   }
+
+  // ---------------------------------------------------------------
+  // Order alerts (guest-side Web Push) — a real lock-screen notification
+  // when this table's order is confirmed/ready, the same mechanism the
+  // worker dashboard's phone-alert toggle uses (see worker_dashboard.html's
+  // initPhoneAlerts), just guest-facing: no login, subscriptions key off
+  // the anonymous session cookie server-side (see GuestPushSubscribe).
+  //
+  // iOS gotcha, unavoidable from here: Safari only allows a page to
+  // subscribe to push once it's been added to the Home Screen and is
+  // *running* from there (16.4+) — a plain Safari tab can't, permission
+  // granted or not. So on iOS this shows one of two mutually-exclusive
+  // things, never both: the "Add to Home Screen" banner in a plain tab, or
+  // the real enable button once launched standalone. Android Chrome/Edge
+  // and desktop browsers can subscribe directly from a normal tab, no
+  // install step, so they only ever see the enable card.
+  // ---------------------------------------------------------------
+  (function initOrderAlerts(){
+    const VAPID_PUBLIC_KEY = "{{ .VAPIDPublicKey }}";
+    const TABLE_NUMBER = {{ .TableNumber }};
+    const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent);
+    const isStandalone = navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+
+    const notifyCard = document.getElementById('notifyCard');
+    const enableBtn = document.getElementById('notifyEnableBtn');
+    const dismissBtn = document.getElementById('notifyDismissBtn');
+    const iosBanner = document.getElementById('iosInstallBanner');
+    const iosDismissBtn = document.getElementById('iosBannerDismissBtn');
+
+    // sessionStorage (not localStorage): "Not now" means "don't ask again
+    // this visit" — the guest session cookie itself is also session-only
+    // (no explicit expiry, see GuestSessionCookieName), so this fades the
+    // same way a fresh table claim would anyway.
+    function dismissed(key){ try { return sessionStorage.getItem(key) === '1'; } catch (e) { return false; } }
+    function dismiss(key){ try { sessionStorage.setItem(key, '1'); } catch (e) {} }
+
+    dismissBtn.addEventListener('click', () => { notifyCard.style.display = 'none'; dismiss('bitebox_notify_dismissed'); });
+    iosDismissBtn.addEventListener('click', () => { iosBanner.style.display = 'none'; dismiss('bitebox_ios_banner_dismissed'); });
+
+    // iOS in a plain browser tab: push is categorically unavailable here,
+    // no amount of permission-prompting changes that — point at the actual
+    // fix (install to Home Screen) instead of showing a button that would
+    // just silently fail.
+    if (isIOS && !isStandalone) {
+      if (!dismissed('bitebox_ios_banner_dismissed')) iosBanner.style.display = '';
+      return;
+    }
+
+    // Everything past this point needs real push support. Fail quiet for
+    // guests (unlike the staff dashboard's explicit disabled-with-reason
+    // button) — a customer with an unsupported browser shouldn't be shown
+    // a broken feature at all, just nothing.
+    if (!window.isSecureContext) return; // Web Push is a secure-context-only API (localhost exempted for local testing)
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return;
+    if (!VAPID_PUBLIC_KEY) return; // InitPush hasn't produced a key yet (server-side issue, not this browser's)
+    if (dismissed('bitebox_notify_dismissed')) return;
+
+    function urlBase64ToUint8Array(base64String){
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = atob(base64);
+      const out = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; i++) out[i] = rawData.charCodeAt(i);
+      return out;
+    }
+
+    let swRegistration = null;
+    navigator.serviceWorker.register('/sw.js')
+      .then(reg => { swRegistration = reg; return reg.pushManager.getSubscription(); })
+      .then(sub => { if (!sub) notifyCard.style.display = ''; }) // already subscribed on this device — nothing to ask for
+      .catch(() => {}); // registration failing just means no card shows; nothing actionable to tell a guest
+
+    // The actual permission prompt — only ever fires from this click
+    // handler, i.e. only after a guest has tapped a button whose label and
+    // the card's own copy above it already explained *why* ("get notified
+    // when your order is ready"). iOS users in particular tend to
+    // permanently deny a blind/immediate permission popup, and there's no
+    // second chance once denied — a browser never re-prompts after "Block."
+    enableBtn.addEventListener('click', async () => {
+      enableBtn.disabled = true;
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          showToast('Notifications are blocked — allow them for this site in your browser settings to get order alerts');
+          enableBtn.disabled = false;
+          return;
+        }
+        const reg = swRegistration || await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        });
+        await fetch('/table/' + TABLE_NUMBER + '/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sub.toJSON()),
+        });
+        notifyCard.style.display = 'none';
+        showToast('Order alerts enabled — we’ll notify you when it’s ready');
+      } catch (e) {
+        showToast('Could not enable order alerts on this device');
+        enableBtn.disabled = false;
+      }
+    });
+  })();
 
   // ---- confirm dialog: replaces the native browser confirm() for every
   // hx-confirm on this page (leave table, place/cancel order, cancel/
@@ -720,6 +973,37 @@
     const val = parseFloat(e.target.value);
     document.getElementById('tipAmountInput').value = val > 0 ? val : 0;
     updateDjSubmitLabel();
+  });
+
+  // ---- Order tip presets + custom amount — a separate chip group/ids from
+  // the DJ tip block above (order-tip-chip vs. tip-chip alone) so the two
+  // don't cross-talk: reused the same .tip-chip CSS, scoped the query/state
+  // to .order-tip-chip so clicking one group never toggles "active" on the
+  // other or overwrites the other's hidden input. Same delegated-from-body
+  // reasoning as the DJ block: #cart-summary is wholesale-replaced by every
+  // checkout/cancel/nudge-triggered re-render. ----
+  document.body.addEventListener('click', (e) => {
+    const chip = e.target.closest('.order-tip-chip');
+    if (!chip) return;
+    document.querySelectorAll('.order-tip-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    const wrap = document.getElementById('orderCustomTipWrap');
+    const customInput = document.getElementById('orderCustomTipInput');
+    const tipInput = document.getElementById('orderTipInput');
+    if (chip.dataset.tip === 'custom') {
+      wrap.classList.add('show');
+      const val = parseFloat(customInput.value);
+      tipInput.value = val > 0 ? val : 0;
+      customInput.focus();
+    } else {
+      wrap.classList.remove('show');
+      tipInput.value = chip.dataset.tip;
+    }
+  });
+  document.body.addEventListener('input', (e) => {
+    if (e.target.id !== 'orderCustomTipInput') return;
+    const val = parseFloat(e.target.value);
+    document.getElementById('orderTipInput').value = val > 0 ? val : 0;
   });
   // Clear the song field once a request is successfully sent (the response
   // itself, swapped into #djConfirm, carries the success/failure message).
