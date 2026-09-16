@@ -7,3 +7,4 @@
 <p class="empty-note" style="margin:10px 0 14px;">Guests don't see any song-request option on the menu page.</p>
 <button type="button" class="btn btn-primary btn-sm" hx-post="/admin/settings/dj-requests/toggle" hx-target="#djTogglePanel" hx-swap="innerHTML">Enable song requests</button>
 {{ end }}
+<span id="djNavStatus" class="settings-nav-status {{ if .DJRequestsEnabled }}is-on{{ else }}is-off{{ end }}" hx-swap-oob="true"></span>

@@ -186,6 +186,7 @@ func main() {
 		r.Post("/admin/products", handlers.AdminCreateProduct)
 		r.Post("/admin/products/{id}", handlers.AdminUpdateProduct)
 		r.Post("/admin/products/{id}/toggle", handlers.AdminToggleProduct)
+		r.Delete("/admin/products/{id}", handlers.AdminDeleteProduct)
 		r.Post("/admin/products/{id}/ingredients", handlers.AdminAddIngredient)
 		r.Delete("/admin/ingredients/{id}", handlers.AdminDeleteIngredient)
 		r.Post("/admin/categories", handlers.AdminCreateCategory)
@@ -201,6 +202,7 @@ func main() {
 		r.Post("/admin/staff/{id}/deactivate", handlers.AdminDeactivateStaff)
 		r.Post("/admin/staff/{id}/activate", handlers.AdminActivateStaff)
 		r.Get("/admin/audit-log", handlers.AdminAuditLog)
+		r.Get("/admin/assistance-log", handlers.AdminAssistanceLog)
 		r.Get("/admin/history/page", handlers.AdminOrderHistoryPage)
 		r.Get("/admin/orders/{id}/receipt", handlers.AdminOrderReceipt)
 		r.Get("/admin/backup", handlers.AdminDownloadBackup)
@@ -214,6 +216,14 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(handlers.RequireRole(models.RoleAdmin, models.RoleWorker))
 		r.Get("/worker", handlers.WorkerHome)
+
+		// Change password — reachable both as a forced redirect (see
+		// RequireRole above, and models.User.MustChangePassword) and as a
+		// voluntary link from either dashboard's topbar. Registered here,
+		// inside the same RequireRole group it must be exempted from, so it
+		// covers every role that can ever carry the forced flag.
+		r.Get("/change-password", handlers.ChangePasswordPage)
+		r.Post("/change-password", handlers.ChangePasswordSubmit)
 
 		// Phone-alert subscribe/unsubscribe — every department, including
 		// DJ, can technically call these; DJ just never ends up in a

@@ -83,3 +83,19 @@ func SetProductAvailability(id int, available bool) error {
 	_, err := DB.Exec("UPDATE products SET is_available = ? WHERE id = ?", available, id)
 	return err
 }
+
+// DeleteProduct permanently removes a product and its ingredient tags.
+// Deliberately does *not* touch order_items: those rows snapshot name/price
+// at order time and carry no foreign key back to products (see
+// productColumns' own doc comment on the retired subcategory column for the
+// same "this table doesn't lean on products for historical data" idea) —
+// deleting a discontinued item never rewrites or breaks past order history.
+// The caller (AdminDeleteProduct) is responsible for cleaning up any
+// uploaded photo files first; this only ever touches rows, never disk.
+func DeleteProduct(id int) error {
+	if _, err := DB.Exec("DELETE FROM product_ingredients WHERE product_id = ?", id); err != nil {
+		return err
+	}
+	_, err := DB.Exec("DELETE FROM products WHERE id = ?", id)
+	return err
+}

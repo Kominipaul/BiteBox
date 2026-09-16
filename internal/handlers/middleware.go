@@ -41,6 +41,19 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 				return
 			}
 
+			// A seeded default account (see models.User.MustChangePassword)
+			// can reach nothing else — including a websocket upgrade, which
+			// is exactly why this has to run before db.TouchLastSeen/
+			// next.ServeHTTP below, not as a per-handler check — until it's
+			// changed. /change-password itself is registered under this
+			// same middleware (RequireRole(admin, worker) — every role that
+			// can ever have this flag), so it has to be exempted here or
+			// nothing could ever reach it to clear the flag.
+			if user.MustChangePassword && r.URL.Path != "/change-password" {
+				http.Redirect(w, r, "/change-password", http.StatusSeeOther)
+				return
+			}
+
 			db.TouchLastSeen(user.ID)
 
 			ctx := context.WithValue(r.Context(), userContextKey, user)

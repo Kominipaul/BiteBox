@@ -7,3 +7,4 @@
 <p class="empty-note" style="margin:10px 0 14px;">Guests only see card at checkout — the cash option is hidden.</p>
 <button type="button" class="btn btn-primary btn-sm" hx-post="/admin/settings/cash-orders/toggle" hx-target="#cashTogglePanel" hx-swap="innerHTML">Enable cash orders</button>
 {{ end }}
+<span id="paymentNavStatus" class="settings-nav-status {{ if .AllowCashOrders }}is-on{{ else }}is-off{{ end }}" hx-swap-oob="true"></span>

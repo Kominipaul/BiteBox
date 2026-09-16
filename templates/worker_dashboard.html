@@ -32,34 +32,91 @@
     --radius-lg:16px; --radius-md:12px; --radius-sm:9px;
     --font-display:'IBM Plex Mono',ui-monospace,monospace;
     --font-body:'Manrope',system-ui,sans-serif;
+    /* Apple HIG's 44px minimum hit area (Material's 48dp rounds to the same
+       value here) — see the (pointer:coarse) block further down. */
+    --tap-min:44px;
   }
   *{box-sizing:border-box;}
-  body{margin:0;background:var(--bg-base);color:var(--text-primary);font-family:var(--font-body);
+  /* touch-action:manipulation kills double-tap-to-zoom (e.g. tapping an
+     order's status button twice in quick succession) sitewide, leaving
+     pinch-zoom and normal scrolling alone. */
+  html{-webkit-text-size-adjust:100%;touch-action:manipulation;}
+  /* Nothing on this page needs horizontal scroll — the real overflow
+     sources (the topbar's brand+controls row before it could truncate/
+     collapse, see .brand-text and .worker-menu below) are fixed at the
+     source, but this is a no-cost backstop against a phone ever being
+     able to side-scroll the whole dashboard because of something new. */
+  body{margin:0;overflow-x:hidden;background:var(--bg-base);color:var(--text-primary);font-family:var(--font-body);
     -webkit-font-smoothing:antialiased;min-height:100vh;}
   button{font-family:inherit;}
   h1,h2{margin:0;}
   :focus-visible{outline:3px solid var(--accent-strong);outline-offset:2px;}
 
-  .topbar{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;
     border-bottom:1px solid var(--border-soft);position:sticky;top:0;
     background:rgba(20,16,13,.92);backdrop-filter:blur(8px);z-index:20;}
-  .brand{display:flex;align-items:center;gap:13px;}
+  @media (min-width:640px){ .topbar{padding:18px 24px;} }
+  /* min-width:0 lets this side of the topbar actually shrink below its
+     content size — the flex default (min-width:auto) is "as wide as the
+     longest line needs," which on a long department label or username
+     plus topbar-right's own controls pushed everything past the viewport
+     on a phone instead of the brand text ever truncating. Same fix as
+     admin_dashboard.html's .brand. */
+  .brand{display:flex;align-items:center;gap:12px;min-width:0;flex:1 1 auto;}
   .brand-mark{width:38px;height:38px;border-radius:11px;flex:none;
     background:linear-gradient(155deg,var(--bg-raised),var(--bg-surface));border:1px solid var(--border);
     display:flex;align-items:center;justify-content:center;color:var(--accent);}
+  .brand-text{display:flex;flex-direction:column;line-height:1.25;min-width:0;}
   .brand-eyebrow{display:block;font-size:11px;letter-spacing:.09em;text-transform:uppercase;
-    color:var(--text-muted);font-weight:700;}
-  .worker-name{font-size:19px;font-weight:800;}
+    color:var(--text-muted);font-weight:700;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;}
+  .worker-name{font-size:19px;font-weight:800;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;}
   .live-pill{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;color:var(--success);
     background:var(--success-soft);border:1px solid rgba(95,167,119,.25);padding:6px 12px 6px 10px;
-    border-radius:99px;margin-right:12px;}
-  .pulse-dot{width:7px;height:7px;border-radius:50%;background:var(--success);animation:pulse 2.2s ease-out infinite;}
+    border-radius:99px;flex:none;}
+  .pulse-dot{width:7px;height:7px;border-radius:50%;background:var(--success);animation:pulse 2.2s ease-out infinite;flex:none;}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(95,167,119,.55);}70%{box-shadow:0 0 0 7px rgba(95,167,119,0);}100%{box-shadow:0 0 0 0 rgba(95,167,119,0);}}
   @media (prefers-reduced-motion:reduce){.pulse-dot{animation:none;}}
-  .topbar-right{display:flex;align-items:center;}
+  /* "Live" text drops below ~400px so the pill still reads as a status dot
+     instead of eating space the controls beside it actually need — the dot
+     itself (plus the pill's own title-less color) still carries the
+     meaning at a glance, same idea as an iOS status icon losing its label
+     at the smallest sizes. */
+  @media (max-width:400px){ .live-text{display:none;} .live-pill{padding:7px;} }
+  .topbar-right{display:flex;align-items:center;gap:8px;flex:none;}
   .btn-ghost{background:transparent;color:var(--text-secondary);border:1px solid var(--border);
     padding:10px 16px;border-radius:var(--radius-sm);font-weight:700;font-size:14px;cursor:pointer;}
   .btn-ghost:hover{color:var(--text-primary);border-color:var(--text-muted);}
+
+  /* ---------- Account menu: Change password + Log out, collapsed into one
+     kebab so the topbar never has to fit 5 separate right-side controls
+     (live pill, up to 2 sound toggles, change-password, log-out) — same
+     <details>/<summary> popover pattern as a staff row's own actions menu
+     elsewhere in this app. ---------- */
+  .worker-menu{position:relative;flex:none;}
+  .worker-menu summary{list-style:none;cursor:pointer;}
+  .worker-menu summary::-webkit-details-marker{display:none;}
+  .worker-menu-trigger{
+    width:38px;height:38px;border-radius:var(--radius-sm);
+    display:flex;align-items:center;justify-content:center;
+    background:transparent;border:1px solid var(--border);color:var(--text-secondary);
+    transition:all .15s ease;
+  }
+  .worker-menu[open] .worker-menu-trigger,
+  .worker-menu-trigger:hover{color:var(--text-primary);border-color:var(--text-muted);}
+  .worker-menu-body{
+    position:absolute;right:0;top:calc(100% + 8px);z-index:30;min-width:180px;
+    display:flex;flex-direction:column;gap:4px;
+    background:var(--bg-raised);border:1px solid var(--border);border-radius:var(--radius-md);
+    padding:6px;box-shadow:0 12px 32px rgba(0,0,0,.4);
+  }
+  .worker-menu-item{
+    display:block;width:100%;text-align:left;background:none;border:none;
+    color:var(--text-secondary);font-weight:700;font-size:13.5px;font-family:inherit;
+    padding:11px 12px;border-radius:var(--radius-sm);cursor:pointer;text-decoration:none;
+  }
+  .worker-menu-item:hover{background:var(--bg-surface);color:var(--text-primary);}
 
   .dashboard{max-width:1200px;margin:0 auto;padding:26px 24px 100px;}
   .section-heading{display:flex;align-items:center;justify-content:space-between;margin:6px 0 14px;}
@@ -133,7 +190,7 @@
      --------------------------------------------------------------- */
   .sound-toggle{display:flex;align-items:center;justify-content:center;width:38px;height:38px;
     border-radius:var(--radius-sm);background:transparent;border:1px solid var(--border);
-    color:var(--text-secondary);cursor:pointer;margin-right:10px;font-size:16px;flex:none;}
+    color:var(--text-secondary);cursor:pointer;font-size:16px;flex:none;}
   .sound-toggle:hover{color:var(--text-primary);border-color:var(--text-muted);}
   .sound-toggle.muted{color:var(--text-muted);}
   .sound-toggle:disabled{opacity:.45;cursor:not-allowed;}
@@ -202,6 +259,18 @@
     .pt-note{font-weight:700;margin-top:10px;}
     @page{margin:14mm;}
   }
+
+  /* ---------- Touch targets (coarse pointer = finger, not mouse) ----------
+     A mouse cursor can land precisely on a 38px button; a fingertip can't.
+     Scoped to (pointer:coarse) rather than a max-width breakpoint — a touch
+     laptop or a phone in landscape at a wide viewport still has a finger on
+     the glass. Same --tap-min token/reasoning as admin_dashboard.html. */
+  @media (pointer:coarse){
+    .sound-toggle,.worker-menu-trigger{width:var(--tap-min);height:var(--tap-min);}
+    .btn-ghost,.worker-menu-item{min-height:var(--tap-min);}
+    .worker-menu-item{display:flex;align-items:center;}
+    .alert-dismiss{width:36px;height:36px;}
+  }
 </style>
 </head>
 <body>
@@ -209,20 +278,35 @@
 <header class="topbar">
   <div class="brand">
     <span class="brand-mark">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/></svg>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M8,3 H16 A5,5 0 0 1 21,8 V16 A5,5 0 0 1 16,21 H8 A5,5 0 0 1 3,16 V8 A5,5 0 0 1 8,3 Z M14,7.2 A4.4,4.4 0 1 0 22.8,7.2 A4.4,4.4 0 1 0 14,7.2 Z"/><circle cx="21.6" cy="3.3" r="1"/></svg>
     </span>
-    <div>
+    <div class="brand-text">
       <span class="brand-eyebrow">BiteBox Worker · {{ .DepartmentLabel }}</span>
       <h1 class="worker-name">{{ .Username }}</h1>
     </div>
   </div>
   <div class="topbar-right">
-    <span class="live-pill"><span class="pulse-dot"></span>Live</span>
+    <span class="live-pill"><span class="pulse-dot"></span><span class="live-text">Live</span></span>
     {{ if .ShowOrders }}
     <button type="button" class="sound-toggle" id="phoneAlertToggle" aria-pressed="false" title="Checking phone alert support…">📵</button>
     <button type="button" class="sound-toggle" id="alertSoundToggle" aria-pressed="true" title="Sound alerts on — click to mute">🔔</button>
     {{ end }}
-    <form method="POST" action="/logout"><button class="btn-ghost" type="submit">Log out</button></form>
+    <!-- Change password / Log out collapse into one kebab menu instead of
+         2 more inline buttons — on top of the live pill + up to 2 sound
+         toggles, that was 5 right-side controls fighting the brand for
+         space, which is what overflowed the topbar horizontally on any
+         phone narrower than ~500px (see the same collapsed-menu pattern
+         already used for a staff row's actions, .staff-manage, in
+         admin_dashboard.html). -->
+    <details class="worker-menu">
+      <summary class="worker-menu-trigger" aria-label="Account menu">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
+      </summary>
+      <div class="worker-menu-body">
+        <a class="worker-menu-item" href="/change-password">Change password</a>
+        <form method="POST" action="/logout"><button class="worker-menu-item" type="submit">Log out</button></form>
+      </div>
+    </details>
   </div>
 </header>
 
@@ -671,7 +755,18 @@
     setTimeout(() => dismissAlertBanner(banner), 9000);
   }
 
-  checkForNewOrderAlerts(); // prime the map with whatever's already on screen at load
+  // No priming call here: #order-feed is genuinely empty at this point
+  // ("Loading orders..." — see the template above, order-feed has no
+  // server-rendered initial content, only ws-connect) — priming against an
+  // empty grid before the websocket's first push means that first push (the
+  // real "here's what's already active" snapshot) then looks like a wave of
+  // brand-new orders, since orderAlertsPrimed would already be true and
+  // every pre-existing pending order would read as "never seen before". Was
+  // reproducible as a flood of duplicate "New order" banners on login
+  // whenever more than one order was already active. onOrderFeedUpdate
+  // (wired to htmx:afterSwap/oobAfterSwap below) already calls
+  // checkForNewOrderAlerts on that very first real population, which is the
+  // correct single priming pass.
 
   // ---------------------------------------------------------------
   // Toast + undo. The undo button always performs a real request (the

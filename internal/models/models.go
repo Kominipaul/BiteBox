@@ -131,7 +131,7 @@ func IsValidIngredientKind(k string) bool {
 }
 
 type Cart struct {
-	Items      []OrderItem `json:"items"`
+	Items       []OrderItem `json:"items"`
 	TotalAmount float64     `json:"total_amount"`
 }
 
@@ -184,7 +184,6 @@ func IsValidDepartment(d string) bool {
 	return false
 }
 
-
 // AuditEntry is one row of the append-only staff-management trail (account
 // create/update/deactivate/reactivate/password-reset) — see db.LogAudit.
 type AuditEntry struct {
@@ -196,6 +195,27 @@ type AuditEntry struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// AssistanceLogEntry is one row of the "call waiter" acknowledgment trail —
+// see db.ClearAssistance. WaitSeconds is computed server-side in SQL at
+// acknowledgment time (RequestedAt to AcknowledgedAt), not recomputed here.
+type AssistanceLogEntry struct {
+	ID             int       `json:"id"`
+	TableNumber    int       `json:"table_number"`
+	RequestedAt    time.Time `json:"requested_at"`
+	AcknowledgedAt time.Time `json:"acknowledged_at"`
+	AcknowledgedBy string    `json:"acknowledged_by"`
+	WaitSeconds    int       `json:"wait_seconds"`
+}
+
+// WaitLabel renders WaitSeconds for display — "42s" or "3m 07s" — so
+// templates don't need arithmetic helpers to show it.
+func (e AssistanceLogEntry) WaitLabel() string {
+	if e.WaitSeconds < 60 {
+		return fmt.Sprintf("%ds", e.WaitSeconds)
+	}
+	return fmt.Sprintf("%dm %02ds", e.WaitSeconds/60, e.WaitSeconds%60)
+}
+
 type User struct {
 	ID           int        `json:"id"`
 	Username     string     `json:"username"`
@@ -205,6 +225,14 @@ type User struct {
 	IsActive     bool       `json:"is_active"`
 	CreatedAt    time.Time  `json:"created_at"`
 	LastSeenAt   *time.Time `json:"last_seen_at,omitempty"`
+	// MustChangePassword forces a redirect to /change-password on the next
+	// authenticated request (see RequireRole) before anything else this
+	// account can reach. Set true only for the seeded default accounts
+	// (admin123 etc. — see seedDefaultUsers) so a fresh install can't stay
+	// on a password published in this app's own source forever; an admin
+	// creating a new staff account or resetting one themselves picks a
+	// password nobody else has seen, so neither of those paths sets it.
+	MustChangePassword bool `json:"-"`
 }
 
 type Order struct {

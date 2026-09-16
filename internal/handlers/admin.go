@@ -682,6 +682,47 @@ func AdminToggleProduct(w http.ResponseWriter, r *http.Request) {
 	BroadcastAllMenus()
 }
 
+// AdminDeleteProduct permanently removes a product — the one thing
+// AdminToggleProduct (hide/show) never does. A guest with this product
+// already sitting in their cart is unaffected server-side: resolveCart
+// (cart.go) already treats a missing product exactly like a hidden one
+// (Unavailable, excluded from the total, blocks checkout until removed),
+// the same handling a delete-out-from-under-a-cart case needs. Order
+// history is untouched — see DeleteProduct's own doc comment.
+func AdminDeleteProduct(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid product id", http.StatusBadRequest)
+		return
+	}
+	product, err := db.GetProductByID(id)
+	if err != nil {
+		http.Error(w, "Product not found", http.StatusNotFound)
+		return
+	}
+	// See ProductHasActiveOrders' own doc comment: the bar/kitchen live feed
+	// joins order_items to products to route by category, so deleting a
+	// product still sitting in a pending/preparing order would silently
+	// drop that whole order out of the kitchen/bar's view before it's ever
+	// prepared — not a dangling reference, a vanished order. Hiding it
+	// (AdminToggleProduct) still works fine mid-order; only permanent
+	// deletion needs to wait.
+	if active, err := db.ProductHasActiveOrders(id); err != nil {
+		http.Error(w, "Failed to check the product's order history", http.StatusInternalServerError)
+		return
+	} else if active {
+		http.Error(w, "This item is part of an order that hasn't been served yet — hide it instead, or wait until that order is served/completed/cancelled.", http.StatusConflict)
+		return
+	}
+	if err := db.DeleteProduct(id); err != nil {
+		http.Error(w, "Failed to delete product", http.StatusInternalServerError)
+		return
+	}
+	deleteLocalPhotoIfAny(product.ImageURL)
+	renderProductList(w)
+	BroadcastAllMenus()
+}
+
 // isValidCategoryDepartment is deliberately narrower than
 // models.IsValidDepartment — a category only ever routes to whichever of
 // the two departments actually run a product order feed (see

@@ -127,6 +127,29 @@ const excludeFour = "(?, ?, ?, ?)"
 
 var categoryExcludedStatuses = []interface{}{models.OrderStatusReady, models.OrderStatusServed, models.OrderStatusCompleted, models.OrderStatusCancelled}
 
+// ProductHasActiveOrders reports whether productID appears in any order
+// that isn't yet served/completed/cancelled (same staffExcludedStatuses cut
+// as the unfiltered staff feed — "done" is the same line everywhere in this
+// app). DeleteProduct's caller (AdminDeleteProduct) uses this to refuse
+// deleting a product mid-order: GetActiveOrdersByCategories (the bar/
+// kitchen live feed) INNER JOINs order_items to products to route by
+// category, so deleting a product out from under a still-pending/preparing
+// order wouldn't just leave a dangling reference — it would silently drop
+// that *entire order* from the kitchen/bar feed before it's ever prepared,
+// with no error and nothing left pointing at what went missing. Once an
+// order reaches served/completed/cancelled nothing reads its items through
+// that join anymore (order history/CSV export render straight from
+// order_items' own name/price snapshot, no products join at all), so
+// deletion is safe from that point on.
+func ProductHasActiveOrders(productID int) (bool, error) {
+	var exists bool
+	err := DB.QueryRow(
+		"SELECT EXISTS(SELECT 1 FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.product_id = ? AND o.status NOT IN "+excludeThree+")",
+		append([]interface{}{productID}, staffExcludedStatuses...)...,
+	).Scan(&exists)
+	return exists, err
+}
+
 func GetOrderByID(id int) (models.Order, error) {
 	return scanOrder(DB.QueryRow("SELECT "+orderColumns+" FROM orders WHERE id = ?", id))
 }
@@ -158,9 +181,18 @@ func GetOrderItems(orderID int) ([]models.OrderItem, error) {
 
 // GetActiveOrderForTable returns the most recent non-completed order for a
 // table, for the guest-facing order-status widget.
+//
+// ", id DESC" (here and everywhere else in this file sorting by created_at)
+// is a tiebreaker, not decoration: created_at comes from SQLite's
+// CURRENT_TIMESTAMP, which only has 1-second resolution — two orders placed
+// within the same second (two waiters checking out at once, or just two
+// requests landing in the same wall-clock second, which a fast test suite
+// hits constantly) sort in no defined order without one. id is the
+// AUTOINCREMENT rowid, so it's already a perfect insertion-order tiebreaker
+// with no extra column needed.
 func GetActiveOrderForTable(tableNumber int) (models.Order, error) {
 	return scanOrder(DB.QueryRow(
-		"SELECT "+orderColumns+" FROM orders WHERE table_number = ? AND status != ? ORDER BY created_at DESC LIMIT 1",
+		"SELECT "+orderColumns+" FROM orders WHERE table_number = ? AND status != ? ORDER BY created_at DESC, id DESC LIMIT 1",
 		tableNumber, models.OrderStatusCompleted,
 	))
 }
@@ -170,7 +202,7 @@ func GetActiveOrderForTable(tableNumber int) (models.Order, error) {
 // "Your orders" list (every order they placed, not just the latest).
 func GetOrdersBySession(sessionID string, limit int) ([]models.Order, error) {
 	rows, err := DB.Query(
-		"SELECT "+orderColumns+" FROM orders WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
+		"SELECT "+orderColumns+" FROM orders WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
 		sessionID, limit,
 	)
 	if err != nil {
@@ -203,7 +235,7 @@ func GetOrdersBySession(sessionID string, limit int) ([]models.Order, error) {
 // staffExcludedStatuses) — oldest first. Each order's items are populated.
 func GetActiveOrders() ([]models.Order, error) {
 	rows, err := DB.Query(
-		"SELECT "+orderColumns+" FROM orders WHERE status NOT IN "+excludeThree+" ORDER BY created_at ASC",
+		"SELECT "+orderColumns+" FROM orders WHERE status NOT IN "+excludeThree+" ORDER BY created_at ASC, id ASC",
 		staffExcludedStatuses...,
 	)
 	if err != nil {
@@ -237,7 +269,7 @@ func GetActiveOrders() ([]models.Order, error) {
 // kitchen's job), only ones ready to actually deliver.
 func GetReadyOrders() ([]models.Order, error) {
 	rows, err := DB.Query(
-		"SELECT "+orderColumns+" FROM orders WHERE status = ? ORDER BY created_at ASC",
+		"SELECT "+orderColumns+" FROM orders WHERE status = ? ORDER BY created_at ASC, id ASC",
 		models.OrderStatusReady,
 	)
 	if err != nil {
@@ -299,7 +331,7 @@ func GetActiveOrdersByCategories(categories []string) ([]models.Order, error) {
 		JOIN order_items oi ON oi.order_id = o.id
 		JOIN products p ON p.id = oi.product_id
 		WHERE o.status NOT IN `+excludeFour+` AND p.category IN (`+string(placeholders)+`)
-		ORDER BY o.created_at ASC`,
+		ORDER BY o.created_at ASC, o.id ASC`,
 		args...,
 	)
 	if err != nil {
@@ -332,8 +364,17 @@ func GetActiveOrdersByCategories(categories []string) ([]models.Order, error) {
 // for the admin all-time history view (offset=0, called again with the next
 // offset for "Load more"). limit=-1 means unlimited (SQLite's own LIMIT -1
 // convention) — used only by AdminExportCSV, which wants everything.
+//
+// The ", id DESC" tiebreaker matters more here than anywhere else it's
+// used in this file: this is the one query paginated across multiple
+// requests (offset increasing each "Load more" click). Without a
+// deterministic total order, two orders tied on created_at's 1-second
+// resolution could sort differently between one request and the next,
+// which for a paginated view doesn't just look wrong once — it can skip an
+// order entirely (it shifts to a page already fetched) or repeat one
+// (it shifts to a page not fetched yet).
 func GetOrderHistory(limit, offset int) ([]models.Order, error) {
-	rows, err := DB.Query("SELECT "+orderColumns+" FROM orders ORDER BY created_at DESC LIMIT ? OFFSET ?", limit, offset)
+	rows, err := DB.Query("SELECT "+orderColumns+" FROM orders ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?", limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -602,4 +643,107 @@ func GetRevenueTrend(days int) ([]DayRevenue, error) {
 		}
 	}
 	return result, nil
+}
+
+// TopProduct is one row of the admin overview's best-sellers list.
+type TopProduct struct {
+	Name     string
+	Quantity int
+	Revenue  float64
+	Percent  float64 // of this list's top row's revenue, for the in-row bar
+}
+
+// GetTopProducts returns the best-selling items (by units sold, on paid
+// orders) for the given period, highest first, capped at limit. Revenue is
+// quantity * the order_item's own snapshotted price (see CreateOrder), so a
+// since-changed product price doesn't retroactively rewrite past revenue.
+func GetTopProducts(period string, limit int) ([]TopProduct, error) {
+	clause, err := periodDateClause(period)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := DB.Query(
+		`SELECT oi.name, SUM(oi.quantity) AS qty, SUM(oi.quantity * oi.price) AS revenue
+		 FROM order_items oi
+		 JOIN orders o ON o.id = oi.order_id
+		 WHERE o.payment_status = ? AND `+clause+`
+		 GROUP BY oi.name
+		 ORDER BY qty DESC
+		 LIMIT ?`,
+		models.PaymentStatusPaid, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var top []TopProduct
+	for rows.Next() {
+		var p TopProduct
+		if err := rows.Scan(&p.Name, &p.Quantity, &p.Revenue); err != nil {
+			return nil, err
+		}
+		top = append(top, p)
+	}
+	if len(top) > 0 {
+		best := top[0].Quantity
+		for i := range top {
+			top[i].Percent = float64(top[i].Quantity) / float64(best) * 100
+		}
+	}
+	return top, rows.Err()
+}
+
+// CategorySales is one slice of the admin overview's kitchen-vs-bar revenue
+// split (see categories.department).
+type CategorySales struct {
+	Department string // "kitchen" or "bar"
+	Revenue    float64
+	Percent    float64 // of total revenue across both departments, 0-100
+}
+
+// GetCategorySales splits paid revenue for the given period between the
+// kitchen and bar departments, by joining each order item back to its
+// product's category and that category's department. Items whose product
+// or category has since been deleted are excluded (nothing to attribute
+// them to), same as any other historical-snapshot edge case here.
+func GetCategorySales(period string) ([]CategorySales, error) {
+	clause, err := periodDateClause(period)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := DB.Query(
+		`SELECT c.department, SUM(oi.quantity * oi.price) AS revenue
+		 FROM order_items oi
+		 JOIN orders o ON o.id = oi.order_id
+		 JOIN products p ON p.id = oi.product_id
+		 JOIN categories c ON c.name = p.category
+		 WHERE o.payment_status = ? AND `+clause+`
+		 GROUP BY c.department`,
+		models.PaymentStatusPaid,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []CategorySales
+	var total float64
+	for rows.Next() {
+		var c CategorySales
+		if err := rows.Scan(&c.Department, &c.Revenue); err != nil {
+			return nil, err
+		}
+		total += c.Revenue
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if total > 0 {
+		for i := range out {
+			out[i].Percent = out[i].Revenue / total * 100
+		}
+	}
+	return out, nil
 }

@@ -61,6 +61,64 @@
       <span class="kpi-caption">Occupied right now</span>
     </div>
   </section>
+
+  <section class="insights-grid">
+    <div class="insight-card">
+      <span class="insight-card-title">Table occupancy</span>
+      <div class="donut" style="--pct:{{ printf "%.0f" .OccupancyPercent }}">
+        <div class="donut-center">
+          <span class="donut-value">{{ printf "%.0f" .OccupancyPercent }}%</span>
+          <span class="donut-caption">FULL</span>
+        </div>
+      </div>
+      <span class="insight-sub">{{ .TablesOccupied }} of {{ .TablesTotal }} tables occupied right now</span>
+    </div>
+
+    {{ if .HasCategorySplit }}
+    <div class="insight-card">
+      <span class="insight-card-title">Kitchen vs. bar</span>
+      <div class="donut donut-split" style="--a:{{ printf "%.0f" .KitchenPercent }}">
+        <div class="donut-center">
+          <span class="donut-value">{{ printf "%.0f" .KitchenPercent }}%</span>
+          <span class="donut-caption">KITCHEN</span>
+        </div>
+      </div>
+      <div class="insight-legend">
+        <span class="insight-legend-item"><span class="insight-legend-dot" style="background:var(--accent);"></span>Kitchen</span>
+        <span class="insight-legend-item"><span class="insight-legend-dot" style="background:var(--info);"></span>Bar</span>
+      </div>
+    </div>
+    {{ else }}
+    <div class="insight-card">
+      <span class="insight-card-title">Kitchen vs. bar</span>
+      <p class="empty-note" style="padding:0;">No sales yet {{ if eq .Period "today" }}today{{ else if eq .Period "week" }}this week{{ else }}this month{{ end }}.</p>
+    </div>
+    {{ end }}
+
+    <div class="top-sellers-card">
+      <div class="panel-header" style="margin-bottom:10px;">
+        <h2>Top sellers</h2>
+        <span class="section-sub">By units sold</span>
+      </div>
+      <div class="top-seller-list">
+        {{ range .TopProducts }}
+        <div class="top-seller-row">
+          <span class="top-seller-rank"></span>
+          <div class="top-seller-info">
+            <span class="top-seller-name">{{ .Name }}</span>
+            <div class="top-seller-bar-track"><div class="top-seller-bar-fill" style="width:{{ printf "%.0f" .Percent }}%"></div></div>
+          </div>
+          <div class="top-seller-numbers">
+            <span class="top-seller-qty">{{ .Quantity }}x</span>
+            <span class="top-seller-revenue">€{{ printf "%.2f" .Revenue }}</span>
+          </div>
+        </div>
+        {{ else }}
+        <p class="empty-note">No sales yet {{ if eq .Period "today" }}today{{ else if eq .Period "week" }}this week{{ else }}this month{{ end }}.</p>
+        {{ end }}
+      </div>
+    </div>
+  </section>
 </div>
 {{ end }}
 <div id="admin-stats-socket" hx-ext="ws" ws-connect="/admin/stats/ws?period={{ .Period }}">

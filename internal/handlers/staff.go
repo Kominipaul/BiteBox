@@ -318,3 +318,20 @@ func AdminAuditLog(w http.ResponseWriter, r *http.Request) {
 	tmpl := template.Must(template.ParseFiles("templates/_audit_log.html"))
 	tmpl.Execute(w, map[string]interface{}{"Entries": entries})
 }
+
+// assistanceLogLimit mirrors auditLimit above — same low-volume,
+// most-recent-first reasoning (call-waiter acknowledgments, not orders).
+const assistanceLogLimit = 100
+
+// AdminAssistanceLog serves the #assistance-log fragment for its initial
+// hx-get load — the "call waiter" acknowledgment trail (see
+// db.GetRecentAssistanceLog / db.ClearAssistance).
+func AdminAssistanceLog(w http.ResponseWriter, r *http.Request) {
+	entries, err := db.GetRecentAssistanceLog(assistanceLogLimit)
+	if err != nil {
+		http.Error(w, "Failed to load assistance log", http.StatusInternalServerError)
+		return
+	}
+	tmpl := template.Must(template.ParseFiles("templates/_assistance_log.html"))
+	tmpl.Execute(w, map[string]interface{}{"Entries": entries})
+}

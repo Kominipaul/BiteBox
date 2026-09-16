@@ -117,7 +117,13 @@
     --shadow-pop:0 20px 44px -18px rgba(0,0,0,.55);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-  html{scroll-behavior:smooth;}
+  /* touch-action:manipulation kills the double-tap-to-zoom gesture (the
+     browser's default response to two quick taps on the same spot, e.g.
+     double-tapping "Add" on a menu item) sitewide, while still leaving
+     pinch-zoom and normal scrolling/panning alone — unlike disabling zoom
+     via the viewport meta tag, which throws out pinch-zoom too and is a
+     real accessibility regression for anyone who needs to zoom in. */
+  html{scroll-behavior:smooth;touch-action:manipulation;}
   body{margin:0;background:var(--bg-base);color:var(--text-primary);
     font-family:var(--font-body);font-size:var(--tx-base);line-height:1.45;
     -webkit-font-smoothing:antialiased;min-height:100vh;
@@ -147,37 +153,24 @@
     transition:all .15s ease;}
   .leave-btn:hover{color:var(--danger);border-color:rgba(194,96,74,.4);background:var(--danger-soft);}
 
-  .page{max-width:720px;margin:0 auto;padding:0 var(--sp-4) 130px;}
+  .page{max-width:720px;margin:0 auto;padding:var(--sp-4) var(--sp-4) 130px;}
 
-  /* refined hero panel — dropped the wood-plank texture and tribal
-     zigzag from the previous pass; they read as themed decoration
-     rather than a real product surface. This is a plain raised panel
-     with a soft top glow and one thin gold rule under the name, all
-     still pure CSS (::before / ::after), no new markup. */
-  .venue-banner{
-    position:relative; text-align:center; margin:var(--sp-8) auto var(--sp-6); max-width:400px;
-    padding:var(--sp-8) var(--sp-6) var(--sp-7); border-radius:var(--radius-lg);
-    background:linear-gradient(180deg, var(--bg-raised), var(--bg-surface));
-    border:1px solid var(--border-soft);
-    box-shadow:var(--shadow-card); overflow:hidden;
+  .brand-strip{
+    display:flex;align-items:center;gap:var(--sp-3); margin:0 auto var(--sp-4);
+    max-width:460px; padding:10px 12px; border-radius:var(--radius-md);
+    background:linear-gradient(180deg, rgba(42,33,24,.9), rgba(31,25,18,.9));
+    border:1px solid var(--border-soft); box-shadow:0 8px 18px -16px rgba(0,0,0,.5);
   }
-  .venue-banner::before{
-    content:''; position:absolute; inset:0; z-index:0; pointer-events:none; border-radius:inherit;
-    background:radial-gradient(240px 160px at 50% 0%, var(--accent-soft), transparent 72%);
-  }
-  .venue-mark{position:relative;z-index:1;width:48px;height:48px;margin:0 auto var(--sp-4);opacity:.95;color:var(--accent);}
-  .venue-banner .eyebrow{position:relative;z-index:1;font-family:var(--font-mono);font-size:var(--tx-2xs);font-weight:600;color:var(--accent-strong);
-    letter-spacing:.22em;text-transform:uppercase;margin-bottom:var(--sp-2);}
-  .venue-banner .name{position:relative;z-index:1;font-family:var(--font-wordmark);font-size:clamp(28px,7vw,34px);
-    font-weight:700;letter-spacing:.06em;line-height:1;color:var(--text-primary);}
-  .venue-banner .name::after{
-    content:''; display:block; width:36px; height:2px; margin:var(--sp-4) auto 0;
-    background:var(--accent); border-radius:2px;
-  }
-  .venue-banner .tagline{position:relative;z-index:1;font-size:var(--tx-sm);color:var(--text-muted);margin-top:var(--sp-4);line-height:1.6;
-    max-width:32ch;margin-inline:auto;}
+  .brand-mark{flex:none;width:28px;height:28px;display:grid;place-items:center;border-radius:10px;
+    background:rgba(203,154,92,.12);border:1px solid rgba(203,154,92,.25);color:var(--accent-strong);}
+  .brand-mark svg{display:block;width:18px;height:18px;opacity:.95;}
+  .brand-copy{min-width:0; display:flex; flex-direction:column; line-height:1.1;}
+  .brand-eyebrow{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--accent-strong);font-weight:700;white-space:nowrap;}
+  .brand-name{font-family:var(--font-wordmark);font-size:clamp(16px,4vw,22px);font-weight:700;
+    letter-spacing:.05em; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 
-  .cat-tabs{display:flex;gap:var(--sp-2);margin-bottom:var(--sp-6);overflow-x:auto;padding:2px 2px var(--sp-2);scrollbar-width:none;}
+  .cat-tabs{display:flex;gap:var(--sp-2);margin:0 0 var(--sp-6);overflow-x:auto;padding:2px 2px var(--sp-2);scrollbar-width:none;}
   .cat-tabs::-webkit-scrollbar{display:none;}
   .cat-tab{flex:none;background:var(--bg-surface);border:1px solid var(--border);color:var(--text-secondary);
     font-weight:600;font-size:var(--tx-sm);padding:9px var(--sp-4);border-radius:var(--radius-pill);cursor:pointer;transition:all .15s ease;}
@@ -473,21 +466,14 @@
 
 <main class="page">
 
-  <div class="venue-banner">
-    <svg class="venue-mark" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <circle cx="50" cy="50" r="48" stroke="var(--accent)" stroke-width="1" opacity=".35"/>
-      <g stroke="var(--accent)" stroke-width="1.3" stroke-linecap="round" opacity=".85">
-        <path d="M50 50 L50 12"/><path d="M50 50 L38 15"/><path d="M50 50 L62 15"/>
-        <path d="M50 50 L28 22"/><path d="M50 50 L72 22"/><path d="M50 50 L20 32"/><path d="M50 50 L80 32"/>
-        <path d="M50 50 L50 88"/><path d="M50 50 L38 85"/><path d="M50 50 L62 85"/>
-        <path d="M50 50 L28 78"/><path d="M50 50 L72 78"/><path d="M50 50 L20 68"/><path d="M50 50 L80 68"/>
-        <path d="M50 12 L44 4"/><path d="M50 12 L56 4"/>
-        <path d="M50 88 L44 96"/><path d="M50 88 L56 96"/>
-      </g>
-    </svg>
-    <div class="eyebrow">Table service</div>
-    <div class="name" id="venue-name">{{ .VenueName }}</div>
-    <div class="tagline">Order at your own pace — everything below reaches the kitchen and bar directly</div>
+  <div class="brand-strip" aria-label="Venue brand">
+    <div class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M8,3 H16 A5,5 0 0 1 21,8 V16 A5,5 0 0 1 16,21 H8 A5,5 0 0 1 3,16 V8 A5,5 0 0 1 8,3 Z M14,7.2 A4.4,4.4 0 1 0 22.8,7.2 A4.4,4.4 0 1 0 14,7.2 Z"/><circle cx="21.6" cy="3.3" r="1"/></svg>
+    </div>
+    <div class="brand-copy">
+      <div class="brand-eyebrow">Table service</div>
+      <div class="brand-name">{{ .VenueName }}</div>
+    </div>
   </div>
 
   <div class="cat-tabs">

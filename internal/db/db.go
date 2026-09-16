@@ -166,6 +166,21 @@ func InitDB() {
 		auth TEXT NOT NULL,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+
+	-- Append-only "call waiter" acknowledgment trail. tables.assistance_requested
+	-- is just a live flag with no memory of who cleared it or how long it sat
+	-- (see db.ClearAssistance) — this is that memory. One row per
+	-- acknowledgment, written in the same transaction that clears the flag;
+	-- a table released (guest left) while a request was still pending logs
+	-- nothing here, since nobody actually acknowledged it.
+	CREATE TABLE IF NOT EXISTS assistance_log (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		table_number INTEGER NOT NULL,
+		requested_at DATETIME NOT NULL,
+		acknowledged_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		acknowledged_by TEXT NOT NULL,
+		wait_seconds INTEGER NOT NULL
+	);
 	`
 
 	_, err = DB.Exec(query)
@@ -310,11 +325,18 @@ func InitDB() {
 		{"is_active", "INTEGER DEFAULT 1"},
 		{"created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"},
 		{"last_seen_at", "DATETIME"},
+		// Forces a redirect to /change-password (see RequireRole) — set on
+		// the seeded default accounts only (seedDefaultUsers, and the
+		// one-time backfill below for a database that was already seeded
+		// before this column existed), never on an admin-created or
+		// admin-reset account, whose password nobody else has seen.
+		{"must_change_password", "INTEGER DEFAULT 0"},
 	} {
 		if err := addColumnIfMissing("users", m.column, m.definition); err != nil {
 			log.Fatalf("Failed to migrate users.%s: %v", m.column, err)
 		}
 	}
+	backfillMustChangePasswordForKnownDefaults()
 
 	// last_activity_at drives auto-release of an abandoned table (see
 	// sweepIdleTables) — touched on every request that resolves a hosted
@@ -451,19 +473,58 @@ func seedDefaultUsers() {
 		if err != nil {
 			log.Fatalf("Failed to hash password for seed user %s: %v", u.username, err)
 		}
-		if _, err := DB.Exec("INSERT INTO users (username, password_hash, role, department) VALUES (?, ?, ?, ?)", u.username, hash, u.role, u.department); err != nil {
+		// must_change_password = 1: these passwords are published in this
+		// app's own source (right above), not a secret — see
+		// models.User.MustChangePassword's own doc comment.
+		if _, err := DB.Exec("INSERT INTO users (username, password_hash, role, department, must_change_password) VALUES (?, ?, ?, ?, 1)", u.username, hash, u.role, u.department); err != nil {
 			log.Fatalf("Failed to seed user %s: %v", u.username, err)
 		}
 	}
 
-	log.Println("⚠️  Seeded default accounts (admin/admin123, manager/manager123, waiter/waiter123, bar/bar123, kitchen/kitchen123, dj/dj123) — change these passwords before deploying")
+	log.Println("⚠️  Seeded default accounts (admin/admin123, manager/manager123, waiter/waiter123, bar/bar123, kitchen/kitchen123, dj/dj123) — must change password on first login")
 }
 
-const userColumns = "id, username, password_hash, role, department, is_active, created_at, last_seen_at"
+// defaultSeedPasswords is seedDefaultUsers' own username→password list,
+// factored out so backfillMustChangePasswordForKnownDefaults can check
+// against it without duplicating the list or needing seedDefaultUsers to
+// have actually run this time (a database from before must_change_password
+// existed already has these users; this is what catches that case).
+var defaultSeedPasswords = map[string]string{
+	"admin": "admin123", "manager": "manager123", "waiter": "waiter123",
+	"bar": "bar123", "kitchen": "kitchen123", "dj": "dj123",
+}
+
+// backfillMustChangePasswordForKnownDefaults retrofits must_change_password
+// for a database that was already seeded before that column existed (a
+// fresh install gets it set at INSERT time in seedDefaultUsers instead, and
+// this is a no-op there — none of these usernames exist yet). Runs on
+// every startup, not just once: idempotent (re-setting 1 to 1 does
+// nothing) and cheap (bcrypt-verifying a handful of rows against a fixed
+// password is imperceptible at server-start scale), and it's the only way
+// to correctly leave alone an account where the admin already changed the
+// password away from the published default — comparing password *hashes*
+// directly isn't possible (bcrypt salts each one differently), so this
+// verifies the real password the same way login does.
+func backfillMustChangePasswordForKnownDefaults() {
+	for username, password := range defaultSeedPasswords {
+		user, err := GetUserByUsername(username)
+		if err != nil {
+			continue // no such account — nothing to backfill
+		}
+		if user.MustChangePassword || !auth.CheckPassword(user.PasswordHash, password) {
+			continue // already flagged, or the admin already changed it away from the default
+		}
+		if _, err := DB.Exec("UPDATE users SET must_change_password = 1 WHERE id = ?", user.ID); err != nil {
+			log.Printf("backfill: failed to flag %q for a forced password change: %v", username, err)
+		}
+	}
+}
+
+const userColumns = "id, username, password_hash, role, department, is_active, created_at, last_seen_at, must_change_password"
 
 func scanUser(u *models.User, scan func(...interface{}) error) error {
 	var lastSeen sql.NullTime
-	if err := scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Department, &u.IsActive, &u.CreatedAt, &lastSeen); err != nil {
+	if err := scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Department, &u.IsActive, &u.CreatedAt, &lastSeen, &u.MustChangePassword); err != nil {
 		return err
 	}
 	if lastSeen.Valid {
@@ -513,11 +574,11 @@ func GetUserBySessionID(sessionID string) (models.User, error) {
 	var createdAt time.Time
 	var lastSeen sql.NullTime
 	err := DB.QueryRow(`
-		SELECT u.id, u.username, u.password_hash, u.role, u.department, u.is_active, u.created_at, u.last_seen_at, s.created_at
+		SELECT u.id, u.username, u.password_hash, u.role, u.department, u.is_active, u.created_at, u.last_seen_at, u.must_change_password, s.created_at
 		FROM auth_sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.session_id = ?`, sessionID).
-		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Department, &u.IsActive, &u.CreatedAt, &lastSeen, &createdAt)
+		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Department, &u.IsActive, &u.CreatedAt, &lastSeen, &u.MustChangePassword, &createdAt)
 	if err != nil {
 		return u, err
 	}
@@ -545,9 +606,11 @@ func TouchLastSeen(userID int) error {
 }
 
 // GetAllUsers returns every staff account, newest first, for the admin
-// staff & access panel.
+// staff & access panel. ", id DESC" tiebreaks created_at's 1-second SQLite
+// resolution — see GetOrderHistory's own doc comment (orders.go) for why
+// this matters wherever multiple rows can share a timestamp.
 func GetAllUsers() ([]models.User, error) {
-	rows, err := DB.Query("SELECT " + userColumns + " FROM users ORDER BY created_at DESC")
+	rows, err := DB.Query("SELECT " + userColumns + " FROM users ORDER BY created_at DESC, id DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -606,12 +669,18 @@ func UpdateUserProfile(id int, username, department string) error {
 	return err
 }
 
-// SetUserPassword overwrites a staff account's password hash directly — the
-// admin-side "reset password" action for a staff member who forgot theirs.
-// There is no self-service reset flow (no email system exists in this app);
-// only an admin can do this, and it's logged via LogAudit by the caller.
+// SetUserPassword overwrites a staff account's password hash directly —
+// used both by the admin-side "reset password" action (for a staff member
+// who forgot theirs; logged via LogAudit by that caller) and by the
+// self-service change-password flow (ChangePasswordSubmit). There's still
+// no *forgot-password* recovery (no email system exists in this app) —
+// that's a different thing from a logged-in user changing a password they
+// already know, which this now also covers. Always clears
+// must_change_password: whichever path set a new password, the published
+// default this flag exists to move an account off of is no longer in use
+// either way.
 func SetUserPassword(id int, passwordHash string) error {
-	_, err := DB.Exec("UPDATE users SET password_hash = ? WHERE id = ?", passwordHash, id)
+	_, err := DB.Exec("UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?", passwordHash, id)
 	return err
 }
 
@@ -632,8 +701,10 @@ const auditColumns = "id, actor, action, target, detail, created_at"
 
 // GetRecentAuditLog returns the most recent staff-management actions,
 // newest first, for the admin "Staff & access" panel's audit trail.
+// ", id DESC" tiebreaks created_at's 1-second SQLite resolution — see
+// GetOrderHistory's own doc comment (orders.go).
 func GetRecentAuditLog(limit int) ([]models.AuditEntry, error) {
-	rows, err := DB.Query("SELECT "+auditColumns+" FROM audit_log ORDER BY created_at DESC LIMIT ?", limit)
+	rows, err := DB.Query("SELECT "+auditColumns+" FROM audit_log ORDER BY created_at DESC, id DESC LIMIT ?", limit)
 	if err != nil {
 		return nil, err
 	}

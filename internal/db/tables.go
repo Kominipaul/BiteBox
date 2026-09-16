@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -155,8 +156,70 @@ func RequestAssistance(number int) error {
 }
 
 // ClearAssistance acknowledges/dismisses a table's assistance request —
-// called once staff has responded.
-func ClearAssistance(number int) error {
-	_, err := DB.Exec("UPDATE tables SET assistance_requested = 0, assistance_requested_at = NULL WHERE number = ?", number)
-	return err
+// called once staff has responded. Also writes the acknowledgment to
+// assistance_log (who, and how long the request sat) inside the same
+// transaction that clears the flag, so the two can never drift apart. If the
+// table had no pending request (assistance_requested_at already NULL — e.g.
+// double-clicking "Got it," or a request that was cleared some other way in
+// between), nothing is logged: there's no acknowledger of a request that
+// wasn't actually pending.
+func ClearAssistance(number int, acknowledgedBy string) error {
+	tx, err := DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var requestedAt sql.NullString
+	if err := tx.QueryRow("SELECT assistance_requested_at FROM tables WHERE number = ?", number).Scan(&requestedAt); err != nil {
+		return err
+	}
+
+	if requestedAt.Valid {
+		// wait_seconds stays in SQLite's own datetime math (julianday), the
+		// same fix ReleaseIdleTables' doc comment above explains — comparing
+		// a Go-computed duration against SQLite's CURRENT_TIMESTAMP text
+		// format runs into the same RFC3339-vs-"YYYY-MM-DD HH:MM:SS" mismatch
+		// that bug was about, so the whole computation is done here instead.
+		if _, err := tx.Exec(
+			"INSERT INTO assistance_log (table_number, requested_at, acknowledged_by, wait_seconds) VALUES (?, ?, ?, CAST((julianday('now') - julianday(?)) * 86400 AS INTEGER))",
+			number, requestedAt.String, acknowledgedBy, requestedAt.String,
+		); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.Exec("UPDATE tables SET assistance_requested = 0, assistance_requested_at = NULL WHERE number = ?", number); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+const assistanceLogColumns = "id, table_number, requested_at, acknowledged_at, acknowledged_by, wait_seconds"
+
+func scanAssistanceLogEntry(scan func(...interface{}) error) (models.AssistanceLogEntry, error) {
+	var e models.AssistanceLogEntry
+	err := scan(&e.ID, &e.TableNumber, &e.RequestedAt, &e.AcknowledgedAt, &e.AcknowledgedBy, &e.WaitSeconds)
+	return e, err
+}
+
+// GetRecentAssistanceLog returns the most recent "call waiter" acknowledgments,
+// newest first, for the admin dashboard's call-waiter log panel.
+func GetRecentAssistanceLog(limit int) ([]models.AssistanceLogEntry, error) {
+	rows, err := DB.Query("SELECT "+assistanceLogColumns+" FROM assistance_log ORDER BY acknowledged_at DESC, id DESC LIMIT ?", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []models.AssistanceLogEntry
+	for rows.Next() {
+		e, err := scanAssistanceLogEntry(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, nil
 }

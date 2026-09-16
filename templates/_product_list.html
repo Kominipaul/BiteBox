@@ -87,6 +87,11 @@
         <button type="button" class="btn btn-ghost btn-sm toggle-visibility" hx-post="/admin/products/{{ .ID }}/toggle" hx-target="#menuList">
           {{ if .IsAvailable }}Hide from menu{{ else }}Show on menu{{ end }}
         </button>
+        <!-- Genuinely destructive (unlike Hide, this can't be undone from
+             the menu) — styled apart from Save/Hide's ghost look, same
+             .btn-outline-danger convention as "Force release"/"Remove" on
+             the table grid, so it never reads as just another equal option. -->
+        <button type="button" class="btn btn-outline-danger btn-sm" hx-delete="/admin/products/{{ .ID }}" hx-target="#menuList" hx-confirm="Permanently delete &quot;{{ .Name }}&quot;? This can't be undone — past orders keep their own record, but it's gone from the menu for good.">Delete</button>
       </div>
     </form>
 

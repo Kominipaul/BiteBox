@@ -299,14 +299,16 @@ func RequestAssistance(w http.ResponseWriter, r *http.Request) {
 }
 
 // WorkerAcknowledgeAssistance clears a table's assistance flag — the
-// worker-side "Got it" button once staff has responded.
+// worker-side "Got it" button once staff has responded. Records who
+// acknowledged it and how long it sat (see db.ClearAssistance /
+// assistance_log) for the admin dashboard's call-waiter log panel.
 func WorkerAcknowledgeAssistance(w http.ResponseWriter, r *http.Request) {
 	number, err := strconv.Atoi(chi.URLParam(r, "number"))
 	if err != nil {
 		http.Error(w, "Invalid table number", http.StatusBadRequest)
 		return
 	}
-	if err := db.ClearAssistance(number); err != nil {
+	if err := db.ClearAssistance(number, actorUsername(r)); err != nil {
 		http.Error(w, "Failed to clear request", http.StatusInternalServerError)
 		return
 	}

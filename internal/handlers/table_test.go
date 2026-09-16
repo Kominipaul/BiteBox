@@ -7,6 +7,7 @@ import (
 
 	"bitebox/internal/cart"
 	"bitebox/internal/db"
+	"bitebox/internal/models"
 )
 
 // TestLeaveRejectsNonHost is a regression test for SEC-04: /table/{n}/leave
@@ -83,5 +84,45 @@ func TestLeaveRejectsRequestWithNoCookie(t *testing.T) {
 	table, _ := db.GetTable(tableNum)
 	if table.Status != "occupied" {
 		t.Fatal("table was released by a request carrying no session cookie at all")
+	}
+}
+
+// TestWorkerAcknowledgeAssistanceRecordsActingUser is the handler-level
+// counterpart to db's own TestClearAssistanceLogsAcknowledgment: it checks
+// that the logged-in worker's username (not some hardcoded placeholder)
+// actually makes it into the assistance_log row.
+func TestWorkerAcknowledgeAssistanceRecordsActingUser(t *testing.T) {
+	const tableNum = 9003
+	if err := db.CreateTable(tableNum); err != nil {
+		t.Fatalf("CreateTable: %v", err)
+	}
+	if err := db.RequestAssistance(tableNum); err != nil {
+		t.Fatalf("RequestAssistance: %v", err)
+	}
+
+	acker := models.User{ID: 1, Username: "waiter_test_ack", Role: models.RoleWorker}
+	r := httptest.NewRequest(http.MethodPost, "/worker/tables/9003/assist/clear", nil)
+	r = withChiURLParam(r, "number", "9003")
+	r = withPushTestUser(r, acker)
+	w := httptest.NewRecorder()
+
+	WorkerAcknowledgeAssistance(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+
+	entries, err := db.GetRecentAssistanceLog(1)
+	if err != nil {
+		t.Fatalf("GetRecentAssistanceLog: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 assistance_log entry, got %d", len(entries))
+	}
+	if entries[0].TableNumber != tableNum {
+		t.Errorf("TableNumber = %d, want %d", entries[0].TableNumber, tableNum)
+	}
+	if entries[0].AcknowledgedBy != "waiter_test_ack" {
+		t.Errorf("AcknowledgedBy = %q, want %q", entries[0].AcknowledgedBy, "waiter_test_ack")
 	}
 }

@@ -41,7 +41,12 @@
     --tap-min:44px;
   }
   *{box-sizing:border-box;}
-  html{-webkit-text-size-adjust:100%;}
+  /* touch-action:manipulation kills double-tap-to-zoom (the browser's
+     default response to two quick taps in the same spot — e.g. tapping a
+     toggle/button twice) sitewide, leaving pinch-zoom and normal
+     scrolling alone. Unlike disabling zoom via the viewport meta tag, this
+     doesn't take pinch-zoom away from anyone who actually needs it. */
+  html{-webkit-text-size-adjust:100%;touch-action:manipulation;}
   /* Belt-and-suspenders: the actual overflow sources (inline-style grid
      forms, unshrinkable flex children, an unwrapped currency string) are
      fixed at the source below, but a phone should never be able to
@@ -235,6 +240,109 @@
   .trend-bar.is-today .trend-bar-fill{background:var(--accent);}
   .trend-bar-label{font-size:10.5px;color:var(--text-muted);font-weight:700;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;}
+
+  /* ---------- Insights row: table occupancy / kitchen-bar split donuts,
+     top sellers list — all real order data, same as the KPI cards above,
+     just sliced differently. ---------- */
+  .insights-grid{
+    display:grid;grid-template-columns:200px 200px 1fr;gap:14px;
+    margin-bottom:22px;align-items:stretch;
+  }
+  .insight-card{
+    background:var(--bg-surface);border:1px solid var(--border-soft);
+    border-radius:var(--radius-lg);padding:20px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:12px;text-align:center;min-width:0;
+  }
+  .insight-card-title{font-size:12px;font-weight:700;color:var(--text-secondary);
+    text-transform:uppercase;letter-spacing:.05em;}
+  /* Plain conic-gradient donut, no SVG/JS needed — --pct is set inline per
+     card from the real server-computed percentage. The two color-stops on
+     .donut-split lean on a conic-gradient quirk (a stop position smaller
+     than the previous one gets clamped up to it), so the 2nd color just
+     fills "the rest" without needing its own end percentage computed. */
+  .donut{
+    --pct:0;width:100px;height:100px;border-radius:50%;flex:none;
+    background:conic-gradient(var(--accent) calc(var(--pct)*1%), var(--bg-raised) 0);
+    display:flex;align-items:center;justify-content:center;position:relative;
+  }
+  .donut-split{background:conic-gradient(var(--accent) 0 calc(var(--a)*1%), var(--info) 0);}
+  .donut::before{content:'';position:absolute;inset:12px;border-radius:50%;background:var(--bg-surface);}
+  .donut-center{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:1px;}
+  .donut-value{font-family:var(--font-display);font-size:18px;font-weight:600;}
+  .donut-caption{font-size:10px;color:var(--text-muted);font-weight:700;}
+  .insight-sub{font-size:11.5px;color:var(--text-muted);line-height:1.4;}
+  .insight-legend{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;}
+  .insight-legend-item{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:var(--text-secondary);}
+  .insight-legend-dot{width:8px;height:8px;border-radius:50%;flex:none;}
+
+  .top-sellers-card{
+    background:var(--bg-surface);border:1px solid var(--border-soft);
+    border-radius:var(--radius-lg);padding:18px 20px;
+    display:flex;flex-direction:column;min-width:0;
+  }
+  .top-seller-list{display:flex;flex-direction:column;counter-reset:rank;}
+  .top-seller-row{display:flex;align-items:center;gap:12px;padding:9px 0;
+    border-bottom:1px solid var(--border-soft);counter-increment:rank;}
+  .top-seller-row:last-child{border-bottom:none;}
+  .top-seller-rank{
+    width:22px;height:22px;border-radius:7px;flex:none;
+    background:var(--bg-raised);color:var(--text-secondary);
+    font-family:var(--font-display);font-size:11px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .top-seller-rank::before{content:counter(rank);}
+  .top-seller-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;}
+  .top-seller-name{font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .top-seller-bar-track{height:4px;border-radius:2px;background:var(--bg-raised);overflow:hidden;}
+  .top-seller-bar-fill{height:100%;border-radius:2px;background:var(--accent);}
+  .top-seller-numbers{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:1px;}
+  .top-seller-qty{font-size:11px;color:var(--text-muted);font-weight:700;white-space:nowrap;}
+  .top-seller-revenue{font-family:var(--font-display);font-size:13px;font-weight:600;white-space:nowrap;}
+
+  @media (max-width:920px){
+    .insights-grid{grid-template-columns:1fr 1fr;}
+    .top-sellers-card{grid-column:1 / -1;}
+  }
+  @media (max-width:640px){
+    .insights-grid{grid-template-columns:1fr;gap:10px;}
+  }
+
+  /* ---------- Settings: one compact tabbed panel instead of 4 stacked
+     full-width panels — each of the 4 settings here is a couple of fields
+     or a single toggle, so 4 separate .panel headers/borders/padding was
+     mostly empty space. Same forms, same hx-post targets, just switched
+     via a left-hand tab rail instead of always-visible. ---------- */
+  .settings-layout{display:flex;gap:18px;align-items:flex-start;}
+  .settings-nav{display:flex;flex-direction:column;gap:4px;flex:0 0 190px;}
+  .settings-nav-item{
+    display:flex;align-items:center;gap:10px;
+    background:none;border:1px solid transparent;border-radius:var(--radius-sm);
+    color:var(--text-secondary);font-weight:700;font-size:13px;font-family:inherit;
+    padding:10px 12px;cursor:pointer;text-align:left;width:100%;
+    transition:background .12s ease,color .12s ease;
+  }
+  .settings-nav-item svg{flex:none;color:var(--text-muted);transition:color .12s ease;}
+  .settings-nav-item:hover{background:var(--bg-raised);color:var(--text-primary);}
+  .settings-nav-item.active{background:var(--accent-soft);color:var(--accent-strong);border-color:rgba(217,164,65,.25);}
+  .settings-nav-item.active svg{color:var(--accent-strong);}
+  .settings-nav-status{width:7px;height:7px;border-radius:50%;flex:none;margin-left:auto;}
+  .settings-nav-status.is-on{background:var(--success);}
+  .settings-nav-status.is-off{background:var(--text-muted);}
+
+  .settings-content{flex:1;min-width:0;background:var(--bg-raised);
+    border:1px solid var(--border-soft);border-radius:var(--radius-md);padding:20px;}
+  .settings-pane{display:none;}
+  .settings-pane.active{display:block;}
+
+  @media (max-width:760px){
+    .settings-layout{flex-direction:column;}
+    .settings-nav{flex-direction:row;flex:none;overflow-x:auto;gap:6px;
+      padding-bottom:2px;scrollbar-width:none;width:100%;}
+    .settings-nav::-webkit-scrollbar{display:none;}
+    .settings-nav-item{flex:none;white-space:nowrap;width:auto;border-radius:99px;padding:8px 14px;}
+    .settings-content{width:100%;}
+  }
 
   /* ---------- Staff panel ---------- */
   .staff-row{
@@ -803,7 +911,7 @@
 <header class="topbar">
   <div class="brand">
     <span class="brand-mark">
-      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l-1.5 8a4.5 4.5 0 0 1-9 0L6 3Z"/><path d="M12 15.5V21"/><path d="M8.5 21h7"/></svg>
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M8,3 H16 A5,5 0 0 1 21,8 V16 A5,5 0 0 1 16,21 H8 A5,5 0 0 1 3,16 V8 A5,5 0 0 1 8,3 Z M14,7.2 A4.4,4.4 0 1 0 22.8,7.2 A4.4,4.4 0 1 0 14,7.2 Z"/><circle cx="21.6" cy="3.3" r="1"/></svg>
     </span>
     <div class="brand-text">
       <span class="brand-eyebrow">BiteBox Admin</span>
@@ -812,6 +920,7 @@
   </div>
   <div class="topbar-right">
     <span class="live-pill"><span class="pulse-dot"></span>Live</span>
+    <a class="btn btn-ghost" href="/change-password">Change password</a>
     <form method="POST" action="/logout"><button class="btn btn-ghost" type="submit">Log out</button></form>
   </div>
 </header>
@@ -846,64 +955,82 @@
   </div>
   {{ end }}
 
-  <section class="panel">
+  <section class="panel settings-panel">
     <div class="panel-header">
-      <h2>Venue settings</h2>
+      <h2>Settings</h2>
     </div>
-    <div id="venueSettingsPanel">
-      <form class="add-form add-form-venue" hx-post="/admin/settings/venue-name" hx-target="#venueSettingsPanel" hx-swap="innerHTML">
-        <input class="field-input" name="name" value="{{ .VenueName }}" maxlength="80" required>
-        <button type="submit" class="btn btn-primary">Save</button>
-      </form>
-      <p class="empty-note" style="margin-top:10px;">Shown to every guest on the menu page and in the browser tab title — updates live for anyone already browsing.</p>
-    </div>
-  </section>
+    <div class="settings-layout">
+      <div class="settings-nav" role="tablist" aria-label="Settings sections">
+        <button type="button" class="settings-nav-item active" data-pane="venue" role="tab" aria-selected="true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/></svg>
+          Venue
+        </button>
+        <button type="button" class="settings-nav-item" data-pane="business" role="tab" aria-selected="false">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M9 12h6M9 16h6M9 8h2"/></svg>
+          Business details
+        </button>
+        <button type="button" class="settings-nav-item" data-pane="dj" role="tab" aria-selected="false">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
+          DJ requests
+          <span id="djNavStatus" class="settings-nav-status {{ if .DJRequestsEnabled }}is-on{{ else }}is-off{{ end }}"></span>
+        </button>
+        <button type="button" class="settings-nav-item" data-pane="payment" role="tab" aria-selected="false">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+          Payment methods
+          <span id="paymentNavStatus" class="settings-nav-status {{ if .AllowCashOrders }}is-on{{ else }}is-off{{ end }}"></span>
+        </button>
+      </div>
 
-  <section class="panel">
-    <div class="panel-header">
-      <h2>Business details <span style="font-weight:400;color:var(--text-muted);font-size:12px;">(demo)</span></h2>
-    </div>
-    <div id="businessSettingsPanel">
-      <form class="add-form add-form-business" hx-post="/admin/settings/business-details" hx-target="#businessSettingsPanel" hx-swap="innerHTML">
-        <input class="field-input" name="business_vat_number" value="{{ .BusinessVATNumber }}" maxlength="100" placeholder="ΑΦΜ (VAT number)" aria-label="VAT number">
-        <input class="field-input" name="tax_office" value="{{ .TaxOffice }}" maxlength="100" placeholder="Δ.Ο.Υ. (Tax office)" aria-label="Tax office">
-        <button type="submit" class="btn btn-primary">Save</button>
-      </form>
-      <p class="empty-note" style="margin-top:10px;">Shown on the demo receipt printout (see an order's "🧾 Receipt" link in Order history) — <strong>not a real tax registration</strong>, and never transmitted anywhere. Structure only.</p>
-    </div>
-  </section>
+      <div class="settings-content">
+        <div class="settings-pane active" data-pane="venue">
+          <div id="venueSettingsPanel">
+            <form class="add-form add-form-venue" hx-post="/admin/settings/venue-name" hx-target="#venueSettingsPanel" hx-swap="innerHTML">
+              <input class="field-input" name="name" value="{{ .VenueName }}" maxlength="80" required>
+              <button type="submit" class="btn btn-primary">Save</button>
+            </form>
+            <p class="empty-note" style="margin-top:10px;">Shown to every guest on the menu page and in the browser tab title — updates live for anyone already browsing.</p>
+          </div>
+        </div>
 
-  <section class="panel">
-    <div class="panel-header">
-      <h2>DJ song requests</h2>
-    </div>
-    <div id="djTogglePanel">
-      {{ if .DJRequestsEnabled }}
-      <span class="status-pill status-available">Enabled</span>
-      <p class="empty-note" style="margin:10px 0 14px;">Guests see the "Request a song to DJ" form on the menu page.</p>
-      <button type="button" class="btn btn-ghost btn-sm" hx-post="/admin/settings/dj-requests/toggle" hx-target="#djTogglePanel" hx-swap="innerHTML">Disable song requests</button>
-      {{ else }}
-      <span class="status-pill status-hidden">Disabled</span>
-      <p class="empty-note" style="margin:10px 0 14px;">Guests don't see any song-request option on the menu page.</p>
-      <button type="button" class="btn btn-primary btn-sm" hx-post="/admin/settings/dj-requests/toggle" hx-target="#djTogglePanel" hx-swap="innerHTML">Enable song requests</button>
-      {{ end }}
-    </div>
-  </section>
+        <div class="settings-pane" data-pane="business">
+          <div id="businessSettingsPanel">
+            <form class="add-form add-form-business" hx-post="/admin/settings/business-details" hx-target="#businessSettingsPanel" hx-swap="innerHTML">
+              <input class="field-input" name="business_vat_number" value="{{ .BusinessVATNumber }}" maxlength="100" placeholder="ΑΦΜ (VAT number)" aria-label="VAT number">
+              <input class="field-input" name="tax_office" value="{{ .TaxOffice }}" maxlength="100" placeholder="Δ.Ο.Υ. (Tax office)" aria-label="Tax office">
+              <button type="submit" class="btn btn-primary">Save</button>
+            </form>
+            <p class="empty-note" style="margin-top:10px;">Shown on the demo receipt printout (see an order's "🧾 Receipt" link in Order history) — <strong>not a real tax registration</strong>, and never transmitted anywhere. Structure only.</p>
+          </div>
+        </div>
 
-  <section class="panel">
-    <div class="panel-header">
-      <h2>Payment methods</h2>
-    </div>
-    <div id="cashTogglePanel">
-      {{ if .AllowCashOrders }}
-      <span class="status-pill status-available">Enabled</span>
-      <p class="empty-note" style="margin:10px 0 14px;">Guests can choose cash or card at checkout.</p>
-      <button type="button" class="btn btn-ghost btn-sm" hx-post="/admin/settings/cash-orders/toggle" hx-target="#cashTogglePanel" hx-swap="innerHTML">Disable cash orders</button>
-      {{ else }}
-      <span class="status-pill status-hidden">Disabled</span>
-      <p class="empty-note" style="margin:10px 0 14px;">Guests only see card at checkout — the cash option is hidden.</p>
-      <button type="button" class="btn btn-primary btn-sm" hx-post="/admin/settings/cash-orders/toggle" hx-target="#cashTogglePanel" hx-swap="innerHTML">Enable cash orders</button>
-      {{ end }}
+        <div class="settings-pane" data-pane="dj">
+          <div id="djTogglePanel">
+            {{ if .DJRequestsEnabled }}
+            <span class="status-pill status-available">Enabled</span>
+            <p class="empty-note" style="margin:10px 0 14px;">Guests see the "Request a song to DJ" form on the menu page.</p>
+            <button type="button" class="btn btn-ghost btn-sm" hx-post="/admin/settings/dj-requests/toggle" hx-target="#djTogglePanel" hx-swap="innerHTML">Disable song requests</button>
+            {{ else }}
+            <span class="status-pill status-hidden">Disabled</span>
+            <p class="empty-note" style="margin:10px 0 14px;">Guests don't see any song-request option on the menu page.</p>
+            <button type="button" class="btn btn-primary btn-sm" hx-post="/admin/settings/dj-requests/toggle" hx-target="#djTogglePanel" hx-swap="innerHTML">Enable song requests</button>
+            {{ end }}
+          </div>
+        </div>
+
+        <div class="settings-pane" data-pane="payment">
+          <div id="cashTogglePanel">
+            {{ if .AllowCashOrders }}
+            <span class="status-pill status-available">Enabled</span>
+            <p class="empty-note" style="margin:10px 0 14px;">Guests can choose cash or card at checkout.</p>
+            <button type="button" class="btn btn-ghost btn-sm" hx-post="/admin/settings/cash-orders/toggle" hx-target="#cashTogglePanel" hx-swap="innerHTML">Disable cash orders</button>
+            {{ else }}
+            <span class="status-pill status-hidden">Disabled</span>
+            <p class="empty-note" style="margin:10px 0 14px;">Guests only see card at checkout — the cash option is hidden.</p>
+            <button type="button" class="btn btn-primary btn-sm" hx-post="/admin/settings/cash-orders/toggle" hx-target="#cashTogglePanel" hx-swap="innerHTML">Enable cash orders</button>
+            {{ end }}
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -1045,6 +1172,16 @@
 
   <section class="panel">
     <div class="panel-header">
+      <h2>🔔 Call-waiter log</h2>
+      <span class="section-sub">Who acknowledged each request, and how long it sat</span>
+    </div>
+    <div id="assistance-log" hx-get="/admin/assistance-log" hx-trigger="load" hx-swap="innerHTML">
+      <p class="empty-note">Loading call-waiter log...</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
       <h2>🗂️ Audit log</h2>
       <span class="section-sub">Staff account changes — who did what, and when</span>
     </div>
@@ -1105,6 +1242,23 @@
 </main>
 
 <script>
+  // ---- settings tab rail: switches which .settings-pane is visible; the
+  // htmx forms/toggles inside each pane are untouched — only their shared
+  // wrapper's visibility changes, so hx-target ids (#djTogglePanel etc.)
+  // keep working exactly as before. ----
+  document.querySelectorAll('.settings-nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      document.querySelectorAll('.settings-nav-item').forEach(i => {
+        i.classList.remove('active'); i.setAttribute('aria-selected', 'false');
+      });
+      document.querySelectorAll('.settings-pane').forEach(p => p.classList.remove('active'));
+      item.classList.add('active');
+      item.setAttribute('aria-selected', 'true');
+      const pane = document.querySelector('.settings-pane[data-pane="' + item.dataset.pane + '"]');
+      if (pane) pane.classList.add('active');
+    });
+  });
+
   // ---- stock steppers (local nudge only; Save persists it) ----
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.stepper-btn');

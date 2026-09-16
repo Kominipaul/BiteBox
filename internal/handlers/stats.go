@@ -34,11 +34,38 @@ func adminStatsData(period string) (map[string]interface{}, error) {
 			occupied++
 		}
 	}
+	occupancyPercent := 0.0
+	if len(tables) > 0 {
+		occupancyPercent = float64(occupied) / float64(len(tables)) * 100
+	}
+
+	topProducts, err := db.GetTopProducts(period, 5)
+	if err != nil {
+		return nil, err
+	}
+	categorySales, err := db.GetCategorySales(period)
+	if err != nil {
+		return nil, err
+	}
+	var kitchenPercent, barPercent float64
+	for _, c := range categorySales {
+		if c.Department == "kitchen" {
+			kitchenPercent = c.Percent
+		} else if c.Department == "bar" {
+			barPercent = c.Percent
+		}
+	}
+
 	return map[string]interface{}{
-		"Period":         period,
-		"Stats":          stats,
-		"TablesOccupied": occupied,
-		"TablesTotal":    len(tables),
+		"Period":           period,
+		"Stats":            stats,
+		"TablesOccupied":   occupied,
+		"TablesTotal":      len(tables),
+		"OccupancyPercent": occupancyPercent,
+		"TopProducts":      topProducts,
+		"KitchenPercent":   kitchenPercent,
+		"BarPercent":       barPercent,
+		"HasCategorySplit": kitchenPercent > 0 || barPercent > 0,
 	}, nil
 }
 

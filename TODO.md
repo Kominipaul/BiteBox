@@ -5,6 +5,185 @@ Update this as things change — it's meant to be read before picking up work ag
 
 ## Done
 
+### Product deletion, forced default-password change, call-waiter audit trail; investigated (not a bug) the customize-panel/tab-reset item
+Worked through the "Missing / rough edges" and "Maybe later" backlog, per
+instruction to skip anything touching myDATA/ΑΑΔΕ, real online payment
+processing, legal/compliance work outside the server itself, or integration
+with any other external platform (so DJ-tip-paid workflow, split-bill
+payment collection, the default-password/table-URL items — already decided
+final, see below — and the reverse-proxy header note, a deploy-checklist
+item rather than code, were all left alone).
+
+- **Product deletion.** `AdminDeleteProduct` (`DELETE /admin/products/{id}`)
+  removes a product and its `product_ingredients` rows for good — order
+  history is untouched, since `order_items` snapshots name/price at order
+  time and has no FK to `products`. Found a real hazard while building it:
+  `GetActiveOrdersByCategories` (the kitchen/bar live feed) actually INNER
+  JOINs `order_items` to `products` for category routing, so deleting a
+  product still sitting in a pending/preparing/ready order would silently
+  drop that order from staff's live view. Added `ProductHasActiveOrders` as
+  a guard — deletion is blocked with a 409 and a plain-language explanation
+  until the order is served/completed/cancelled; hiding (`AdminToggleProduct`)
+  stays the answer for "stop selling this but an order is still in flight."
+  Deleting also removes the product's own local photo files. Along the way,
+  a real pre-existing bug surfaced: `ORDER BY created_at` with no tiebreaker
+  across 8 queries (`orders.go`, `db.go`) sorts unstably on same-second
+  writes, since SQLite's `CURRENT_TIMESTAMP` only has 1-second resolution —
+  caught by a test failure (a delete-test's order briefly outranking a
+  cart-test's own order in "most recent"), fixed everywhere with `, id`
+  tiebreakers, not just patched at the one call site that happened to fail.
+  6 new tests; verified live (create → delete → gone from menu but the order
+  history entry survives; active-order delete correctly blocked with 409).
+- **Forced password change for the seeded default accounts.** Every seeded
+  account (`admin`/`admin123` etc.) now carries `must_change_password`;
+  `RequireRole` redirects it to `/change-password` on every request except
+  that route itself until it's cleared, so a fresh install can't stay on a
+  password published in this app's own source. New `templates/
+  change_password.html` (matching `login.html`'s look), self-service
+  `ChangePasswordSubmit` (validates current password, new ≥6 chars, new ≠
+  confirm mismatch, new ≠ current), and a voluntary "Change password" link
+  in both dashboard topbars for anyone who wants to change it later, not
+  just the forced first time. A one-time backfill flags any *existing*
+  install's accounts that are still on their known default password (and
+  only those — an admin who already changed it, or a staff account an admin
+  created/reset with a real password, is never touched). 7 new tests;
+  verified live end-to-end (default login → forced redirect → blocked from
+  `/admin` until changed → wrong-current-password rejected → correct change
+  clears the flag → old password stops working → fresh login goes straight
+  through).
+- **Real call-waiter acknowledgment audit trail.** `ClearAssistance` now
+  takes the acknowledging staff member's username and writes an
+  `assistance_log` row (table, who, requested-at, acknowledged-at,
+  wait-seconds) in the same transaction that clears the live flag, instead
+  of just dropping the request on the floor with no record. New admin
+  dashboard panel ("🔔 Call-waiter log", `/admin/assistance-log`) lists
+  acknowledgments newest-first with a human wait label ("42s" / "3m 07s").
+  Double-acknowledging (or any other path clearing an already-clear flag)
+  logs nothing — there's no acknowledger of a request that wasn't actually
+  pending. wait_seconds is computed in SQLite's own `julianday()` math
+  rather than in Go, for the same RFC3339-vs-`CURRENT_TIMESTAMP`-text
+  mismatch reason `ReleaseIdleTables` already had to work around. 4 new
+  tests (including one that backdates a request 5 real minutes and checks
+  the logged duration matches); verified live (guest calls waiter → admin
+  acknowledges → log panel shows "Table 5 → acknowledged by admin, waited
+  10s").
+- **Investigated "customize-panel/category-tab state resets on every live
+  menu push" — not reproducible, no fix needed.** Traced the actual
+  mechanism: `/menu/ws` only ever OOB-swaps `#product-list` (plus
+  `#cart-refresh-trigger`, and `#dj-section`/`#djConfirm` when DJ requests
+  are on) — confirmed by connecting a real websocket client and dumping the
+  raw frames across two live product toggles, not just reading the code.
+  `#customizeOverlay`/`#customizeChips` (the modal) is a sibling element
+  outside that swapped subtree entirely, and `host_menu.html` already
+  copies its content from the clicked product card at *open* time — a
+  snapshot, not a live reference — so a swap elsewhere can't touch it.
+  `.cat-tabs` is likewise a sibling never targeted by any OOB push, and its
+  "active" tab selection is already re-applied after every
+  `afterSwap`/`oobAfterSwap` by `applyCategoryFilter` (present since the
+  original live-updates commit). Both mechanisms this TODO item worried
+  about already can't happen — most likely this was accurate at some
+  earlier point and fixed as a side effect of the "Customize did nothing"
+  body-delegation fix above, and this note just never got removed. Added
+  `TestBroadcastMenuNeverTouchesModalOrTabBar` to pin the contract so a
+  future change to `BroadcastMenu` can't silently start OOB-swapping either
+  element without a test catching it.
+
+### Menu & Inventory screen redesign — 7 concrete UI problems, not a restyle
+Reported as 7 specific, numbered defects on the admin "Menu & inventory"
+screen (a screenshot's worth of clipped text, mis-shapen controls, and one
+possibly-broken icon), not a vague "make it nicer." Root-caused each before
+touching CSS:
+
+- **Clipped "Pric"/"VAT 24..."/"Stock" text**: `.add-form-product` was a
+  9-column grid with hand-picked `fr` ratios guessed against desktop width
+  — at a realistic panel width the price column landed ~69px against
+  "Price €"'s own ~73px, VAT ~84px against "VAT 24% (standard)"'s ~150px+.
+  Replaced with flex rows, each field given a real min-width sized to its
+  own placeholder/option text, `flex-wrap` so an overflowing field drops to
+  its own line instead of squeezing. Grouped into rows by what the fields
+  actually are (identity+pricing / description / media+inventory), which
+  also directly answered two more of the seven:
+- **Photo controls** (take/choose/paste-URL) unified into one labeled,
+  bordered `.photo-cluster`/`.photo-row-cluster` (add-form and per-row
+  versions) instead of 3-4 unrelated, differently-shaped controls — this is
+  also what the per-row "icon strip that looked like debug UI" turned out
+  to be: a real, working photo-preview/take/choose/remove control with no
+  container of its own tying it together.
+- **Submit button** moved to its own `.form-actions` row, not left
+  in-between inline-with-inputs and fully separate.
+- **Per-row control heights unified** (~37-38px) via padding only, not
+  font-size — computed the actual mismatch first: stepper ~32px, VAT select
+  ~28px, status pill ~23px, buttons ~29-30px, four different heights.
+  Status pill + Save + Hide/Show merged into one `.row-status-actions`
+  cluster (was two adjacent grid cells with nothing marking them related);
+  kept the pill *shape* for status (consistent with role-badge/category-
+  pill/live-pill elsewhere in this app — the existing convention, not an
+  inconsistency to fix).
+- **Ingredient chip's stray "•"**: best diagnosis without a screenshot —
+  the remove "×" (real, working `hx-delete`) was rendered at 10px with a
+  ~1.25px stroke in the tag's own pastel color on a barely-there
+  `rgba(0,0,0,.15)` circle, plausible to misread as a dot. Fixed with a
+  higher-contrast icon color and a touch more size — flagged as inferred,
+  not confirmed, in case it doesn't fully resolve it.
+- **Scrollbar crowding the category tab row**: `.menu-scroll-panel`/
+  `.scroll-panel` only reserved 4px of padding, not enough for a real OS
+  scrollbar. Added `scrollbar-gutter:stable` + matching padding on the tabs
+  row above it.
+
+Verified against the real rendered HTML/CSS (no headless browser available
+in this environment) at both a normal desktop width and 768px, computing
+the actual box math rather than assuming. `go build`/`vet`/`test` clean.
+
+### Admin dashboard mobile audit — 13 concrete findings, fixed systemically
+Asked to audit the admin dashboard's mobile UI at 360/390/430px *before*
+touching anything, then fix with one consistent system rather than
+per-button patches. Computed exact box models at each width instead of
+guessing (no headless browser available here) — found real defects,
+including one serious one a previous session's fix had only partially
+addressed:
+
+- **`.staff-manage-body` popover could render mostly/entirely off-screen.**
+  It anchors `right:0` to its own `<details>` trigger — correct on desktop,
+  but the mobile flex-wrap staff row can land that trigger anywhere,
+  including near the row's *left* edge, in which case a 260px popover
+  anchored `right:0` renders mostly negative-x and untappable. An earlier
+  session's fix only capped the popover's *width*, not this positioning
+  root cause. Fixed with `margin-left:auto` (the standard flex-wrap "always
+  sit at the row's right edge, even after wrapping" trick), which restores
+  the assumption `right:0` depends on.
+- **Systemic touch-target shortfall**: `.btn`/`.btn-sm` sat at 40px/36px
+  under `(pointer:coarse)`, `.period-tab`/`.menu-cat-tab` at ~33px — all
+  short of Apple HIG's 44px. Unified via one new `--tap-min:44px` token
+  (the file already had color/radius/font tokens, nothing spacing-related
+  — didn't retrofit a full spacing scale for this, out of proportion to a
+  touch-target fix) applied consistently, rather than a different guess
+  per selector.
+- `.ingredient-tag-remove` kept visually small (18px) on purpose — growing
+  it to 44px would make ingredient chips look bloated in their tight
+  7px-gap row. Used an invisible `::before{inset:-13px}` hit-area instead:
+  a real 44×44 tap zone with no visual size change.
+- Grid-stretch bug: collapsing `.product-row`/`.add-form-product` to one
+  column on mobile stretched naturally-compact cells (`.stock-stepper`,
+  `.status-pill`, a checkbox) to the full row width via Grid's default
+  `justify-items:stretch`, leaving dead space and mis-shapen pills. Fixed
+  with `justify-self:start` scoped to those specific children, not a
+  blanket rule (`.product-main` genuinely needs the stretch).
+- Smaller fixes: `.brand-eyebrow` now truncates instead of wrapping to 2
+  lines on a narrow phone with a real venue name; `.section-heading`
+  switched from `align-items:baseline` to `center` (a text heading against
+  a non-text controls row was a few px off); Save/Hide-from-menu given
+  `flex:1` on mobile instead of left-packing with a dead gap after them;
+  icon-only photo buttons given `aria-label` (only had `title`, which never
+  surfaces on a touchscreen).
+- Checked explicitly and found clean: no hover-only-revealed controls
+  anywhere on this page, and no fixed-bottom element (so no safe-area-inset
+  concern here — that's a `host_menu.html` question, not admin).
+  `:focus-visible` confirmed untouched by any of the above.
+
+Verified all 13 by recomputing the box math against the final CSS at
+360/390/430px, plus a live render through the real handler. `go build`/
+`vet`/`test` clean.
+
 ### Real image-compression pipeline: two variants, EXIF-aware, hash-named, HEIC handled client-side
 Follow-up to the earlier "photos rotated 90°" fix — this replaces the
 single-resize pipeline with the two-variant, content-hashed one a spec
@@ -1427,23 +1606,12 @@ templates.
 
 ## Missing / rough edges
 
-- **No way to actually delete a product**, only hide it (`AdminToggleProduct`)
-  — came up while cleaning up a leftover test row (see the image_url-bug
-  entry above), which needed a direct DB statement since there's no admin
-  endpoint for it. Add one if a real venue asks to permanently remove a
-  discontinued item rather than just hiding it.
 - **No pagination on "Your orders."** Capped at the most recent 20 per
   session (`placedOrdersLimit`) — fine for a single table visit, would
   need real pagination if guests ever accumulate more than that in one
   sitting (unlikely, but noted). Order *history* (the admin panel) got
   real pagination this session — this is specifically the guest-facing
   per-session list, which didn't.
-- **Customize-panel/category-tab state resets on every live menu push.**
-  If a guest has a customize panel open and someone *else's* action
-  triggers a menu broadcast (e.g. admin edits a different product), the
-  panel closes and any category filter/tab selection needs the click to
-  have already registered client-side — not persisted across a
-  server-driven re-render. Minor UX rough edge, not a correctness issue.
 - **Toast "Undo" targets an order id, not a DOM position** — correct even
   if the feed re-renders from someone else's action between your click and
   hitting Undo, but the toast's *wording* was written at click time, so in
@@ -1478,15 +1646,3 @@ templates.
 - If this ever sits behind a reverse proxy / HTTPS, confirm the proxy passes
   through `Upgrade`/`Connection` headers for the websocket routes, and that
   the `ws://` vs `wss://` scheme htmx infers from the page matches.
-- A real "call waiter" acknowledgment audit trail (who acknowledged which
-  request, how long it sat) — right now it's just a live flag, cleared with
-  no record of who cleared it or when.
-- A forced password-change flow for the seeded default accounts, so a
-  fresh install can't stay on `admin123` indefinitely just because nobody
-  remembered to change it (see SEC-09 above).
-- **`internal/imageproc` only decodes JPEG/PNG/GIF** (Go stdlib's built-in
-  set) — no WEBP, no HEIC. Most phones/browsers convert to JPEG on upload
-  automatically, but an iPhone with "Keep Original" format set could hand
-  the browser a raw HEIC file, which would get rejected with "please
-  upload a JPEG, PNG, or GIF" rather than silently working. Would need a
-  WEBP/HEIC decoder dependency to close.
