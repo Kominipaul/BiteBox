@@ -3,6 +3,9 @@ package handlers
 import (
 	"net"
 	"net/http"
+	"os"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,35 +14,60 @@ import (
 
 // SecurityHeadersMiddleware sets the handful of response headers that cost
 // nothing and close off whole classes of attack a browser would otherwise
-// happily allow: clickjacking (X-Frame-Options), MIME-sniffing a guest
-// upload or product image into executable content (X-Content-Type-Options),
-// leaking full URLs (with e.g. a session-bearing query string, if one ever
-// gets added) to third-party referrers (Referrer-Policy), and a CSP that
-// keeps every script/style/font/connection first-party except the two CDN
-// dependencies the templates actually use (Google Fonts, water.css).
-func SecurityHeadersMiddleware(next http.Handler) http.Handler {
-	const csp = "default-src 'self'; " +
-		"script-src 'self' 'unsafe-inline'; " +
-		"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; " +
-		"font-src 'self' https://fonts.gstatic.com; " +
-		// https: (any host) because a product photo can be a plain URL an
-		// admin points at wherever their photos already live (see
-		// models.Product.ImageURL) — 'self' alone silently blocked every
-		// one of those, which is why photos stopped rendering the moment
-		// this CSP shipped: the <img> tag was there, the src was correct,
-		// the browser just refused to load it and said nothing louder
-		// than a broken-image icon. Images can't execute script, so
-		// widening just this directive carries none of the risk a
-		// broader script-src/connect-src relaxation would.
-		"img-src 'self' data: https:; " +
-		"connect-src 'self' ws: wss:; " +
+// happily allow: clickjacking (frame-ancestors / X-Frame-Options),
+// MIME-sniffing an upload into executable content (X-Content-Type-Options),
+// leaking full URLs to other sites (Referrer-Policy), and a CSP under which
+// injected markup can't run script.
+//
+// script-src is 'self' only: no inline <script>, no on*= attributes, no
+// eval (so no htmx hx-on). Page scripts live in static/js/; server values
+// reach them through <script type="application/json" id="pageData">, and
+// former inline attributes are data-* hooks in static/js/base.js.
+// TestNoInlineScriptsInTemplates keeps it that way.
+//
+// style-src keeps 'unsafe-inline': templates use style="" attributes and
+// htmx injects its indicator styles. Styles can't run script.
+//
+// img-src allows any https: host because a product photo can be a plain URL
+// an admin points at wherever their photos already live (models.Product.
+// ImageURL); blob: and data: are the photo-upload previews. Images can't run
+// script either.
+func cspFor(r *http.Request) string {
+	ws := ""
+	if plainHost.MatchString(r.Host) {
+		ws = " ws://" + r.Host + " wss://" + r.Host
+	}
+	return "default-src 'self'; " +
+		"script-src 'self'; " +
+		"style-src 'self' 'unsafe-inline'; " +
+		"font-src 'self'; " +
+		"img-src 'self' data: blob: https:; " +
+		// Websockets only back to this server (not any ws: host, which
+		// would let injected code ship data anywhere).
+		"connect-src 'self'" + ws + "; " +
+		"object-src 'none'; " +
+		"base-uri 'self'; " +
+		"form-action 'self'; " +
 		"frame-ancestors 'none'"
+}
 
+// plainHost guards the Host header before it goes into the CSP: anything
+// else (say "x; script-src *") gets just 'self'.
+var plainHost = regexp.MustCompile(`^[A-Za-z0-9.-]+(:[0-9]+)?$|^\[[0-9A-Fa-f:.]+\](:[0-9]+)?$`)
+
+func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		w.Header().Set("Content-Security-Policy", csp)
+		w.Header().Set("Content-Security-Policy", cspFor(r))
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+		// Only behind the production TLS proxy. Not on the local mkcert
+		// listener (r.TLS set): HSTS on localhost would also force
+		// https://localhost:8080 and break plain-HTTP dev.
+		if r.TLS == nil && auth.IsSecureRequest(r) {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -140,18 +168,54 @@ func (l *ipRateLimiter) Allow(ip string) bool {
 	return b.count <= l.limit
 }
 
-// clientIP takes the TCP peer address only — never an X-Forwarded-For or
-// similar client-supplied header, which anyone the limiter is meant to
-// stop can set to an arbitrary value and rate-limit somebody else's IP
-// instead of their own. A deploy that sits behind a trusted reverse proxy
-// and wants real client IPs here would need that proxy's specific header
-// explicitly trusted, not a blanket read of a spoofable one.
+// clientIP is the address rate limits count against: the TCP peer, never a
+// client-supplied header, which anyone could set to get past a limit (or to
+// spend somebody else's budget). The one exception is a reverse proxy listed
+// in TRUSTED_PROXIES (comma-separated IPs, e.g. "127.0.0.1,::1" for Caddy or
+// nginx on the same machine): behind it every request arrives from the
+// proxy, so without this all guests and staff would share one budget and ten
+// bad logins from anyone would lock everyone out. For a trusted peer the
+// client is the rightmost X-Forwarded-For entry that isn't itself a trusted
+// proxy — the one the proxy appended, which the client can't forge.
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
+	}
+	trusted := trustedProxies()
+	if !trusted[host] {
+		return host
+	}
+	hops := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+	for i := len(hops) - 1; i >= 0; i-- {
+		ip := strings.TrimSpace(hops[i])
+		if net.ParseIP(ip) == nil {
+			break
+		}
+		if !trusted[ip] {
+			return ip
+		}
 	}
 	return host
+}
+
+func trustedProxies() map[string]bool {
+	m := map[string]bool{}
+	for _, ip := range strings.Split(os.Getenv("TRUSTED_PROXIES"), ",") {
+		if ip = strings.TrimSpace(ip); net.ParseIP(ip) != nil {
+			m[ip] = true
+		}
+	}
+	return m
+}
+
+// tooMany answers 429 and reports true when ip is over l's limit.
+func tooMany(l *ipRateLimiter, w http.ResponseWriter, r *http.Request) bool {
+	if l.Allow(clientIP(r)) {
+		return false
+	}
+	http.Error(w, "429 Too Many Requests: slow down and try again shortly", http.StatusTooManyRequests)
+	return true
 }
 
 // loginLimiter allows 10 attempts per IP per minute — enough headroom for a
@@ -221,3 +285,15 @@ var guestPushLimiter = newIPRateLimiter(20, time.Minute)
 func AllowGuestPushAction(r *http.Request) bool {
 	return guestPushLimiter.Allow(clientIP(r))
 }
+
+// Guest actions that each fan out to every staff screen (and some to staff
+// phones), so a script hammering them is felt by the whole venue. Each needs
+// a hosted table or a hold already; these bound what one phone can do.
+var (
+	// Call a waiter / cancel the call: a real guest taps a few times a visit.
+	assistLimiter = newIPRateLimiter(10, time.Minute)
+	// Placing and cancelling orders.
+	orderLimiter = newIPRateLimiter(10, time.Minute)
+	// Confirming a booking (on top of the hold limit).
+	bookingConfirmLimiter = newIPRateLimiter(10, 10*time.Minute)
+)

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"sync"
@@ -27,9 +28,9 @@ var Hub = wshub.NewHub()
 var CartStore *cart.Store
 
 const (
-	topicMenu        = "menu"
-	topicAdminMenu   = "admin:menu"
-	topicAdminTables = "admin:tables"
+	topicMenu      = "menu"
+	topicAdminMenu = "admin:menu"
+	topicFloor     = "floor"
 )
 
 func topicTableStatus(tableNumber int) string {
@@ -67,11 +68,14 @@ const topicAssistance = "worker:assistance"
 
 // oobWrap wraps an HTML fragment in an htmx out-of-band swap targeting the
 // given element id, for pushing over a websocket via the htmx ws extension.
+// It swaps the element's contents (innerHTML), not the element itself, so
+// the target keeps its own class — replacing it wholesale used to strip
+// e.g. #order-feed's "order-grid" class the moment the socket connected.
 func oobWrap(id string, content []byte) []byte {
 	b := make([]byte, 0, len(content)+64)
 	b = append(b, `<div id="`...)
 	b = append(b, id...)
-	b = append(b, `" hx-swap-oob="true">`...)
+	b = append(b, `" hx-swap-oob="innerHTML">`...)
 	b = append(b, content...)
 	b = append(b, `</div>`...)
 	return b
@@ -90,7 +94,7 @@ const sessionRecheckInterval = 5 * time.Second
 
 // wsKickCloseCode is a custom WebSocket close code (RFC 6455's 4000-4999
 // application-specific range) sent when a connected staff member's session
-// stops being valid while their socket is still open. worker_dashboard.html
+// stops being valid while their socket is still open. worker_app.html
 // and admin_dashboard.html both listen for htmx:wsClose and redirect to
 // /login when they see it — otherwise a deactivated account's already-open
 // tab would keep receiving live updates indefinitely, looking exactly like
@@ -143,6 +147,9 @@ func pumpWS(w http.ResponseWriter, r *http.Request, topics []string, initial []b
 		return
 	}
 	defer conn.Close()
+	// Clients never send data frames; without a cap gorilla buffers any
+	// size, and the guest sockets need no login.
+	conn.SetReadLimit(512)
 
 	ch, unsubscribe := mergeTopics(topics)
 	defer unsubscribe()
@@ -198,6 +205,7 @@ func WorkerOrdersWS(w http.ResponseWriter, r *http.Request) {
 	bucket := orderFeedBucket(user)
 	b, err := renderOrderFeedHTML(bucket)
 	if err != nil {
+		log.Printf("order feed %s: %v", bucket, err) // #nosec G706 -- bucket is one of our department names
 		http.Error(w, "Failed to load orders", http.StatusInternalServerError)
 		return
 	}
@@ -215,30 +223,53 @@ func WorkerDJWS(w http.ResponseWriter, r *http.Request) {
 	pumpWS(w, r, []string{topicWorkerDJ}, oobWrap("dj-feed", b), sessionID)
 }
 
+// TableStatusWS is the host's live feed for their table. Only the phone that
+// hosts table {number} may open it (anyone could otherwise watch any table's
+// orders and song requests by counting numbers), plus a phone whose table was
+// just released, which is told to leave.
 func TableStatusWS(w http.ResponseWriter, r *http.Request) {
 	tableNum, err := strconv.Atoi(chi.URLParam(r, "number"))
 	if err != nil {
 		http.Error(w, "Invalid table", http.StatusBadRequest)
 		return
 	}
-	initial := append(oobWrap("order-status", renderOrderStatusHTML(tableNum)), oobWrap("song-status", renderSongStatusHTML(tableNum))...)
-	// The shared, table-wide topic covers order-status/song-status only —
-	// nothing session-specific goes out on it (see topicSessionOrders,
-	// SEC-11). A guest's own "Your orders" list rides a separate topic
-	// scoped to their session, so no other socket on this same table can
-	// see it.
-	topics := []string{topicTableStatus(tableNum)}
-	if sessionCookie, err := r.Cookie(GuestSessionCookieName); err == nil {
-		initial = append(initial, oobWrap("placed-orders", renderPlacedOrdersHTML(sessionCookie.Value))...)
-		topics = append(topics, topicSessionOrders(sessionCookie.Value))
+	sessionCookie, err := r.Cookie(GuestSessionCookieName)
+	if err != nil {
+		http.Error(w, "Scan the QR code on your table", http.StatusForbidden)
+		return
 	}
+	// A phone waking up after its table was released reconnects here
+	// first — send it off the menu straight away.
+	if wasReleased(sessionCookie.Value) {
+		pumpWS(w, r, []string{topicSessionOrders(sessionCookie.Value)}, sessionEndOOB(tableNum), "")
+		return
+	}
+	if t, err := db.GetTableByHostSession(sessionCookie.Value); err != nil || t.Number != tableNum {
+		http.Error(w, "Scan the QR code on your table", http.StatusForbidden)
+		return
+	}
+	initial := append(oobWrap("order-status", renderOrderStatusHTML(tableNum)), oobWrap("song-status", renderSongStatusHTML(tableNum))...)
+	initial = append(initial, oobWrap("placed-orders", renderPlacedOrdersHTML(sessionCookie.Value))...)
+	// The host's "Call a waiter" sheet rides their session topic too, so a
+	// phone that slept through "on the way" / a cancel catches up here.
+	initial = append(initial, oobWrap("assist-panel", renderAssistPanelHTML(tableNum, false))...)
+	// The table-wide topic carries order-status/song-status; the guest's own
+	// "Your orders" list rides a topic scoped to their session (SEC-11).
+	topics := []string{topicTableStatus(tableNum), topicSessionOrders(sessionCookie.Value)}
 	pumpWS(w, r, topics, initial, "")
 }
 
 // MenuWS serves the guest-facing live menu: product availability/price/
 // stock changes and the cart-refresh nudge (see menu.go) both broadcast here.
 func MenuWS(w http.ResponseWriter, r *http.Request) {
-	b, err := renderGuestProductListHTML()
+	// The menu depends on the table's area (Menus & hours); ?table=N says which.
+	zone := ""
+	if n, err := strconv.Atoi(r.URL.Query().Get("table")); err == nil {
+		if t, err := db.GetTable(n); err == nil {
+			zone = t.Zone
+		}
+	}
+	b, err := renderGuestProductListHTML(zone)
 	if err != nil {
 		http.Error(w, "Failed to load menu", http.StatusInternalServerError)
 		return
@@ -247,7 +278,7 @@ func MenuWS(w http.ResponseWriter, r *http.Request) {
 	if djSection, err := renderDJSectionHTML(); err == nil {
 		initial = append(initial, oobWrap("dj-section", djSection)...)
 	}
-	pumpWS(w, r, []string{topicMenu}, initial, "")
+	pumpWS(w, r, []string{topicMenu, topicMenuZone(zone)}, initial, "")
 }
 
 // AdminMenuWS keeps the admin dashboard's menu/inventory list live —
@@ -264,17 +295,11 @@ func AdminMenuWS(w http.ResponseWriter, r *http.Request) {
 	pumpWS(w, r, []string{topicAdminMenu}, oobWrap("menuList", b), sessionID)
 }
 
-// AdminTablesWS keeps the admin dashboard's table grid live — a guest
-// claiming/leaving a table, or an admin force-releasing/adding/removing
-// one, all broadcast here.
-func AdminTablesWS(w http.ResponseWriter, r *http.Request) {
-	b, err := renderTableListHTML()
-	if err != nil {
-		http.Error(w, "Failed to load tables", http.StatusInternalServerError)
-		return
-	}
+// FloorWS pings the Floor page whenever anything on the floor changes
+// (see BroadcastFloor); the page then re-fetches /admin/floor/live.
+func FloorWS(w http.ResponseWriter, r *http.Request) {
 	sessionID, _ := auth.SessionIDFromRequest(r)
-	pumpWS(w, r, []string{topicAdminTables}, oobWrap("table-grid", b), sessionID)
+	pumpWS(w, r, []string{topicFloor}, []byte("hello"), sessionID)
 }
 
 // AdminStatsWS keeps the admin dashboard's overview numbers live, scoped to

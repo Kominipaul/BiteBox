@@ -1,0 +1,43 @@
+{{/* Work-mode shell for pages that also exist in the back office (Floor,
+     Bookings): the same content templates as the admin shell (bk_layout.html),
+     wrapped in the staff app's own chrome instead of the admin sidebar. A
+     manager or waiter who opens Floor from the app stays in the app: same top
+     bar, same tabs, one tap back to Orders. */}}
+{{ define "wk-layout" }}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>{{ template "title" . }} · {{ .VenueName }}</title>
+  <link rel="stylesheet" href="/static/floor.css?v={{ .V }}">
+  <link rel="stylesheet" href="/static/staff.css?v={{ .V }}">
+  <link rel="stylesheet" href="/static/admin.css?v={{ .V }}">
+  <link rel="stylesheet" href="/static/worker.css?v={{ .V }}">
+  <link rel="stylesheet" href="/brand.css">
+  <link rel="icon" href="/brand/icon.png">
+  <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="{{ .VenueName }}">
+  <script src="/static/js/base.js?v={{ .V }}"></script>
+  <script src="/static/vendor/htmx.min.js"></script>
+  <script src="/static/vendor/htmx-ws.js"></script>
+  <script src="/static/pwa.js?v={{ .V }}" defer></script>
+  <script src="/static/sheet.js?v={{ .V }}"></script>
+</head>
+<body class="wk wk-root wk-page" data-wk data-kind="{{ .Kind }}" data-first="{{ .First }}">
+{{ template "worker-top" . }}
+{{ template "worker-tabs" . }}
+<div class="wconn" id="conn" role="status" hidden>Connection lost. Reconnecting, updates will resume by themselves.</div>
+<main class="wmain wk-content">
+  {{ template "content" . }}
+</main>
+{{ template "worker-sheet" . }}
+{{ template "worker-toast" }}
+{{ template "bk-runtime" . }}
+<script src="/static/worker.js?v={{ .V }}"></script>
+</body>
+</html>
+{{ end }}

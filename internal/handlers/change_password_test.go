@@ -147,7 +147,7 @@ func TestChangePasswordSubmitRejectsTooShortPassword(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (re-rendered form with error)", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "at least 6 characters") {
+	if !strings.Contains(w.Body.String(), "at least 8 characters") {
 		t.Errorf("body missing expected length error: %s", w.Body.String())
 	}
 }
@@ -181,7 +181,7 @@ func TestChangePasswordPageReflectsForcedFlag(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "default seeded password") {
+	if !strings.Contains(w.Body.String(), "someone else chose") {
 		t.Errorf("forced page should explain why the user landed here: %s", w.Body.String())
 	}
 
@@ -195,7 +195,7 @@ func TestChangePasswordPageReflectsForcedFlag(t *testing.T) {
 	if w2.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", w2.Code, w2.Body.String())
 	}
-	if strings.Contains(w2.Body.String(), "default seeded password") {
+	if strings.Contains(w2.Body.String(), "someone else chose") {
 		t.Error("voluntary visit should not show the forced-flow notice")
 	}
 }
@@ -238,5 +238,33 @@ func TestRequireRoleRedirectsForcedAccountsExceptToChangePassword(t *testing.T) 
 
 	if !reached {
 		t.Errorf("a forced account must still reach /change-password itself, got status %d", w2.Code)
+	}
+}
+
+// Changing a password signs out every other session, so a stolen cookie
+// stops working.
+func TestChangePasswordSubmitEndsOtherSessions(t *testing.T) {
+	user := newChangePasswordTestUser(t, "oldpass1", false)
+	stolen := auth.GenerateSessionID()
+	if err := db.CreateAuthSession(stolen, user.ID); err != nil {
+		t.Fatalf("CreateAuthSession: %v", err)
+	}
+
+	r := httptest.NewRequest(http.MethodPost, "/change-password", changePasswordForm("oldpass1", "newpass1", "newpass1"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	ChangePasswordSubmit(w, withPushTestUser(r, user))
+
+	if _, err := db.GetUserBySessionID(stolen); err == nil {
+		t.Error("old session still valid after password change")
+	}
+	var fresh string
+	for _, c := range w.Result().Cookies() {
+		if c.Name == auth.SessionCookieName {
+			fresh = c.Value
+		}
+	}
+	if _, err := db.GetUserBySessionID(fresh); err != nil {
+		t.Errorf("current device should get a working new session: %v", err)
 	}
 }

@@ -1,0 +1,193 @@
+{{ define "layout" }}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>{{ template "title" . }} · {{ .VenueName }}</title>
+  <link rel="stylesheet" href="/static/floor.css?v={{ .V }}">
+  <link rel="stylesheet" href="/static/staff.css?v={{ .V }}">
+  <link rel="stylesheet" href="/static/admin.css?v={{ .V }}">
+  <link rel="stylesheet" href="/brand.css">
+  <link rel="icon" href="/brand/icon.png">
+  <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="{{ .VenueName }}">
+  <script src="/static/js/base.js?v={{ .V }}"></script>
+  <script src="/static/vendor/htmx.min.js"></script>
+  <script src="/static/vendor/htmx-ws.js"></script>
+  <script src="/static/pwa.js?v={{ .V }}" defer></script>
+  <script src="/static/sheet.js?v={{ .V }}"></script>
+</head>
+<body>
+<div class="shell">
+  <!-- Phones: slim top bar + slide-out menu (the sidebar) + bottom quick actions. -->
+  <header class="mtop">
+    <button type="button" class="mtop-btn" id="menuBtn" aria-label="Open menu" aria-controls="side" aria-expanded="false">{{ template "i-menu-lines" }}</button>
+    <div class="mtop-title"><b>{{ template "title" . }}</b><small>{{ .VenueName }}</small></div>
+    <span class="mtop-mode">{{ template "mode-switch" . }}</span>
+    <span class="av av0 mtop-av" title="{{ .Username }}">{{ .Initials }}</span>
+  </header>
+  <div class="side-scrim" id="sideScrim"></div>
+
+  <aside class="side" id="side">
+    <a class="brand" href="{{ .Start }}">
+      <span class="brand-logo" aria-hidden="true"></span>
+      <span class="brand-mark">{{ template "i-cal" }}</span>
+      <span><b class="brand-name">{{ .VenueName }}</b><small>{{ .Role }}</small></span>
+    </a>
+    <div class="side-mode">{{ template "mode-switch" . }}</div>
+
+    {{/* Only the pages this account may open (models.User.Can). */}}
+    <div class="nav-label">Overview</div>
+    <nav class="nav" aria-label="Overview">
+      {{ if .Can.dashboard }}<a href="/admin" {{ if eq .Nav "home" }}aria-current="page"{{ end }}>{{ template "i-chart" }}Dashboard<small>Live</small></a>{{ end }}
+      {{ if .IsAdmin }}<a href="/admin/live" {{ if eq .Nav "live" }}aria-current="page"{{ end }}>{{ template "i-bell" }}Order feed<small>Live</small></a>
+      {{ else }}<a href="/worker">{{ template "i-bell" }}Order feed<small>Kitchen · bar</small></a>{{ end }}
+    </nav>
+
+    {{ if or .Can.bookings .Can.floor }}
+    <div class="nav-label">Bookings</div>
+    <nav class="nav" aria-label="Bookings">
+      {{ if .Can.bookings }}<a href="/admin/bookings" {{ if eq .Nav "bookings" }}aria-current="page"{{ end }}>{{ template "i-list" }}Bookings<small>All</small></a>{{ end }}
+      {{ if .Can.floor }}<a href="/admin/floor" {{ if eq .Nav "floor" }}aria-current="page"{{ end }}>{{ template "i-map" }}Floor<small>Live</small></a>{{ end }}
+    </nav>
+    {{ end }}
+
+    {{ if .Can.menu }}
+    <div class="nav-label">Menu</div>
+    <nav class="nav" aria-label="Menu">
+      <a href="/admin/menu" {{ if eq .Nav "menu" }}aria-current="page"{{ end }}>{{ template "i-menu" }}Menu &amp; stock</a>
+      <a href="/admin/menu/categories" {{ if eq .Nav "categories" }}aria-current="page"{{ end }}>{{ template "i-tag" }}Categories</a>
+      <a href="/admin/menu/hours" {{ if eq .Nav "hours" }}aria-current="page"{{ end }}>{{ template "i-clock" }}Menus &amp; hours</a>
+    </nav>
+    {{ end }}
+
+    {{ if or .Can.map .Can.team }}
+    <div class="nav-label">Venue</div>
+    <nav class="nav" aria-label="Venue">
+      {{ if .Can.map }}<a href="/admin/map" {{ if eq .Nav "editor" }}aria-current="page"{{ end }}>{{ template "i-pen" }}Map editor<small>Layout</small></a>{{ end }}
+      {{ if .Can.team }}<a href="/admin/team" {{ if eq .Nav "team" }}aria-current="page"{{ end }}>{{ template "i-users" }}{{ if .IsAdmin }}Staff{{ else }}Staff help{{ end }}</a>{{ end }}
+    </nav>
+    {{ end }}
+
+    {{ if or .Can.orders .Can.logs }}
+    <div class="nav-label">Reports</div>
+    <nav class="nav" aria-label="Reports">
+      {{ if .Can.orders }}<a href="/admin/orders" {{ if eq .Nav "orders" }}aria-current="page"{{ end }}>{{ template "i-receipt" }}Orders</a>{{ end }}
+      {{ if .Can.logs }}<a href="/admin/logs" {{ if eq .Nav "logs" }}aria-current="page"{{ end }}>{{ template "i-bell" }}Logs</a>{{ end }}
+    </nav>
+    {{ end }}
+
+    {{ if .Can.settings }}
+    <div class="nav-label">System</div>
+    <nav class="nav" aria-label="System">
+      <a href="/admin/settings" {{ if eq .Nav "settings" }}aria-current="page"{{ end }}>{{ template "i-sliders" }}Settings</a>
+      {{ if .Can.system }}<a href="/admin/system" {{ if eq .Nav "system" }}aria-current="page"{{ end }}>{{ template "i-palette" }}Look &amp; brand<small>Branding</small></a>{{ end }}
+    </nav>
+    {{ end }}
+
+    <div class="side-foot">
+      <nav class="nav">
+        <a href="/book" target="_blank" rel="noopener">{{ template "i-ext" }}Guest page<small>/book</small></a>
+        <a href="/admin/guide" {{ if eq .Nav "guide" }}aria-current="page"{{ end }}>{{ template "i-help" }}Guide<small>How it works</small></a>
+        <a href="/change-password">{{ template "i-key" }}Password</a>
+        <a href="/account/2fa">{{ template "i-shield" }}Two-step login</a>
+        <a href="#" data-screeninfo>{{ template "i-eye" }}Screen info</a>
+      </nav>
+      <div class="side-card user">
+        <span class="av av0">{{ .Initials }}</span>
+        <div><div class="who-name">{{ .Username }}</div><small>{{ .Role }}</small></div>
+        <form method="POST" action="/logout"><button class="icon-btn" type="submit" title="Log out" aria-label="Log out">{{ template "i-logout" }}</button></form>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    {{ template "content" . }}
+  </main>
+
+  <nav class="mtabs" aria-label="Quick actions">
+    {{ if .Can.dashboard }}<a href="/admin" {{ if eq .Nav "home" }}aria-current="page"{{ end }}>{{ template "i-chart" }}<span>Dashboard</span></a>
+    {{ else }}<a href="/worker">{{ template "i-bell" }}<span>Feed</span></a>{{ end }}
+    {{ if .Can.bookings }}<a href="/admin/bookings" {{ if eq .Nav "bookings" }}aria-current="page"{{ end }}>{{ template "i-list" }}<span>Bookings</span></a>
+    <a href="/admin/bookings/new" data-modal="/admin/bookings/new" class="mtabs-add" aria-label="New booking"><span class="mtabs-plus">{{ template "i-plus-bold" }}</span></a>
+    {{ else }}<a href="/admin/orders" {{ if eq .Nav "orders" }}aria-current="page"{{ end }}>{{ template "i-receipt" }}<span>Orders</span></a><span></span>{{ end }}
+    {{ if .Can.floor }}<a href="/admin/floor" {{ if eq .Nav "floor" }}aria-current="page"{{ end }}>{{ template "i-map" }}<span>Floor</span></a>{{ else }}<span></span>{{ end }}
+    <button type="button" id="moreBtn" aria-controls="side">{{ template "i-menu-lines" }}<span>More</span></button>
+  </nav>
+</div>
+{{ template "bk-runtime" . }}
+<script src="/static/js/admin-shell.js?v={{ .V }}"></script>
+
+</body>
+</html>
+{{ end }}
+
+{{ define "i-cal" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>{{ end }}
+{{ define "i-list" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>{{ end }}
+{{ define "i-map" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3 3 6v15l6-3 6 3 6-3V3l-6 3-6-3Z"/><path d="M9 3v15M15 6v15"/></svg>{{ end }}
+{{ define "i-plus" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>{{ end }}
+{{ define "i-pen" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>{{ end }}
+{{ define "i-palette" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.7-.8 1.7-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.8-1.7 1.7-1.7h2A4.6 4.6 0 0 0 21 10.6C21 6.4 17 3 12 3Z"/><circle cx="7.5" cy="10.5" r="1.2"/><circle cx="11" cy="7" r="1.2"/><circle cx="15.5" cy="7.5" r="1.2"/></svg>{{ end }}
+{{ define "i-upload" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>{{ end }}
+{{ define "i-sliders" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>{{ end }}
+{{ define "i-ext" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>{{ end }}
+{{ define "i-back" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>{{ end }}
+{{ define "i-logout" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>{{ end }}
+{{ define "i-search" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>{{ end }}
+{{ define "i-check" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>{{ end }}
+{{ define "i-seat" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 11V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M3 11h18v4H3zM5 15v5M19 15v5"/></svg>{{ end }}
+{{ define "i-x" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></svg>{{ end }}
+{{ define "i-ban" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg>{{ end }}
+{{ define "i-edit" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>{{ end }}
+{{ define "i-undo" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/></svg>{{ end }}
+{{ define "i-trash" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>{{ end }}
+{{ define "i-dot" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/></svg>{{ end }}
+{{ define "i-chart" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>{{ end }}
+{{ define "i-menu" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v8a3 3 0 0 0 3 3v7M7 3v5M10 3v8a3 3 0 0 1-3 3M17 21V3c-2 0-4 3-4 7s2 5 4 5"/></svg>{{ end }}
+{{ define "i-tag" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>{{ end }}
+{{ define "i-qr" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/></svg>{{ end }}
+{{ define "i-users" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M16 3.1a4 4 0 0 1 0 7.8M22 21a7 7 0 0 0-4-6.3"/></svg>{{ end }}
+{{ define "i-receipt" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2Z"/><path d="M9 8h6M9 12h6"/></svg>{{ end }}
+{{ define "i-bell" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>{{ end }}
+{{ define "i-help" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17h.01"/></svg>{{ end }}
+{{ define "i-key" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.8-9.8M17 6l3 3M14 9l2 2"/></svg>{{ end }}
+{{ define "i-menu-lines" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>{{ end }}
+{{ define "i-plus-bold" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:2.6"><path d="M12 5v14M5 12h14"/></svg>{{ end }}
+{{ define "i-eye" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>{{ end }}
+{{ define "i-history" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>{{ end }}
+{{ define "i-clock" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>{{ end }}
+{{ define "i-shield" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6Z"/></svg>{{ end }}
+
+{{/* Everything a back-office page needs besides its chrome: the slide-over layer
+     (booking form, item editor…), toast, Layer/Live/BookingTime helpers, the
+     page's own scripts, and the shared htmx handlers. Used by the admin shell
+     ("layout") and by the work-mode shell (wk_layout.html), so a page like
+     Floor or Bookings behaves identically in both. */}}
+{{ define "bk-runtime" }}
+<!-- The slide-over layer every page uses (booking form, item editor…):
+     anything with data-modal="/url" loads that fragment into it. -->
+<div class="layer" id="bkModal" hidden>
+  <div class="layer-scrim" data-close></div>
+  <aside class="layer-panel" role="dialog" aria-modal="true" aria-label="Details"><div id="bkModalBody"></div></aside>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="/static/js/bk-runtime.js?v={{ .V }}"></script>
+{{ template "scripts" . }}
+<script src="/static/js/bk-forms.js?v={{ .V }}"></script>
+{{ end }}
+
+{{/* The Work / Admin switch. Both modes show it in the same spot and the mode
+     you're in is filled, so it's always obvious where you are and one tap
+     gets you to the other. Only accounts that have both get the switch
+     (.ModeAdmin set); an account that only has the back-office pages open by
+     URL gets a single way back to work. */}}
+{{ define "mode-switch" }}{{ if .ModeAdmin }}
+<div class="modesw" role="group" aria-label="Switch between work and admin">
+  <a href="{{ .ModeWork }}"{{ if eq .ModeNow "work" }} aria-current="true"{{ end }}>{{ template "i-users" }}<span>Work</span></a>
+  <a href="{{ .ModeAdmin }}"{{ if eq .ModeNow "admin" }} aria-current="true"{{ end }}>{{ template "i-sliders" }}<span>Admin</span></a>
+</div>
+{{ else if .ModeWork }}<a class="modesw solo" href="{{ .ModeWork }}">{{ template "i-back" }}<span>Back to work</span></a>{{ end }}{{ end }}

@@ -48,7 +48,7 @@ func TestSeedDefaultUsersCreatesOneAccountPerDepartment(t *testing.T) {
 }
 
 func TestCreateOrderPersistsTipAndSplitCount(t *testing.T) {
-	if err := CreateTable(101); err != nil {
+	if err := CreateTable(8101); err != nil {
 		t.Fatalf("CreateTable: %v", err)
 	}
 	productID, err := CreateProduct("Test Beer", 4.0, -1, models.CategoryOther, "", "", 24)
@@ -57,7 +57,7 @@ func TestCreateOrderPersistsTipAndSplitCount(t *testing.T) {
 	}
 
 	items := []models.OrderItem{{ProductID: productID, Name: "Test Beer", Price: 4.0, Quantity: 2}}
-	orderID, err := CreateOrder(101, "test-session", models.PaymentMethodCash, models.PaymentStatusUnpaid, "", 8.0, 1.5, 3, items)
+	orderID, err := CreateOrder(8101, "test-session", models.PaymentMethodCash, models.PaymentStatusUnpaid, "", 8.0, 1.5, 3, items)
 	if err != nil {
 		t.Fatalf("CreateOrder: %v", err)
 	}
@@ -308,5 +308,22 @@ func TestGetOrderHistoryPagination(t *testing.T) {
 	}
 	if firstPage[0].ID == secondPage[0].ID || firstPage[1].ID == secondPage[0].ID {
 		t.Error("second page overlaps the first — offset isn't being applied correctly")
+	}
+}
+
+func TestMaintainDeletesYearOldBookings(t *testing.T) {
+	for code, end := range map[string]string{"OLD1": "2000-01-01 20:00", "NEW1": "2999-01-01 20:00"} {
+		if _, err := DB.Exec(`INSERT INTO bookings (code, table_number, starts_at, ends_at, guests, name, phone, email, notes)
+			VALUES (?, 1, ?, ?, 2, 'Maria', '6900000000', 'm@x.gr', 'window seat')`, code, end, end); err != nil {
+			t.Fatalf("insert %s: %v", code, err)
+		}
+	}
+	Maintain()
+	for code, want := range map[string]int{"OLD1": 0, "NEW1": 1} {
+		var n int
+		DB.QueryRow("SELECT COUNT(*) FROM bookings WHERE code = ?", code).Scan(&n)
+		if n != want {
+			t.Errorf("%s: %d rows after Maintain, want %d", code, n, want)
+		}
 	}
 }

@@ -1,32 +1,66 @@
+{{/* The guest's "Your orders" (Service sheet, host_menu.html #placed-orders),
+     pushed live over their session socket on every change. Each order is one
+     row (status · time · items · total) that opens to its progress tracker
+     (received → preparing → ready → delivered), what's on it with dish
+     photos, payment, a receipt and cancel. Only the newest order still in
+     progress starts open; the page remembers what the guest opened/closed.
+     data-status feeds the Service button's count. */}}
+{{ $thumbs := .Thumbs }}
+{{ $opened := false }}
 {{ range .Orders }}
-<div class="placed-order {{ if eq .Status "cancelled" }}canceled{{ end }}">
-  <div class="po-top">
-    <span class="po-status {{ if eq .Status "cancelled" }}canceled{{ end }}">
-      {{ if eq .Status "pending" }}Order placed
-      {{ else if eq .Status "preparing" }}Being prepared
-      {{ else if eq .Status "ready" }}Ready — on its way!
-      {{ else if eq .Status "served" }}Served
-      {{ else if eq .Status "cancelled" }}Cancelled
-      {{ else }}{{ .Status }}{{ end }}
+{{ $n := 1 }}{{ if eq .Status "preparing" }}{{ $n = 2 }}{{ else if eq .Status "ready" }}{{ $n = 3 }}{{ else if eq .Status "served" }}{{ $n = 5 }}{{ end }}
+{{ $active := or (eq .Status "pending") (eq .Status "preparing") (eq .Status "ready") }}
+<details class="po{{ if eq .Status "cancelled" }} is-cancelled{{ end }}{{ if eq .Status "served" }} is-served{{ end }}" data-status="{{ .Status }}" data-id="{{ .ID }}"{{ if and $active (not $opened) }} open{{ $opened = true }}{{ end }}>
+  <summary class="po-head">
+    <span class="po-ico" aria-hidden="true">{{ if eq .Status "cancelled" }}<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></svg>{{ else if eq .Status "served" }}<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>{{ else }}<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>{{ end }}</span>
+    <span class="po-sum">
+      <b>{{ if eq .Status "cancelled" }}Cancelled{{ else if eq .Status "served" }}Delivered{{ else if eq .Status "ready" }}Ready, on its way{{ else if eq .Status "preparing" }}Being prepared{{ else }}Order received{{ end }}</b>
+      <small>{{ if $active }}<i class="po-live" aria-hidden="true"></i>{{ end }}{{ .CreatedAt.Local.Format "15:04" }} · {{ .ItemCount }} item{{ if ne .ItemCount 1 }}s{{ end }}</small>
     </span>
-    <span class="po-time">{{ .CreatedAt.Local.Format "15:04" }}</span>
-  </div>
-  {{ range .Items }}
-  <div class="po-item">{{ .Quantity }}× {{ .Name }}
-    {{ if .Excluded }} <span class="po-excl">(without {{ range $i, $e := .Excluded }}{{ if $i }}, {{ end }}{{ $e }}{{ end }})</span>{{ end }}
-    {{ if .Extras }} <span class="po-excl" style="color:var(--info);">(+ {{ range $i, $e := .Extras }}{{ if $i }}, {{ end }}{{ $e }}{{ end }})</span>{{ end }}
-  </div>
+    <span class="po-sum-total">€{{ printf "%.2f" .GrandTotal }}</span>
+    <svg class="po-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+  </summary>
+  <div class="po-body">
+
+  {{ if ne .Status "cancelled" }}
+  <ol class="po-steps" aria-label="Order progress">
+    <li class="{{ if gt $n 1 }}done{{ else }}now{{ end }}"><span class="po-dot"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h4"/></svg></span><small>Received</small></li>
+    <li class="{{ if gt $n 2 }}done{{ else if eq $n 2 }}now{{ end }}"><span class="po-dot"><svg viewBox="0 0 24 24"><path d="M6 13.9A4 4 0 0 1 7.5 6a5 5 0 0 1 9 0A4 4 0 0 1 18 13.9V20H6zM6 17h12"/></svg></span><small>Preparing</small></li>
+    <li class="{{ if gt $n 3 }}done{{ else if eq $n 3 }}now{{ end }}"><span class="po-dot"><svg viewBox="0 0 24 24"><path d="M4 17h16M12 7a7 7 0 0 1 7 7v3H5v-3a7 7 0 0 1 7-7zM12 4v3M3 20h18"/></svg></span><small>Ready</small></li>
+    <li class="{{ if gt $n 4 }}done{{ end }}"><span class="po-dot"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><small>Delivered</small></li>
+  </ol>
   {{ end }}
-  {{ if .Note }}<div class="po-note">Note: {{ .Note }}</div>{{ end }}
-  {{ if and .RefundRequested (eq .PaymentStatus "paid") (ne .Status "cancelled") }}
-  <div class="po-note" style="color:var(--accent-strong);">💰 Refund requested — a staff member will process this.</div>
-  {{ end }}
-  {{ if gt .TipAmount 0.0 }}<div class="po-note">Includes a €{{ printf "%.2f" .TipAmount }} tip for staff</div>{{ end }}
-  {{ if gt .SplitCount 1 }}<div class="po-note">Split {{ .SplitCount }} ways — €{{ printf "%.2f" .PerPersonTotal }} per person</div>{{ end }}
-  <div class="po-footer">
-    <span class="po-method">{{ if eq .PaymentMethod "card" }}💳 Card{{ else }}💵 Cash{{ end }}{{ if eq .PaymentStatus "paid" }} · paid{{ end }}</span>
-    <span class="po-total">€{{ printf "%.2f" .GrandTotal }}</span>
+
+  <div class="po-card">
+    <div class="po-card-head"><span>Your order</span><small>{{ .ItemCount }} item{{ if ne .ItemCount 1 }}s{{ end }}</small></div>
+    <ul class="po-lines">
+      {{ range .Items }}
+      <li>
+        <span class="po-thumb">{{ with index $thumbs .ProductID }}<img src="{{ . }}" alt="" loading="lazy" data-fallback>{{ end }}</span>
+        <span class="po-qty">{{ .Quantity }}×</span>
+        <span class="po-name">{{ .Name }}
+          {{ if .Extras }}<small class="po-mod">+ {{ range $i, $e := .Extras }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}</small>{{ end }}
+          {{ if .Excluded }}<small class="po-mod">without {{ range $i, $e := .Excluded }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}</small>{{ end }}
+        </span>
+      </li>
+      {{ end }}
+    </ul>
+    {{ if .Note }}<p class="po-note">Note: {{ .Note }}</p>{{ end }}
+    {{ if and .RefundRequested (eq .PaymentStatus "paid") (ne .Status "cancelled") }}<p class="po-note po-warn">Refund requested. A staff member will sort it out.</p>{{ end }}
+    {{ if gt .TipAmount 0.0 }}<p class="po-note">Includes a €{{ printf "%.2f" .TipAmount }} tip for staff</p>{{ end }}
+    {{ if gt .SplitCount 1 }}<p class="po-note">Split {{ .SplitCount }} ways: €{{ printf "%.2f" .PerPersonTotal }} each</p>{{ end }}
+    <footer class="po-foot">
+      <span class="po-method">
+        {{ if eq .PaymentMethod "card" }}<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>Card{{ else }}<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg>Cash{{ end }}{{ if eq .PaymentStatus "paid" }} · paid{{ end }}
+      </span>
+      <b class="po-total">€{{ printf "%.2f" .GrandTotal }}</b>
+    </footer>
   </div>
+
+  <div class="po-links">
+  {{ if ne .Status "cancelled" }}
+  <a class="po-receipt" href="/orders/{{ .ID }}/receipt" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Receipt</a>
+  {{ end }}
   {{ if or (eq .Status "pending") (eq .Status "preparing") }}
     {{ if eq .PaymentStatus "paid" }}
       {{ if not .RefundRequested }}
@@ -36,7 +70,13 @@
     <button class="po-cancel" hx-post="/orders/{{ .ID }}/cancel" hx-target="#placed-orders" hx-swap="innerHTML" hx-confirm="Cancel this order?">Cancel order</button>
     {{ end }}
   {{ end }}
-</div>
+  </div>
+  </div>
+</details>
 {{ else }}
-<p class="empty-note" id="placedEmpty">No orders placed yet.</p>
+<div class="po-empty" id="placedEmpty">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2"/></svg>
+  <b>No orders yet</b>
+  <small>What you order shows up here, with live progress.</small>
+</div>
 {{ end }}

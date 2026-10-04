@@ -82,3 +82,20 @@ func TestIsValidIngredientKind(t *testing.T) {
 		t.Error("an unrecognized ingredient kind should not be valid")
 	}
 }
+
+func TestUserCan(t *testing.T) {
+	waiter := User{Role: RoleWorker, Department: DepartmentWaiter}
+	if !waiter.Can("bookings") || !waiter.Can("floor") || waiter.Can("menu") {
+		t.Fatal("waiter defaults should be bookings + floor only")
+	}
+	custom := User{Role: RoleWorker, Department: DepartmentWaiter, PagesCustom: true, Pages: []string{"menu", "staff"}}
+	if !custom.Can("menu") || custom.Can("bookings") {
+		t.Fatal("custom pages should replace the defaults")
+	}
+	if custom.Can("staff") || custom.Can("settings") {
+		t.Fatal("staff/settings are admin-only, never grantable")
+	}
+	if !(User{Role: RoleAdmin}).Can("settings") {
+		t.Fatal("admins can open everything")
+	}
+}

@@ -1,15 +1,20 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 
+	"bitebox/internal/auth"
 	"bitebox/internal/db"
 	"bitebox/internal/models"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func TestAdminDeleteProductRemovesProductAndIngredients(t *testing.T) {
@@ -193,5 +198,172 @@ func TestAdminDeleteProductRejectsNonNumericID(t *testing.T) {
 	AdminDeleteProduct(w, r)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 for a non-numeric id", w.Code)
+	}
+}
+
+// TestProductEditor: the Menu & stock editor panel opens, the list's quick
+// stock button nudges stock, and saving from the panel closes it.
+func TestProductEditor(t *testing.T) {
+	id, err := db.CreateProduct("Editor Test Latte", 3.5, 4, models.CategoryOther, "", "", 24)
+	if err != nil {
+		t.Fatalf("CreateProduct: %v", err)
+	}
+	ctx := func(r *http.Request) *http.Request {
+		rc := chi.NewRouteContext()
+		rc.URLParams.Add("id", strconv.Itoa(id))
+		return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rc))
+	}
+
+	w := httptest.NewRecorder()
+	AdminProductEditor(w, ctx(httptest.NewRequest(http.MethodGet, "/admin/products/x/edit", nil)))
+	if !strings.Contains(w.Body.String(), "Editor Test Latte") || !strings.Contains(w.Body.String(), "Customisation") {
+		t.Fatalf("editor didn't render the item")
+	}
+
+	r := httptest.NewRequest(http.MethodPost, "/admin/products/x/stock", strings.NewReader("delta=1"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	AdminProductStock(httptest.NewRecorder(), ctx(r))
+	if p, _ := db.GetProductByID(id); p.Stock != 5 {
+		t.Fatalf("stock after +1 = %d, want 5", p.Stock)
+	}
+
+	form := "name=Editor+Test+Latte&price=4&category=" + url.QueryEscape(models.CategoryOther) + "&vat_rate=24&stock=5"
+	r = httptest.NewRequest(http.MethodPost, "/admin/products/x?from=editor", strings.NewReader(form))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	AdminUpdateProduct(w, ctx(r))
+	if w.Code != http.StatusNoContent || !strings.Contains(w.Header().Get("HX-Trigger"), "productSaved") {
+		t.Fatalf("save from editor: code %d trigger %q body %s", w.Code, w.Header().Get("HX-Trigger"), w.Body)
+	}
+	if p, _ := db.GetProductByID(id); p.Price != 4 {
+		t.Fatalf("price not saved: %v", p.Price)
+	}
+}
+
+// TestOrdersPage: an order shows up under today's unpaid filter, its panel
+// lists the items, and "Mark paid" from the panel sticks.
+func TestOrdersPage(t *testing.T) {
+	db.CreateTable(9701)
+	pid, err := db.CreateProduct("Orders Test Freddo", 3.5, -1, models.CategoryOther, "", "", 24)
+	if err != nil {
+		t.Fatalf("CreateProduct: %v", err)
+	}
+	items := []models.OrderItem{{ProductID: pid, Name: "Orders Test Freddo", Price: 3.5, Quantity: 2}}
+	id, err := db.CreateOrder(9701, "orders-test", models.PaymentMethodCash, models.PaymentStatusUnpaid, "", 7, 1, 1, items)
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	w := httptest.NewRecorder()
+	AdminOrderRows(w, httptest.NewRequest(http.MethodGet, "/admin/orders/rows?when=today&pay=unpaid&q=freddo", nil))
+	if !strings.Contains(w.Body.String(), "#"+strconv.Itoa(id)) {
+		t.Fatalf("order %d missing from today's unpaid list", id)
+	}
+	ctx := func(r *http.Request) *http.Request {
+		rc := chi.NewRouteContext()
+		rc.URLParams.Add("id", strconv.Itoa(id))
+		return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rc))
+	}
+	r := httptest.NewRequest(http.MethodPost, "/admin/orders/x/payment", strings.NewReader("paid=1"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	AdminOrderPayment(w, ctx(r))
+	if !strings.Contains(w.Body.String(), "Orders Test Freddo") || !strings.Contains(w.Body.String(), "Mark unpaid") {
+		t.Fatalf("panel after paying should list the item and offer Mark unpaid")
+	}
+	if o, _ := db.GetOrderByID(id); o.PaymentStatus != models.PaymentStatusPaid {
+		t.Fatalf("payment status = %q", o.PaymentStatus)
+	}
+}
+
+// TestStaffEditor: add an account from the panel, open it, reset its
+// password and deactivate it, all answering the panel.
+func TestStaffEditor(t *testing.T) {
+	admin := models.User{ID: 1, Username: "admin", Role: models.RoleAdmin}
+	as := func(r *http.Request, id string) *http.Request {
+		rc := chi.NewRouteContext()
+		rc.URLParams.Add("id", id)
+		ctx := context.WithValue(r.Context(), chi.RouteCtxKey, rc)
+		return r.WithContext(context.WithValue(ctx, userContextKey, admin))
+	}
+	post := func(h http.HandlerFunc, url, body, id string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, url, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		h(w, as(r, id))
+		return w
+	}
+	if w := post(AdminCreateStaff, "/admin/staff?from=editor", "username=editor_tess&password=secret99&role=bar", ""); w.Code != http.StatusNoContent || !strings.Contains(w.Header().Get("HX-Trigger"), "staffSaved") {
+		t.Fatalf("create: %d %q %s", w.Code, w.Header().Get("HX-Trigger"), w.Body)
+	}
+	u, err := db.GetUserByUsername("editor_tess")
+	if err != nil || u.Department != models.DepartmentBar {
+		t.Fatalf("created account: %+v %v", u, err)
+	}
+	id := strconv.Itoa(u.ID)
+	w := httptest.NewRecorder()
+	AdminStaffEdit(w, as(httptest.NewRequest(http.MethodGet, "/admin/staff/x/edit", nil), id))
+	if !strings.Contains(w.Body.String(), "editor_tess") || !strings.Contains(w.Body.String(), "Deactivate") {
+		t.Fatalf("edit panel missing account or Deactivate")
+	}
+	if w := post(AdminResetStaffPassword, "/admin/staff/x/reset-password?from=editor", "password=Newpass-77", id); !strings.Contains(w.Body.String(), "then picks their own") {
+		t.Fatalf("reset: %d %s", w.Code, w.Body)
+	}
+	if w := post(AdminDeactivateStaff, "/admin/staff/x/deactivate?from=editor", "", id); !strings.Contains(w.Body.String(), "Activate again") {
+		t.Fatalf("deactivate: %d %s", w.Code, w.Body)
+	}
+	if u, _ := db.GetUserByID(u.ID); u.IsActive {
+		t.Fatal("account still active")
+	}
+}
+
+// TestStaffAccess: custom page access set from the panel is stored, enforced
+// by RequirePage, and shows up in the account's history.
+func TestStaffAccess(t *testing.T) {
+	admin := models.User{ID: 1, Username: "admin", Role: models.RoleAdmin}
+	hash, _ := auth.HashPassword("secret99")
+	id, err := db.CreateUser("access_anna", hash, models.RoleWorker, models.DepartmentWaiter)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	rc := chi.NewRouteContext()
+	rc.URLParams.Add("id", strconv.Itoa(id))
+	r := httptest.NewRequest(http.MethodPost, "/admin/staff/x?from=editor",
+		strings.NewReader("username=access_anna&department=waiter&access_form=1&access_custom=1&pages=menu&pages=orders&pages=settings"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r = r.WithContext(context.WithValue(context.WithValue(r.Context(), chi.RouteCtxKey, rc), userContextKey, admin))
+	AdminUpdateStaff(httptest.NewRecorder(), r)
+
+	u, _ := db.GetUserByID(id)
+	if !u.PagesCustom || !u.Can("menu") || !u.Can("orders") || u.Can("bookings") || u.Can("settings") {
+		t.Fatalf("access not saved right: custom=%v pages=%v", u.PagesCustom, u.Pages)
+	}
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
+	for page, want := range map[string]int{"menu": 200, "bookings": 403} {
+		req := httptest.NewRequest(http.MethodPost, "/x", nil)
+		req = req.WithContext(context.WithValue(req.Context(), userContextKey, u))
+		w := httptest.NewRecorder()
+		RequirePage(page)(ok).ServeHTTP(w, req)
+		if w.Code != want {
+			t.Fatalf("RequirePage(%s) = %d, want %d", page, w.Code, want)
+		}
+	}
+	found := false
+	for _, h := range staffHistory("access_anna") {
+		found = found || strings.Contains(h.Text, "Page access changed")
+	}
+	if !found {
+		t.Fatal("access change missing from history")
+	}
+}
+
+// TestStaffListRenders guards the list template itself (a template error
+// only shows up when it's executed).
+func TestStaffListRenders(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/admin/staff", nil)
+	r = r.WithContext(context.WithValue(r.Context(), userContextKey, models.User{ID: 1, Username: "admin", Role: models.RoleAdmin}))
+	w := httptest.NewRecorder()
+	AdminStaffList(w, r)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Sign out everywhere") {
+		t.Fatalf("staff list: %d %.200s", w.Code, w.Body)
 	}
 }

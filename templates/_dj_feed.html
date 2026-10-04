@@ -1,17 +1,22 @@
-{{ range .Requests }}
-<div class="order-card">
-  <div class="order-top">
-    <span class="table-tag">Table {{ printf "%02d" .TableNumber }}</span>
-    <span class="timer-badge" style="background:var(--purple-soft);color:var(--purple);">€{{ printf "%.2f" .TipAmount }} tip</span>
-  </div>
-  <div class="order-items">
-    <div class="order-item">🎵 {{ .SongName }}</div>
-  </div>
-  <div style="display:flex;gap:10px;">
-    <button class="btn-primary-action action-served" style="flex:1;" hx-post="/worker/dj/{{ .ID }}/accept" hx-target="#dj-feed" hx-swap="innerHTML">Accept</button>
-    <button class="btn-primary-action" style="flex:1;background:var(--danger);color:#fff;" hx-post="/worker/dj/{{ .ID }}/reject" hx-target="#dj-feed" hx-swap="innerHTML">Reject</button>
-  </div>
+<div class="feed-meta" data-total="{{ len .Requests }}" hidden></div>
+{{ if .Requests }}
+<div class="stages one">
+  <section class="stage">
+  {{ range .Requests }}
+  <article class="oc dj" data-dj-id="{{ .ID }}">
+    <header class="oc-head">
+      <span class="oc-table" title="Table">{{ with index $.Tables .TableNumber }}{{ . }}{{ else }}–{{ end }}</span>
+      <div class="oc-meta">{{ if gt .TipAmount 0.0 }}<span class="flag ok">€{{ printf "%.2f" .TipAmount }} tip</span>{{ end }}</div>
+    </header>
+    <p class="dj-song">♪ {{ .SongName }}</p>
+    <div class="dj-acts">
+      <button type="button" class="oc-go" data-msg="Accepted: {{ .SongName }}" hx-post="/worker/dj/{{ .ID }}/accept" hx-target="#dj-feed" hx-swap="innerHTML">Play it</button>
+      <button type="button" class="w-btn danger" hx-post="/worker/dj/{{ .ID }}/reject" hx-target="#dj-feed" hx-swap="innerHTML">Skip</button>
+    </div>
+  </article>
+  {{ end }}
+  </section>
 </div>
 {{ else }}
-<p class="empty-note">No pending song requests.</p>
+<div class="w-empty"><span class="w-empty-ico">♪</span><b>No pending song requests.</b><small>Requests from the tables land here, with the tip.</small></div>
 {{ end }}

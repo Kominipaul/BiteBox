@@ -63,6 +63,7 @@
     .no-print { display: none; }
   }
 </style>
+<script src="/static/js/base.js"></script>
 </head>
 <body>
 
@@ -80,7 +81,7 @@
     <div class="divider"></div>
     <div class="center">
       <strong>ΑΠΟΔΕΙΞΗ ΛΙΑΝΙΚΗΣ ΠΩΛΗΣΗΣ</strong><br>
-      <span style="font-size:11px;color:#555;">(Retail Sale Receipt — demo)</span>
+      <span style="font-size:11px;color:#555;">(Retail Sale Receipt, demo)</span>
     </div>
     <div class="divider"></div>
 
@@ -137,7 +138,8 @@
     <div class="center mark">ΜΑΡΚ (demo): {{ .Order.DemoMARK }}</div>
   </div>
 
-  <button type="button" class="print-btn no-print" onclick="window.print()">🖨️ Print</button>
+  <!-- Print dialog: "Save as PDF" there is the download (phones and desktop). -->
+  <button type="button" class="print-btn no-print" data-print>Download / print</button>
 
 </body>
 </html>

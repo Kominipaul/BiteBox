@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	"bitebox/internal/models"
@@ -111,24 +110,23 @@ func scanOrder(row *sql.Row) (models.Order, error) {
 	return o, err
 }
 
-// staffExcludedStatuses is what the unfiltered ("staff"/admin) order feed
+// staffActive is what the unfiltered ("staff"/admin) order feed
 // hides — served/completed are done, cancelled never will be. "ready"
 // deliberately stays visible: that's the kitchen/bar → waiter handoff, a
 // waiter needs to see it to go deliver it.
-const excludeThree = "(?, ?, ?)"
+// Written as IN lists of the statuses still in play (not NOT IN of the done
+// ones) so idx_orders_status can seek straight to the handful of live
+// orders instead of scanning every order ever placed.
+const staffActive = "('pending', 'preparing', 'ready')"
 
-var staffExcludedStatuses = []interface{}{models.OrderStatusServed, models.OrderStatusCompleted, models.OrderStatusCancelled}
-
-// categoryExcludedStatuses is what a department-filtered (bar/kitchen) feed
+// categoryActive is what a department-filtered (bar/kitchen) feed
 // hides — same as staff's, plus "ready": once bar/kitchen mark something
 // ready, it's out of their hands, so it drops from their own view even
 // though it's still live for staff.
-const excludeFour = "(?, ?, ?, ?)"
-
-var categoryExcludedStatuses = []interface{}{models.OrderStatusReady, models.OrderStatusServed, models.OrderStatusCompleted, models.OrderStatusCancelled}
+const categoryActive = "('pending', 'preparing')"
 
 // ProductHasActiveOrders reports whether productID appears in any order
-// that isn't yet served/completed/cancelled (same staffExcludedStatuses cut
+// that isn't yet served/completed/cancelled (same staffActive cut
 // as the unfiltered staff feed — "done" is the same line everywhere in this
 // app). DeleteProduct's caller (AdminDeleteProduct) uses this to refuse
 // deleting a product mid-order: GetActiveOrdersByCategories (the bar/
@@ -144,8 +142,8 @@ var categoryExcludedStatuses = []interface{}{models.OrderStatusReady, models.Ord
 func ProductHasActiveOrders(productID int) (bool, error) {
 	var exists bool
 	err := DB.QueryRow(
-		"SELECT EXISTS(SELECT 1 FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.product_id = ? AND o.status NOT IN "+excludeThree+")",
-		append([]interface{}{productID}, staffExcludedStatuses...)...,
+		"SELECT EXISTS(SELECT 1 FROM orders o JOIN order_items oi ON oi.order_id = o.id WHERE o.status IN "+staffActive+" AND oi.product_id = ?)",
+		productID,
 	).Scan(&exists)
 	return exists, err
 }
@@ -192,7 +190,7 @@ func GetOrderItems(orderID int) ([]models.OrderItem, error) {
 // with no extra column needed.
 func GetActiveOrderForTable(tableNumber int) (models.Order, error) {
 	return scanOrder(DB.QueryRow(
-		"SELECT "+orderColumns+" FROM orders WHERE table_number = ? AND status != ? ORDER BY created_at DESC, id DESC LIMIT 1",
+		"SELECT "+orderColumns+" FROM orders WHERE table_number = ? AND status != ? ORDER BY id DESC LIMIT 1",
 		tableNumber, models.OrderStatusCompleted,
 	))
 }
@@ -202,65 +200,20 @@ func GetActiveOrderForTable(tableNumber int) (models.Order, error) {
 // "Your orders" list (every order they placed, not just the latest).
 func GetOrdersBySession(sessionID string, limit int) ([]models.Order, error) {
 	rows, err := DB.Query(
-		"SELECT "+orderColumns+" FROM orders WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+		"SELECT "+orderColumns+" FROM orders WHERE session_id = ? ORDER BY id DESC LIMIT ?",
 		sessionID, limit,
 	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var orders []models.Order
-	for rows.Next() {
-		var o models.Order
-		if err := scanOrderRow(rows.Scan, &o); err != nil {
-			return nil, err
-		}
-		orders = append(orders, o)
-	}
-
-	for i := range orders {
-		items, err := GetOrderItems(orders[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		orders[i].Items = items
-	}
-
-	return orders, nil
+	return collectOrders(rows, err)
 }
 
 // GetActiveOrders returns every order still needing the unfiltered/staff
 // bucket's attention — pending, preparing, *and* ready (see
-// staffExcludedStatuses) — oldest first. Each order's items are populated.
+// staffActive) — oldest first. Each order's items are populated.
 func GetActiveOrders() ([]models.Order, error) {
 	rows, err := DB.Query(
-		"SELECT "+orderColumns+" FROM orders WHERE status NOT IN "+excludeThree+" ORDER BY created_at ASC, id ASC",
-		staffExcludedStatuses...,
+		"SELECT " + orderColumns + " FROM orders WHERE status IN " + staffActive + " ORDER BY id ASC",
 	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var orders []models.Order
-	for rows.Next() {
-		var o models.Order
-		if err := scanOrderRow(rows.Scan, &o); err != nil {
-			return nil, err
-		}
-		orders = append(orders, o)
-	}
-
-	for i := range orders {
-		items, err := GetOrderItems(orders[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		orders[i].Items = items
-	}
-
-	return orders, nil
+	return collectOrders(rows, err)
 }
 
 // GetReadyOrders returns every order the kitchen/bar have marked "ready",
@@ -269,37 +222,15 @@ func GetActiveOrders() ([]models.Order, error) {
 // kitchen's job), only ones ready to actually deliver.
 func GetReadyOrders() ([]models.Order, error) {
 	rows, err := DB.Query(
-		"SELECT "+orderColumns+" FROM orders WHERE status = ? ORDER BY created_at ASC, id ASC",
+		"SELECT "+orderColumns+" FROM orders WHERE status = ? ORDER BY id ASC",
 		models.OrderStatusReady,
 	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var orders []models.Order
-	for rows.Next() {
-		var o models.Order
-		if err := scanOrderRow(rows.Scan, &o); err != nil {
-			return nil, err
-		}
-		orders = append(orders, o)
-	}
-
-	for i := range orders {
-		items, err := GetOrderItems(orders[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		orders[i].Items = items
-	}
-
-	return orders, nil
+	return collectOrders(rows, err)
 }
 
 // GetActiveOrdersByCategories returns orders needing a department-filtered
 // (bar/kitchen) bucket's attention — pending/preparing only, not ready (see
-// categoryExcludedStatuses) — that contain at least one item currently in
+// categoryActive) — that contain at least one item currently in
 // any of the given product categories (an admin can add as many categories
 // as the menu needs, each tagged kitchen or bar — see
 // CategoryNamesForDepartment, which is what builds this list). order_items
@@ -316,7 +247,7 @@ func GetActiveOrdersByCategories(categories []string) ([]models.Order, error) {
 	}
 
 	placeholders := make([]byte, 0, len(categories)*2)
-	args := append([]interface{}{}, categoryExcludedStatuses...)
+	var args []interface{}
 	for i, cat := range categories {
 		if i > 0 {
 			placeholders = append(placeholders, ',')
@@ -326,37 +257,15 @@ func GetActiveOrdersByCategories(categories []string) ([]models.Order, error) {
 	}
 
 	rows, err := DB.Query(`
-		SELECT DISTINCT o.id, o.table_number, o.session_id, o.status, o.payment_method, o.payment_status, o.total_amount, o.served_by, o.note, o.refund_requested, o.created_at
+		SELECT DISTINCT o.id, o.table_number, o.session_id, o.status, o.payment_method, o.payment_status, o.total_amount, o.served_by, o.note, o.refund_requested, o.created_at, o.tip_amount, o.split_count
 		FROM orders o
 		JOIN order_items oi ON oi.order_id = o.id
 		JOIN products p ON p.id = oi.product_id
-		WHERE o.status NOT IN `+excludeFour+` AND p.category IN (`+string(placeholders)+`)
-		ORDER BY o.created_at ASC, o.id ASC`,
+		WHERE o.status IN `+categoryActive+` AND p.category IN (`+string(placeholders)+`)
+		ORDER BY o.id ASC`,
 		args...,
 	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var orders []models.Order
-	for rows.Next() {
-		var o models.Order
-		if err := scanOrderRow(rows.Scan, &o); err != nil {
-			return nil, err
-		}
-		orders = append(orders, o)
-	}
-
-	for i := range orders {
-		items, err := GetOrderItems(orders[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		orders[i].Items = items
-	}
-
-	return orders, nil
+	return collectOrders(rows, err)
 }
 
 // GetOrderHistory returns up to limit orders regardless of status, newest
@@ -374,30 +283,8 @@ func GetActiveOrdersByCategories(categories []string) ([]models.Order, error) {
 // order entirely (it shifts to a page already fetched) or repeat one
 // (it shifts to a page not fetched yet).
 func GetOrderHistory(limit, offset int) ([]models.Order, error) {
-	rows, err := DB.Query("SELECT "+orderColumns+" FROM orders ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?", limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var orders []models.Order
-	for rows.Next() {
-		var o models.Order
-		if err := scanOrderRow(rows.Scan, &o); err != nil {
-			return nil, err
-		}
-		orders = append(orders, o)
-	}
-
-	for i := range orders {
-		items, err := GetOrderItems(orders[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		orders[i].Items = items
-	}
-
-	return orders, nil
+	rows, err := DB.Query("SELECT "+orderColumns+" FROM orders ORDER BY id DESC LIMIT ? OFFSET ?", limit, offset)
+	return collectOrders(rows, err)
 }
 
 // GetOrderHistoryCount is the total row count GetOrderHistory paginates
@@ -543,15 +430,10 @@ type PeriodStats struct {
 // the current calendar month, resetting on the 1st.
 func periodDateClause(period string) (string, error) {
 	switch period {
-	case "today":
-		return "date(created_at, 'localtime') = date('now', 'localtime')", nil
-	case "week":
-		return "date(created_at, 'localtime') >= date('now', 'localtime', '-6 days')", nil
-	case "month":
-		return "strftime('%Y-%m', created_at, 'localtime') = strftime('%Y-%m', 'now', 'localtime')", nil
-	default:
-		return "", ErrInvalidPeriod
+	case "today", "week", "month":
+		return RangeFor(period).clause("created_at"), nil
 	}
+	return "", ErrInvalidPeriod
 }
 
 // GetStatsForPeriod computes the admin overview KPIs for "today", "week",
@@ -589,10 +471,8 @@ func GetRevenueForRange(startDaysAgo, endDaysAgo int) (float64, error) {
 	var revenue float64
 	err := DB.QueryRow(
 		`SELECT COALESCE(SUM(total_amount), 0) FROM orders
-		 WHERE payment_status = ?
-		 AND date(created_at, 'localtime') BETWEEN date('now', 'localtime', ?) AND date('now', 'localtime', ?)`,
+		 WHERE payment_status = ? AND `+daysAgo(startDaysAgo, endDaysAgo-1).clause("created_at"),
 		models.PaymentStatusPaid,
-		fmt.Sprintf("-%d days", startDaysAgo), fmt.Sprintf("-%d days", endDaysAgo),
 	).Scan(&revenue)
 	return revenue, err
 }
@@ -611,9 +491,9 @@ func GetRevenueTrend(days int) ([]DayRevenue, error) {
 	rows, err := DB.Query(
 		`SELECT date(created_at, 'localtime') AS d, SUM(total_amount)
 		 FROM orders
-		 WHERE payment_status = ? AND date(created_at, 'localtime') >= date('now', 'localtime', ?)
+		 WHERE payment_status = ? AND `+daysAgo(days-1, -1).clause("created_at")+`
 		 GROUP BY d`,
-		models.PaymentStatusPaid, fmt.Sprintf("-%d days", days-1),
+		models.PaymentStatusPaid,
 	)
 	if err != nil {
 		return nil, err
@@ -746,4 +626,13 @@ func GetCategorySales(period string) ([]CategorySales, error) {
 		}
 	}
 	return out, nil
+}
+
+// CountServedBy is how many orders username has marked served since t —
+// the staff app's "your shift so far".
+func CountServedBy(username string, since time.Time) int {
+	var n int
+	DB.QueryRow(`SELECT COUNT(*) FROM orders WHERE served_by = ? AND created_at >= ?`,
+		username, since.UTC().Format("2006-01-02 15:04:05")).Scan(&n)
+	return n
 }

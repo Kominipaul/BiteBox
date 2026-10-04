@@ -83,12 +83,9 @@
 {{ end }}
 
 <div id="cart-bar" hx-swap-oob="true" class="cart-bar {{ if .Items }}show{{ end }}">
-  <div class="cart-bar-info" id="cartBarInfo">
-    <span class="cart-bar-count" id="cartCount">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6h15l-1.5 9h-12L6 3H3"/></svg>
-      {{ .TotalQty }} item{{ if ne .TotalQty 1 }}s{{ end }} — tap to review
-    </span>
-    <span class="cart-bar-total" id="cartTotal">€{{ printf "%.2f" .Total }}</span>
-  </div>
-  <button type="button" class="checkout-btn" id="openCartBtn">Review order</button>
+  <button type="button" class="cart-pill" id="openCartBtn" aria-label="Review your order: {{ .TotalQty }} item{{ if ne .TotalQty 1 }}s{{ end }}, €{{ printf "%.2f" .Total }}">
+    <svg class="cart-pill-bag" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12l1 13H5zM9 7V6a3 3 0 0 1 6 0v1"/></svg>
+    <span class="cart-pill-text"><small>{{ .TotalQty }} item{{ if ne .TotalQty 1 }}s{{ end }}</small><b>€{{ printf "%.2f" .Total }}</b></span>
+    <svg class="cart-pill-go" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+  </button>
 </div>

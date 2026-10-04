@@ -1,0 +1,51 @@
+{{ define "title" }}Floor{{ end }}
+
+{{ define "content" }}
+<div class="page-head">
+  <div>
+    <h1>Floor</h1>
+    <p id="dayLabel">Who's where, live.</p>
+  </div>
+  <form class="toolbar" id="controls" data-nosubmit>
+    <input class="input" type="date" name="date" value="{{ .Date }}" aria-label="Day">
+    <input class="input" type="time" name="time" step="900" value="{{ .Time }}" aria-label="Time (empty = now)">
+    <a class="act ghost" href="{{ .Base }}/floor" id="nowBtn">{{ template "i-dot" }}Now</a>
+  </form>
+</div>
+
+<div class="stats floor-stats">
+  <div class="stat"><b id="sFree">–</b><span>Free spots</span></div>
+  <div class="stat st-seated"><b id="sSeated">–</b><span>Seated now</span></div>
+  <div class="stat st-late" id="lateStat"><b id="sLate">–</b><span>Late, not here</span></div>
+  <div class="stat"><b id="sQR">–</b><span>QR guests now</span></div>
+  <div class="stat" id="helpStat"><b id="sHelp">–</b><span>Need help</span></div>
+  <div class="stat"><b id="sBookings">–</b><span>Bookings today</span></div>
+  <div class="stat"><b id="sCovers">–</b><span>Guests today</span></div>
+</div>
+
+<div class="floor-layout">
+  <section class="card map-card">
+    <div class="map-bar">
+      <div class="legend">
+        <span><i class="lg-free"></i>Free</span>
+        <span><i class="lg-soon"></i>Booked within 1h</span>
+        <span><i class="lg-res"></i>Reserved now</span>
+        <span><i class="lg-late"></i>Late</span>
+        <span><i class="lg-seated"></i>Seated</span>
+        <span><i class="lg-qr"></i>QR guest</span>
+        <span><i class="lg-help"></i>Needs help</span>
+        <span><i class="lg-off"></i>Out of service</span>
+      </div>
+      <span class="live-dot" id="liveDot" title="Live updates">Live</span>
+    </div>
+    <div id="mapWrap"><svg class="map" id="floor" role="group" aria-label="Floor plan"></svg></div>
+  </section>
+  <aside class="card card-body side-panel" id="panel" aria-live="polite"></aside>
+</div>
+{{ end }}
+
+{{ define "scripts" }}
+<script src="/static/floor.js?v={{ .V }}"></script>
+<script type="application/json" id="pageData">{"base": {{ .Base }}}</script>
+<script src="/static/js/floor-page.js?v={{ .V }}"></script>
+{{ end }}

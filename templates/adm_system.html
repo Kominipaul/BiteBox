@@ -1,0 +1,322 @@
+{{ define "title" }}Look &amp; brand{{ end }}
+
+{{ define "content" }}
+{{ $t := .T }}
+<div class="page-head">
+  <div>
+    <h1>Look &amp; brand</h1>
+    <p>How the whole app looks: guest menu, booking page, staff screens and login. Looks only, nothing here changes how anything works.</p>
+    <small class="sys-saved" id="savedLine">{{ if $t.SavedBy }}Last saved {{ $t.SavedAt.Format "Jan 2, 15:04" }} by {{ $t.SavedBy }}{{ else }}Using the default look{{ end }}</small>
+  </div>
+</div>
+
+<form id="themeForm" class="sys" hx-post="/admin/system/preview" hx-target="#previewStyle"
+  hx-trigger="input changed delay:150ms, change" hx-sync="this:replace" data-nosubmit>
+  <input type="hidden" name="preset" value="{{ $t.Preset }}">
+  <div class="sys-grid">
+    <div class="sys-main">
+
+      <section class="card card-body">
+        <h2>Presets</h2>
+        <p class="sys-sub">Start from a look, then tweak anything below. Nothing changes for anyone until you save.</p>
+        <div class="presets">
+          {{ range .Presets }}
+          <div class="pcard{{ if eq .Key $t.Preset }} is-on{{ end }}" data-preset="{{ .Key }}">
+            <div class="pc-sw" style="background:{{ .Theme.Background }}">
+              <span class="pc-side" style="background:{{ .Theme.Surface }}"></span>
+              <b style="color:{{ .Theme.Text }}">Aa</b>
+              <i style="background:{{ .Theme.Muted }}"></i>
+              <span class="pc-dots"><em style="background:{{ .Theme.Primary }}"></em><em style="background:{{ .Theme.Accent }}"></em></span>
+            </div>
+            <div class="pc-body">
+              <b>{{ .Name }}</b><small>{{ .About }}</small>
+              <button type="button" class="act pc-apply" data-apply="{{ .Key }}"><span class="pc-on">{{ template "i-check" }}Based on this</span><span class="pc-off">Apply</span></button>
+            </div>
+          </div>
+          {{ end }}
+        </div>
+      </section>
+
+      <section class="card card-body">
+        <h2>Branding</h2>
+        <div class="fgrid sys-2">
+          <label class="f">Venue name<input name="venue_name" value="{{ .Name }}" maxlength="60" required data-live="name"><small>Header, sidebar, browser tab and receipts.</small></label>
+          <label class="f">Tagline <span class="opt">optional</span><input name="tagline" value="{{ $t.Tagline }}" maxlength="120" placeholder="e.g. All day bar by the sea" data-live="tagline"><small>Under the name on the home and booking pages.</small></label>
+          <div class="f">Main logo
+            {{ template "upload" .Uploads.logo }}
+            <input type="hidden" name="logo_ratio" value="{{ $t.LogoRatio }}">
+            <small>Sidebar, headers and login. A wide logo is shown on its own; a square one gets the name next to it.</small>
+          </div>
+          <div class="f">Small logo / favicon
+            {{ template "upload" .Uploads.icon }}
+            <small>Browser tab icon. Square works best. Empty uses the main logo.</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="card card-body">
+        <h2>Login page</h2>
+        <div class="fgrid sys-2">
+          <label class="f">Welcome title<input name="login_title" value="{{ $t.LoginTitle }}" maxlength="60" placeholder="Welcome back" data-live="ltitle"></label>
+          <label class="f">Welcome subtitle<input name="login_subtitle" value="{{ $t.LoginSubtitle }}" maxlength="120" placeholder="Sign in to run the floor." data-live="lsub"></label>
+          <div class="f">Login page logo
+            {{ template "upload" .Uploads.login_logo }}
+            <small>Empty uses the main logo.</small>
+          </div>
+          <div>
+            <div class="f">Layout</div>
+            <div class="seg sys-seg">{{ range .Layouts }}<label><input type="radio" name="login_layout" value="{{ .Key }}" {{ if eq .Key $t.LoginLayout }}checked{{ end }}>{{ .Label }}</label>{{ end }}</div>
+            <div class="f sys-gap">Background</div>
+            <div class="seg sys-seg">{{ range .LoginBgs }}<label><input type="radio" name="login_bg" value="{{ .Key }}" {{ if eq .Key $t.LoginBg }}checked{{ end }}>{{ .Label }}</label>{{ end }}</div>
+          </div>
+          {{ range .LoginColours }}{{ template "colour" . }}{{ end }}
+          <div class="f span3 login-img">Background image
+            {{ template "upload" .Uploads.login_image }}
+            <small>A wide photo of the venue works well. The "To" colour shows while it loads.</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="card card-body">
+        <h2>Colours</h2>
+        <div class="f">Mode</div>
+        <div class="seg sys-seg">{{ range .Modes }}<label><input type="radio" name="mode" value="{{ .Key }}" {{ if eq .Key $t.Mode }}checked{{ end }}>{{ .Label }}</label>{{ end }}</div>
+        <div class="fgrid sys-colours">{{ range .Colours }}{{ template "colour" . }}{{ end }}</div>
+        <p class="sys-sub">Text on buttons and badges picks black or white automatically, so it stays readable whatever colour you choose.</p>
+      </section>
+
+      <section class="card card-body">
+        <h2>Style</h2>
+        <div class="fgrid sys-2">
+          <label class="f">Headings font
+            <select name="font_head">{{ range .HeadFonts }}<option value="{{ .Key }}" {{ if eq .Key $t.FontHead }}selected{{ end }}>{{ .Label }}</option>{{ end }}</select>
+            <small>Page titles and the venue name.</small>
+          </label>
+          <label class="f">Text font
+            <select name="font_body">{{ range .BodyFonts }}<option value="{{ .Key }}" {{ if eq .Key $t.FontBody }}selected{{ end }}>{{ .Label }}</option>{{ end }}</select>
+            <small>Everything else. Greek letters always use the system font.</small>
+          </label>
+          <div><div class="f">Corners</div>
+            <div class="seg sys-seg">{{ range .Corners }}<label><input type="radio" name="corners" value="{{ .Key }}" {{ if eq .Key $t.Corners }}checked{{ end }}>{{ .Label }}</label>{{ end }}</div></div>
+          <div><div class="f">Buttons</div>
+            <div class="seg sys-seg">{{ range .Buttons }}<label><input type="radio" name="buttons" value="{{ .Key }}" {{ if eq .Key $t.Buttons }}checked{{ end }}>{{ .Label }}</label>{{ end }}</div></div>
+          <div><div class="f">Shadows</div>
+            <div class="seg sys-seg">{{ range .Shadows }}<label><input type="radio" name="shadows" value="{{ .Key }}" {{ if eq .Key $t.Shadows }}checked{{ end }}>{{ .Label }}</label>{{ end }}</div></div>
+          <div><div class="f">Sidebar &amp; header</div>
+            <div class="seg sys-seg">{{ range .Headers }}<label><input type="radio" name="header" value="{{ .Key }}" {{ if eq .Key $t.Header }}checked{{ end }}>{{ .Label }}</label>{{ end }}</div></div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="card sys-preview" aria-label="Live preview">
+      <div class="pv-bar">
+        <b>{{ template "i-eye" }}Live preview</b>
+        <div class="pv-tabs" role="tablist">
+          <button type="button" class="on" data-pv="staff">Staff</button>
+          <button type="button" data-pv="guest">Guest</button>
+          <button type="button" data-pv="login">Login</button>
+        </div>
+      </div>
+      <div class="theme-scope" id="pv">
+        <div class="pv pv-staff" data-pane="staff">
+          <div class="pv-head pv-side">
+            <div class="pv-brand brand"><span class="brand-logo"></span><span class="brand-mark pv-mark"></span><b class="brand-name" data-show="name">{{ .Name }}</b></div>
+            <a class="on">Bookings</a><a>Floor</a><a>Orders</a>
+          </div>
+          <div class="pv-main">
+            <div class="pv-top"><b class="pv-h">Bookings</b><span class="pv-btn">New booking</span></div>
+            <div class="pv-card"><small>Guests today</small><b>128</b><i class="pv-meter"><i></i></i></div>
+            <div class="pv-pills"><span class="ok">Seated</span><span class="warn">Late</span><span class="bad">No-show</span><span class="acc">VIP</span></div>
+            <div class="pv-card pv-rows"><div>Maria K.<em class="ok">Seated</em></div><div>Nikos P.<em class="warn">Late</em></div></div>
+            <div class="pv-acts"><span class="pv-btn2">Edit</span><a>Search bookings</a></div>
+          </div>
+        </div>
+        <div class="pv pv-guest" data-pane="guest" hidden>
+          <div class="pv-head pv-gtop"><span class="brand-logo"></span><b class="brand-name pv-h" data-show="name">{{ .Name }}</b><small>Table 4</small></div>
+          <p class="pv-tag" data-show="tagline">{{ $t.Tagline }}</p>
+          <div class="pv-cats"><span class="on">Coffee</span><span>Brunch</span><span>Drinks</span></div>
+          <div class="pv-card pv-item"><div><b>Freddo espresso</b><small>Double shot, over ice</small><em>€3.50</em></div><span class="pv-btn">Add</span></div>
+          <div class="pv-card pv-item"><div><b>Club sandwich</b><small>Chicken, bacon, egg, fries</small><em>€9.00</em></div><span class="pv-btn">Add</span></div>
+          <div class="pv-cart pv-btn">View order · €12.50</div>
+        </div>
+        <div class="pv pv-login login-bg" data-pane="login" data-layout="{{ $t.LoginLayout }}" hidden>
+          <div class="pv-lart"><span class="brand-logo"></span><b class="pv-h" data-show="name">{{ .Name }}</b></div>
+          <div class="pv-lcard">
+            <span class="brand-logo"></span>
+            <b class="pv-h" data-show="ltitle" data-empty="Welcome back">{{ or $t.LoginTitle "Welcome back" }}</b>
+            <small data-show="lsub" data-empty="Sign in to run the floor.">{{ or $t.LoginSubtitle "Sign in to run the floor." }}</small>
+            <i class="pv-in">Username</i><i class="pv-in">Password</i>
+            <span class="pv-btn">Sign in</span>
+          </div>
+        </div>
+      </div>
+      <p class="sys-sub pv-note">Updates as you edit. Nothing changes for anyone until you save.</p>
+    </aside>
+  </div>
+
+  <div class="sys-bar">
+    <span>Based on <b id="basedName">{{ .Based }}</b><em id="dirtyNote" hidden> · unsaved changes</em></span>
+    <span class="sys-bar-acts">
+      <button type="button" class="act ghost" id="resetPreset">{{ template "i-undo" }}Reset to preset</button>
+      <button type="button" class="act ghost" id="discard" disabled>Discard changes</button>
+      <button type="button" class="act primary" id="saveTheme" hx-post="/admin/system" hx-include="#themeForm" hx-swap="none" disabled>{{ template "i-check" }}Save</button>
+    </span>
+  </div>
+</form>
+<div id="previewStyle"><style>{{ .PreviewCSS }}</style></div>
+{{ end }}
+
+{{/* An image picker: preview, Upload / Remove, and the hidden field the
+     theme saves. Uploading stores the file; the theme uses it on Save. */}}
+{{ define "upload" }}
+<div class="upl" data-kind="{{ .Kind }}">
+  <span class="upl-box"><img src="{{ .URL }}" alt="" {{ if not .URL }}hidden{{ end }}>{{ template "i-upload" }}</span>
+  <span class="upl-acts">
+    <label class="act">Upload<input type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
+    <button type="button" class="act ghost upl-rm" {{ if not .URL }}hidden{{ end }}>Remove</button>
+    <small>PNG, JPG or WebP · big images are shrunk automatically</small>
+  </span>
+  <input type="hidden" name="{{ .Kind }}" value="{{ .URL }}">
+</div>
+{{ end }}
+
+{{ define "colour" }}
+<label class="f cfield">{{ .Label }}
+  <span class="cin"><input type="color" value="{{ .Value }}" aria-label="{{ .Label }} picker"><input name="{{ .Key }}" value="{{ .Value }}" maxlength="7" spellcheck="false" autocomplete="off"></span>
+  {{ if .Hint }}<small>{{ .Hint }}</small>{{ end }}
+</label>
+{{ end }}
+
+{{ define "scripts" }}
+<style>
+/* Editor chrome */
+.sys-saved{display:block;margin-top:6px;color:var(--faint);font-size:12.5px}
+.sys-sub{margin:0 0 14px;color:var(--muted);font-size:13.5px}
+.sys-grid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px;align-items:start}
+.sys-main{display:grid;gap:18px;min-width:0}
+.sys .card h2{margin-bottom:6px}
+.sys-2{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:14px}
+.sys-colours{margin:16px 0 12px}
+.sys-seg{flex-wrap:wrap;margin-top:8px}
+.sys-seg label{padding:8px 10px;letter-spacing:.04em}
+.sys-gap{margin-top:16px}
+.opt{font-weight:500;letter-spacing:0;text-transform:none;color:var(--faint)}
+.presets{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
+.pcard{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--raise);display:flex;flex-direction:column}
+.pcard.is-on{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+.pc-sw{position:relative;height:84px;border-bottom:1px solid var(--line)}
+.pc-side{position:absolute;left:0;top:0;bottom:0;width:26px}
+.pc-sw b{position:absolute;left:38px;top:12px;font:800 15px var(--font)}
+.pc-sw i{position:absolute;left:38px;right:14px;top:38px;height:5px;border-radius:3px;opacity:.5}
+.pc-dots{position:absolute;left:38px;bottom:12px;display:flex;gap:6px}
+.pc-dots em{width:26px;height:12px;border-radius:6px}
+.pc-dots em+em{width:12px}
+.pc-body{padding:12px;display:flex;flex-direction:column;gap:4px;flex:1}
+.pc-body b{font-size:13px;letter-spacing:.08em;text-transform:uppercase}
+.pc-body small{color:var(--muted);font-size:12.5px;flex:1;margin-bottom:8px}
+.pc-apply{width:100%}
+.pcard .pc-on,.pcard.is-on .pc-off{display:none}
+.pcard.is-on .pc-on{display:inline-flex;align-items:center;gap:6px}
+.pcard:not(.is-on) .pc-apply{background:var(--gold);border-color:var(--gold);color:var(--gold-ink)}
+.upl{display:flex;gap:14px;align-items:center;margin-top:8px;text-transform:none;letter-spacing:0;font-weight:500}
+.upl-box{width:76px;height:76px;flex:none;border-radius:12px;border:1px dashed var(--line-strong);display:grid;place-items:center;color:var(--faint);overflow:hidden;
+  background:repeating-conic-gradient(var(--raise) 0 25%,var(--surface) 0 50%) 0 0/14px 14px}
+.upl-box img{width:100%;height:100%;object-fit:contain}
+.upl-box img:not([hidden])+svg{display:none}
+.upl-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.upl-acts small{flex-basis:100%;margin:0}
+.upl.busy{opacity:.55;pointer-events:none}
+.cin{display:flex;gap:8px;margin-top:8px}
+.f .cin input{margin:0}
+.cin input[type=color]{width:52px;flex:none;padding:4px;cursor:pointer}
+.cin input:not([type=color]){font-family:var(--mono);text-transform:uppercase}
+.cin input.bad{border-color:var(--red)}
+.login-img{display:none}
+.sys:has(input[name=login_bg][value=image]:checked) .login-img{display:block}
+.sys:has(input[name=login_bg][value=solid]:checked) .cfield:has([name=login_to]){display:none}
+.sys-bar{position:sticky;bottom:12px;z-index:30;margin-top:18px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:12px 14px 12px 18px;border:1px solid var(--line-strong);border-radius:14px;background:var(--glass);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+  box-shadow:0 16px 40px -20px rgba(0,0,0,.6);color:var(--muted);font-size:14px}
+.sys-bar b{color:var(--ink)}
+.sys-bar em{color:var(--amber);font-style:normal;font-weight:600}
+.sys-bar-acts{display:flex;gap:8px;flex-wrap:wrap}
+.sys-preview{position:sticky;top:16px;padding:16px}
+.pv-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
+.pv-bar>b{display:flex;gap:8px;align-items:center;font-size:12px;letter-spacing:.12em;text-transform:uppercase}
+.pv-tabs{display:flex;gap:4px}
+.pv-tabs button{border:1px solid var(--line);background:none;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer}
+.pv-tabs button.on{border-color:var(--gold);color:var(--gold);background:var(--gold-soft)}
+.pv-note{margin:10px 0 0;font-size:12.5px}
+
+/* The preview mock: reads only theme tokens, which .theme-scope gets from
+   the same generator as /brand.css. */
+.theme-scope{background:var(--bg);color:var(--ink);font:400 13px/1.45 var(--font);border-radius:12px;overflow:hidden;border:1px solid var(--line);height:420px}
+.theme-scope .pv{height:100%}
+.pv b{font-weight:700}
+.pv-staff{display:grid;grid-template-columns:118px 1fr}
+.pv-side{padding:12px 8px;display:flex;flex-direction:column;gap:3px;border-right:1px solid var(--line)}
+.pv-brand{display:flex;align-items:center;gap:7px;padding:0 4px 10px;--logo-h:24px;min-width:0}
+.pv-brand .brand-name{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pv-mark{width:22px;height:22px;flex:none;border-radius:var(--r-sm);background:var(--gold)}
+.pv-side a{padding:7px 8px;border-radius:var(--r-sm);color:var(--muted);font-size:11.5px;font-weight:700}
+.pv-side a.on{background:var(--gold-soft);color:var(--gold)}
+.pv-main{padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.pv-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.pv-h{font:700 16px var(--font-head)}
+.pv-btn{display:inline-flex;align-items:center;justify-content:center;padding:7px 12px;border-radius:var(--r-btn);background:var(--btn-bg);color:var(--btn-ink);
+  box-shadow:inset 0 0 0 1.5px var(--btn-line);font-weight:700;font-size:11.5px;white-space:nowrap}
+.pv-btn2{padding:6px 12px;border-radius:var(--r-btn);border:1px solid var(--line-strong);font-weight:700;font-size:11.5px}
+.pv-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;box-shadow:var(--shadow-card)}
+.pv-card small{display:block;color:var(--muted);font-size:10px;letter-spacing:.1em;text-transform:uppercase}
+.pv-card>b{font-size:22px}
+.pv-meter{display:block;height:5px;border-radius:3px;background:var(--line);margin-top:6px}
+.pv-meter i{display:block;height:100%;width:68%;border-radius:3px;background:var(--gold)}
+.pv-pills{display:flex;gap:5px;flex-wrap:wrap}
+.pv-pills span,.pv-rows em{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:var(--r-sm);font-style:normal}
+.ok{color:var(--green);background:var(--green-soft)} .warn{color:var(--amber);background:var(--amber-soft)}
+.bad{color:var(--red);background:var(--red-soft)} .acc{color:var(--blue);background:var(--blue-soft)}
+.pv-rows{padding:0}
+.pv-rows div{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;font-weight:600}
+.pv-rows div+div{border-top:1px solid var(--line)}
+.pv-acts{display:flex;gap:10px;align-items:center}
+.pv-acts a{color:var(--gold);font-weight:700;font-size:11.5px;text-decoration:underline}
+.pv-guest{padding:0 0 12px;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.pv-gtop{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);--logo-h:26px}
+.pv-gtop small{margin-left:auto;color:var(--muted);font-size:11px}
+.pv-tag{margin:0 14px;color:var(--muted);font-size:12px}
+.pv-tag:empty{display:none}
+.pv-cats{display:flex;gap:6px;padding:0 14px}
+.pv-cats span{padding:5px 11px;border-radius:999px;border:1px solid var(--line);font-size:11.5px;font-weight:600;color:var(--muted)}
+.pv-cats .on{background:var(--gold);border-color:var(--gold);color:var(--gold-ink)}
+.pv-item{margin:0 14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.pv-item small{font-size:11px;letter-spacing:0;text-transform:none}
+.pv-item em{display:block;font-style:normal;font-weight:700;color:var(--gold);margin-top:3px}
+.pv-cart{margin:auto 14px 0;padding:11px}
+.pv-login{display:grid;place-items:center;padding:18px}
+.pv-login[data-layout=split]{grid-template-columns:1fr 1fr;padding:0}
+.pv-lart{display:none}
+.pv-login[data-layout=split] .pv-lart{display:flex;flex-direction:column;justify-content:flex-end;gap:8px;padding:18px;height:100%;color:#fff;--logo-h:30px}
+.pv-login[data-layout=split] .pv-lcard{height:100%;border-radius:0;border:0;justify-content:center}
+.pv-lcard{width:100%;max-width:230px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px;display:flex;flex-direction:column;gap:8px;box-shadow:var(--shadow-pop);--logo-h:30px}
+.pv-lcard small{color:var(--muted);font-size:11.5px;margin-bottom:4px}
+.pv-in{display:block;padding:8px 10px;border:1px solid var(--line-strong);border-radius:var(--r-sm);color:var(--faint);font-style:normal;font-size:11.5px;background:var(--bg)}
+.pv-lcard .pv-btn{margin-top:4px;padding:9px}
+
+@media (max-width:1100px){
+  .sys-grid{grid-template-columns:minmax(0,1fr)}
+  .sys-preview{position:static;order:-1}
+  .theme-scope{height:360px}
+}
+@media (max-width:760px){
+  .sys-2{grid-template-columns:minmax(0,1fr)}
+  .sys-bar{bottom:calc(76px + env(safe-area-inset-bottom));padding:10px 12px;font-size:13px}
+  .sys-bar-acts{width:100%}
+  .sys-bar-acts .act{flex:1;padding:0 8px}
+  #resetPreset{display:none}
+  .presets{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .pc-body small{display:none}
+}
+</style>
+<script type="application/json" id="pageData">{"presets": {{ .PresetsJSON }}}</script>
+<script src="/static/js/brand-editor.js?v={{ .V }}"></script>
+{{ end }}

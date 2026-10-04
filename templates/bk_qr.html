@@ -1,0 +1,36 @@
+{{ define "title" }}Table QR codes{{ end }}
+
+{{ define "content" }}
+<div class="page-head">
+  <div>
+    <h1>Table QR codes</h1>
+    <p>Print these and stick each one on its table. Guests scan to order; the codes can't be guessed. A lost or copied sticker? Make a new code for that table and reprint it.</p>
+  </div>
+  <div class="toolbar">
+    <a class="act ghost" href="/admin/map">Map editor</a>
+    <button class="act primary" type="button" data-print>Print</button>
+  </div>
+</div>
+
+{{ if .QRLocal }}
+<p class="card card-body qr-warn" role="alert"><b>These codes point to {{ .QRBase }}</b>, which guests' phones can't open. {{ if .PublicURLSet }}Check the PUBLIC_URL setting.{{ else }}Open this page on the venue's real web address, or set PUBLIC_URL on the server, before printing.{{ end }}</p>
+{{ end }}
+
+<div class="qr-grid">
+  {{ range .Cards }}{{ template "qr-card" . }}{{ end }}
+</div>
+{{ end }}
+
+{{ define "qr-card" }}
+<figure class="card qr-card" id="qr-{{ .Number }}">
+  <img src="/admin/tables/{{ .Number }}/qr.png?v={{ .Ver }}" alt="QR code for table {{ .Name }}" width="240" height="240">
+  <figcaption>
+    <b>{{ .Name }}</b>{{ if .Zone }} <small>{{ .Zone }}</small>{{ end }}
+    <code>{{ .URL }}</code>
+  </figcaption>
+  <button class="act ghost qr-new" type="button" hx-post="/admin/tables/{{ .Number }}/qr/rotate" hx-target="#qr-{{ .Number }}" hx-swap="outerHTML"
+    hx-confirm="Make a new QR code for {{ .Name }}? The printed code on that table stops working straight away.">New code</button>
+</figure>
+{{ end }}
+
+{{ define "scripts" }}{{ end }}

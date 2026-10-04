@@ -1,0 +1,41 @@
+{{ define "title" }}Map editor{{ end }}
+
+{{ define "content" }}
+<div class="page-head">
+  <div>
+    <h1>Map editor</h1>
+    <p>Drag spots to move them, tap one to edit it. Changes save straight away and show on the guest page.</p>
+  </div>
+  <form class="toolbar" id="addForm" data-nosubmit>
+    <a class="act ghost" href="/admin/map/qr">QR codes</a>
+    <select class="input" name="shape" aria-label="New spot shape">
+      <option value="round">Round table</option>
+      <option value="rect4">Long table (4)</option>
+      <option value="high">High table</option>
+      <option value="lounge">Lounge</option>
+      <option value="set">Sunbed set</option>
+      <option value="cabana">Cabana</option>
+    </select>
+    <input class="input" name="zone" placeholder="Zone" list="zoneList" style="width:140px" aria-label="Zone">
+    <button class="act primary" type="submit">{{ template "i-plus" }}Add spot</button>
+  </form>
+</div>
+<datalist id="zoneList"></datalist>
+
+<div class="floor-layout">
+  <section class="card map-card">
+    <div class="map-bar">
+      <span class="hint">New spots appear in the middle of the map. Spots below the sea are not placed yet: drag them onto the map.</span>
+      <span class="ok-text" id="saved"></span>
+    </div>
+    <div id="mapWrap"><svg class="map editing" id="floor" role="group" aria-label="Floor plan editor"></svg></div>
+  </section>
+  <aside class="card card-body side-panel" id="panel" aria-live="polite"></aside>
+</div>
+{{ end }}
+
+{{ define "scripts" }}
+<script src="/static/floor.js?v={{ .V }}"></script>
+<script type="application/json" id="pageData">{"shapes": {{ .Shapes }}}</script>
+<script src="/static/js/map-editor.js?v={{ .V }}"></script>
+{{ end }}

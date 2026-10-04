@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -59,8 +61,9 @@ func (nfs neuteredFileSystem) Open(path string) (http.File, error) {
 func staticCacheHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case strings.HasPrefix(r.URL.Path, "uploads/products/"):
-			// writeProductPhoto (internal/handlers/photo.go) names every
+		case strings.HasPrefix(r.URL.Path, "uploads/"):
+			// Product photos and brand images (logos, login photo) are
+			// named by content hash. writeProductPhoto (photo.go) names every
 			// upload "<productID>-<nanosecond timestamp>.jpg" — a new photo
 			// is always a new URL, so the URL's *content* never changes and
 			// this can be cached as aggressively as a browser allows.
@@ -73,9 +76,55 @@ func staticCacheHeaders(next http.Handler) http.Handler {
 			// repeat-visit traffic without risking a stale file surviving
 			// long past its own deploy.
 			w.Header().Set("Cache-Control", "public, max-age=86400")
+		case r.URL.Query().Get("v") != "":
+			// Our own CSS/JS linked as ?v=<assetVersion>: that URL changes
+			// with every server start (deploy), so the browser can keep
+			// it without ever asking again.
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		default:
+			// Our own CSS/JS (site.css, staff.css, floor.js, ...) change with
+			// the code. Without a header browsers guess a cache lifetime and
+			// keep serving an old stylesheet after an update; no-cache makes
+			// them check first (a cheap 304 via Last-Modified when unchanged).
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// htmlByDefault labels responses that never set a Content-Type as HTML
+// (our template handlers), at the first write — Compress only gzips a
+// response whose type is known by then. Anything that sets its own type
+// (JSON, CSV, http.ServeFile) is left alone.
+func htmlByDefault(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(htmlWriter{w}, r)
+	})
+}
+
+type htmlWriter struct{ http.ResponseWriter }
+
+func (w htmlWriter) label() {
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	}
+}
+func (w htmlWriter) WriteHeader(code int) { w.label(); w.ResponseWriter.WriteHeader(code) }
+func (w htmlWriter) Write(b []byte) (int, error) {
+	w.label()
+	return w.ResponseWriter.Write(b)
+}
+func (w htmlWriter) Flush() { http.NewResponseController(w.ResponseWriter).Flush() }
+func (w htmlWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return http.NewResponseController(w.ResponseWriter).Hijack()
+}
+func (w htmlWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// redirectTo permanently sends an old URL to its new home.
+func redirectTo(url string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, url, http.StatusMovedPermanently)
+	}
 }
 
 // envOrDefault reads an env var, falling back to a default when it's unset
@@ -105,10 +154,24 @@ func main() {
 	table := &handlers.TableHandlers{Cart: cartStore}
 	cartHandlers := &handlers.CartHandlers{Cart: cartStore}
 	handlers.StartIdleTableSweep(cartStore)
+	handlers.StartMenuScheduleWatcher()
+	handlers.StartPopularityRanker()
+	handlers.StartBookingSweep()
+	go func() {
+		for {
+			db.Maintain()
+			time.Sleep(24 * time.Hour)
+		}
+	}()
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	// gzip text responses (pages, htmx fragments, CSS/JS, JSON, CSV): cuts
+	// them to ~1/5 on the wire. Images are already compressed.
+	r.Use(middleware.Compress(5, "text/html", "text/css", "text/plain", "text/javascript",
+		"application/javascript", "application/json", "text/csv", "image/svg+xml"))
+	r.Use(htmlByDefault)
 	r.Use(handlers.SecurityHeadersMiddleware)
 	r.Use(handlers.CSRFProtectionMiddleware)
 	r.NotFound(handlers.NotFound)
@@ -126,26 +189,39 @@ func main() {
 	r.Handle("/static/*", http.StripPrefix("/static/", staticCacheHeaders(http.FileServer(neuteredFileSystem{http.Dir("static")}))))
 
 	r.Get("/", handlers.Landing)
+	r.Get("/privacy", handlers.Privacy)
+	r.Get("/book", handlers.Booking)
+	// The venue's look (colours, fonts, logo) — linked by every page.
+	r.Get("/brand.css", handlers.BrandCSS)
+	r.Get("/brand/icon", handlers.BrandIconPNG) // legacy path
+	r.Get("/brand/icon.png", handlers.BrandIconPNG)
+	r.Get("/brand/apple-touch-icon.png", handlers.BrandAppleIcon)
+	r.Get("/book/availability", handlers.BookingAvailability)
+	r.Post("/book/hold", handlers.BookingHold)
+	r.Post("/book/confirm", handlers.BookingConfirm)
+	r.Post("/book/release", handlers.BookingRelease)
 
 	// Phone-notification plumbing: served at the origin root (not under
 	// /static/*) — see handlers.ServiceWorker's doc comment on why that
 	// matters for a service worker's control scope.
 	r.Get("/sw.js", handlers.ServiceWorker)
-	// TEMPORARY — see handlers.DebugPushClientState's doc comment.
-	r.Post("/debug/push-client-state", handlers.DebugPushClientState)
 	r.Get("/manifest.json", handlers.WebManifest)
+	r.Get("/manifest-site.json", handlers.SiteManifest)
 	// Guest PWA manifest — per-table start_url via ?table=N, see
 	// handlers.GuestWebManifest's doc comment for why that matters on iOS.
 	r.Get("/manifest-guest.json", handlers.GuestWebManifest)
 
-	// Guest table access
+	// Guest table access. /t/{token} is what a table's printed QR code
+	// opens (and the only way to claim a table); /table/{number} is the
+	// host's own page after that.
+	r.Get("/t/{token}", table.Scan)
 	r.Get("/table/{number}", table.View)
-	r.Get("/table/{number}/left", table.Left)
 	r.Post("/table/{number}/leave", table.Leave)
 	r.Get("/table/{number}/ws", handlers.TableStatusWS)
 	// {number} in the URL is cosmetic — RequestAssistance resolves the
 	// actual table from the caller's own guest session, same as Leave.
 	r.Post("/table/{number}/assist", handlers.RequestAssistance)
+	r.Post("/table/{number}/assist/cancel", handlers.CancelAssistance)
 	// Guest-side phone alerts ("your order is ready") — same cosmetic
 	// {number} caveat as above; both handlers resolve the real session
 	// from the guest cookie.
@@ -162,6 +238,7 @@ func main() {
 	// Guest order self-service (cancel if not yet prepared; request a
 	// refund instead if already paid)
 	r.Post("/orders/{id}/cancel", handlers.GuestCancelOrder)
+	r.Get("/orders/{id}/receipt", handlers.GuestOrderReceipt)
 
 	// Guest-facing live menu
 	r.Get("/menu/ws", handlers.MenuWS)
@@ -172,44 +249,153 @@ func main() {
 	// Staff auth
 	r.Get("/login", handlers.LoginPage)
 	r.With(handlers.LoginRateLimitMiddleware).Post("/login", handlers.LoginSubmit)
+	r.With(handlers.LoginRateLimitMiddleware).Post("/login/code", handlers.LoginCodeSubmit)
 	r.Post("/logout", handlers.Logout)
 
-	// Admin dashboard
+	// Back office (/admin/*): every page needs its own access (see
+	// models.User.Can: admins open everything, other accounts their role's
+	// defaults or the custom pages set on the Staff page).
 	r.Group(func(r chi.Router) {
-		r.Use(handlers.RequireRole(models.RoleAdmin))
-		r.Get("/admin", handlers.AdminHome)
-		r.Get("/admin/stats", handlers.AdminStatsPeriod)
-		r.Get("/admin/stats/ws", handlers.AdminStatsWS)
-		r.Get("/admin/export.csv", handlers.AdminExportCSV)
-		r.Get("/admin/products", handlers.AdminProductList)
-		r.Get("/admin/menu/ws", handlers.AdminMenuWS)
-		r.Post("/admin/products", handlers.AdminCreateProduct)
-		r.Post("/admin/products/{id}", handlers.AdminUpdateProduct)
-		r.Post("/admin/products/{id}/toggle", handlers.AdminToggleProduct)
-		r.Delete("/admin/products/{id}", handlers.AdminDeleteProduct)
-		r.Post("/admin/products/{id}/ingredients", handlers.AdminAddIngredient)
-		r.Delete("/admin/ingredients/{id}", handlers.AdminDeleteIngredient)
-		r.Post("/admin/categories", handlers.AdminCreateCategory)
-		r.Get("/admin/tables", handlers.AdminTableList)
-		r.Get("/admin/tables/ws", handlers.AdminTablesWS)
-		r.Post("/admin/tables", handlers.AdminCreateTable)
-		r.Post("/admin/tables/{number}/release", handlers.AdminReleaseTable)
-		r.Delete("/admin/tables/{number}", handlers.AdminDeleteTable)
-		r.Get("/admin/staff", handlers.AdminStaffList)
-		r.Post("/admin/staff", handlers.AdminCreateStaff)
-		r.Post("/admin/staff/{id}", handlers.AdminUpdateStaff)
-		r.Post("/admin/staff/{id}/reset-password", handlers.AdminResetStaffPassword)
-		r.Post("/admin/staff/{id}/deactivate", handlers.AdminDeactivateStaff)
-		r.Post("/admin/staff/{id}/activate", handlers.AdminActivateStaff)
-		r.Get("/admin/audit-log", handlers.AdminAuditLog)
-		r.Get("/admin/assistance-log", handlers.AdminAssistanceLog)
-		r.Get("/admin/history/page", handlers.AdminOrderHistoryPage)
-		r.Get("/admin/orders/{id}/receipt", handlers.AdminOrderReceipt)
-		r.Get("/admin/backup", handlers.AdminDownloadBackup)
-		r.Post("/admin/settings/dj-requests/toggle", handlers.AdminToggleDJRequests)
-		r.Post("/admin/settings/cash-orders/toggle", handlers.AdminToggleCashOrders)
-		r.Post("/admin/settings/venue-name", handlers.AdminUpdateVenueName)
-		r.Post("/admin/settings/business-details", handlers.AdminUpdateBusinessDetails)
+		r.Use(handlers.RequireRole(models.RoleAdmin, models.RoleWorker))
+		r.Get("/admin/guide", handlers.AdminGuide) // every account: how the software works
+		r.Group(func(r chi.Router) {
+			r.Use(handlers.RequirePage("dashboard"))
+			r.Get("/admin", handlers.AdminHome)
+			r.Get("/admin/stats", handlers.AdminStatsPeriod)
+			r.Get("/admin/stats/ws", handlers.AdminStatsWS)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(handlers.RequirePage("bookings"))
+			r.Get("/worker/bookings", handlers.WorkBookings) // Bookings inside the staff app (work mode)
+			r.Get("/worker/bookings/floor", redirectTo("/worker/floor"))
+			r.Get("/admin/bookings", handlers.StaffBookings)
+			r.Get("/admin/bookings/rows", handlers.StaffBookingRows)
+			r.Get("/admin/bookings/new", handlers.StaffBookingNew)
+			r.Post("/admin/bookings", handlers.StaffBookingCreate)
+			r.Get("/admin/bookings/{id}/edit", handlers.StaffBookingEdit)
+			r.Post("/admin/bookings/{id}", handlers.StaffBookingUpdate)
+			r.Post("/admin/bookings/{id}/status", handlers.StaffBookingStatus)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(handlers.RequirePage("floor"))
+			r.Get("/admin/floor", handlers.StaffFloor)
+			r.Get("/worker/floor", handlers.WorkFloor) // Floor inside the staff app (work mode)
+			r.Get("/admin/floor/live", handlers.StaffFloorData)
+			r.Get("/admin/floor/ws", handlers.FloorWS)
+			r.Post("/admin/tables/{number}/release", handlers.StaffReleaseTable)
+			r.Post("/admin/tables/{number}/service", handlers.StaffTableService)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(handlers.RequirePage("menu"))
+			r.Get("/admin/products", handlers.AdminProductList)
+			r.Get("/admin/menu/ws", handlers.AdminMenuWS)
+			r.Post("/admin/products", handlers.AdminCreateProduct)
+			r.Get("/admin/products/new", handlers.AdminProductNew)
+			r.Get("/admin/products/{id}/edit", handlers.AdminProductEditor)
+			r.Post("/admin/products/{id}/stock", handlers.AdminProductStock)
+			r.Post("/admin/products/{id}", handlers.AdminUpdateProduct)
+			r.Post("/admin/products/{id}/toggle", handlers.AdminToggleProduct)
+			r.Delete("/admin/products/{id}", handlers.AdminDeleteProduct)
+			r.Post("/admin/products/{id}/ingredients", handlers.AdminAddIngredient)
+			r.Delete("/admin/ingredients/{id}", handlers.AdminDeleteIngredient)
+			r.Post("/admin/categories", handlers.AdminCreateCategory)
+			r.Get("/admin/menu", handlers.AdminMenuPage)
+			r.Get("/admin/menu/categories", handlers.AdminCategoriesPage)
+			// Menus & hours: scheduled menus, kitchen/bar switches, guest suggestions.
+			r.Get("/admin/menu/hours", handlers.AdminHoursPage)
+			r.Get("/admin/menu/hours/ws", handlers.AdminHoursWS)
+			r.Get("/admin/menu/hours/preview", handlers.AdminHoursPreview)
+			r.Post("/admin/products/{id}/recommend", handlers.AdminToggleRecommended)
+			r.Get("/admin/menu/hours/new", handlers.AdminServiceMenuForm)
+			r.Get("/admin/menu/hours/{id}/edit", handlers.AdminServiceMenuForm)
+			r.Post("/admin/menu/hours", handlers.AdminServiceMenuSave)
+			r.Post("/admin/menu/hours/suggestions", handlers.AdminGuestSuggestions)
+			r.Post("/admin/menu/hours/rerank", handlers.AdminRerankPopularity)
+			r.Post("/admin/menu/hours/{id}", handlers.AdminServiceMenuSave)
+			r.Post("/admin/menu/hours/{id}/toggle", handlers.AdminServiceMenuToggle)
+			r.Post("/admin/menu/hours/{id}/delete", handlers.AdminServiceMenuDelete)
+			r.Post("/admin/stations/{dept}", handlers.AdminSetStation)
+			r.Post("/admin/stations/{dept}/hours", handlers.AdminSetStationHours)
+			r.Post("/admin/stations/{dept}/busy", handlers.AdminSetBusy)
+			r.Post("/admin/areas/pause", handlers.AdminSetArea)
+			r.Get("/admin/menu/hours/special/new", handlers.AdminSpecialDayForm)
+			r.Get("/admin/menu/hours/special/{id}/edit", handlers.AdminSpecialDayForm)
+			r.Post("/admin/menu/hours/special", handlers.AdminSpecialDaySave)
+			r.Post("/admin/menu/hours/special/{id}", handlers.AdminSpecialDaySave)
+			r.Post("/admin/menu/hours/special/{id}/delete", handlers.AdminSpecialDayDelete)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(handlers.RequirePage("map"))
+			r.Post("/admin/tables/{number}/layout", handlers.AdminTableLayout)
+			r.Post("/admin/tables/{number}/position", handlers.AdminTablePosition)
+			r.Post("/admin/map/preset", handlers.AdminFloorPreset)
+			r.Get("/admin/map", handlers.AdminFloorEditor)
+			r.Get("/admin/map/qr", handlers.AdminQRSheet)
+			r.Get("/admin/tables/{number}/qr.png", handlers.AdminTableQRPNG)
+			r.Post("/admin/tables/{number}/qr/rotate", handlers.AdminRotateTableQR)
+			r.Get("/admin/map/data", handlers.AdminFloorData)
+			r.Post("/admin/map/spots", handlers.AdminAddSpot)
+			r.Post("/admin/map/spots/{number}/delete", handlers.AdminDeleteSpot)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(handlers.RequirePage("orders"))
+			r.Get("/admin/orders/rows", handlers.AdminOrderRows)
+			r.Get("/admin/orders/{id}", handlers.AdminOrderDetail)
+			r.Post("/admin/orders/{id}/payment", handlers.AdminOrderPayment)
+			r.Post("/admin/orders/{id}/status", handlers.AdminOrderStatus)
+			r.Post("/admin/orders/{id}/cancel", handlers.AdminOrderCancel)
+			r.Get("/admin/orders/{id}/receipt", handlers.AdminOrderReceipt)
+			r.Get("/admin/orders", handlers.AdminOrdersPage)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(handlers.RequirePage("logs"))
+			r.Get("/admin/logs/rows", handlers.AdminLogRows)
+			r.Get("/admin/logs", handlers.AdminLogsPage)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(handlers.RequirePage("staff"))
+			r.Post("/admin/staff", handlers.AdminCreateStaff)
+			r.Get("/admin/staff/new", handlers.AdminStaffNew)
+			r.Post("/admin/staff/{id}", handlers.AdminUpdateStaff)
+			r.Post("/admin/staff/{id}/deactivate", handlers.AdminDeactivateStaff)
+			r.Post("/admin/staff/{id}/activate", handlers.AdminActivateStaff)
+		})
+		// Staff help: an admin, or a manager helping the floor staff. The
+		// handlers themselves refuse anything a manager may not touch (see
+		// mayHelp): admins, other managers, themselves.
+		r.Group(func(r chi.Router) {
+			r.Use(handlers.RequirePage("team"))
+			r.Get("/admin/team", handlers.AdminTeamPage)
+			r.Get("/admin/staff", handlers.AdminStaffList)
+			r.Get("/admin/staff/{id}/edit", handlers.AdminStaffEdit)
+			r.Post("/admin/staff/{id}/reset-password", handlers.AdminResetStaffPassword)
+			r.Post("/admin/staff/{id}/signout", handlers.AdminStaffSignOut)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(handlers.RequirePage("settings"))
+			r.Get("/admin/backup", handlers.AdminDownloadBackup)
+			r.Get("/admin/export.csv", handlers.AdminExportCSV) // the whole sales history: owner only
+			r.Post("/admin/settings/dj-requests/toggle", handlers.AdminToggleDJRequests)
+			r.Post("/admin/settings/cash-orders/toggle", handlers.AdminToggleCashOrders)
+			r.Post("/admin/settings/venue-name", handlers.AdminUpdateVenueName)
+			r.Post("/admin/settings/business-details", handlers.AdminUpdateBusinessDetails)
+			r.Post("/admin/settings/booking", handlers.AdminBookingSettings)
+			r.Get("/admin/bookings/settings", handlers.AdminBookingSettingsPage)
+			r.Get("/admin/settings", handlers.AdminSettingsPage)
+		})
+		// The staff app inside the admin area (admins only; everyone else
+		// uses /worker).
+		r.Group(func(r chi.Router) {
+			r.Use(handlers.RequirePage("live"))
+			r.Get("/admin/live", handlers.AdminLive)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(handlers.RequirePage("system"))
+			r.Get("/admin/system", handlers.AdminSystemPage)
+			r.Post("/admin/system", handlers.AdminSystemSave)
+			r.Post("/admin/system/preview", handlers.AdminSystemPreview)
+			r.Post("/admin/system/upload", handlers.AdminSystemUpload)
+		})
 	})
 
 	// Worker dashboard
@@ -224,6 +410,11 @@ func main() {
 		// covers every role that can ever carry the forced flag.
 		r.Get("/change-password", handlers.ChangePasswordPage)
 		r.Post("/change-password", handlers.ChangePasswordSubmit)
+		// Two-step login: required for admins (RequireRole sends them here
+		// until it's on), optional for everyone else.
+		r.Get("/account/2fa", handlers.TwoFactorPage)
+		r.Post("/account/2fa", handlers.TwoFactorEnable)
+		r.Post("/account/2fa/off", handlers.TwoFactorDisable)
 
 		// Phone-alert subscribe/unsubscribe — every department, including
 		// DJ, can technically call these; DJ just never ends up in a
@@ -243,11 +434,23 @@ func main() {
 			r.Post("/worker/orders/{id}/cancel", handlers.WorkerCancelOrder)
 			r.Get("/worker/assistance/ws", handlers.WorkerAssistanceWS)
 			r.Post("/worker/tables/{number}/assist/clear", handlers.WorkerAcknowledgeAssistance)
+			// Sold-out board: bar/kitchen (their categories) and managers (all).
+			r.Get("/worker/stock", handlers.WorkerStock)
+			r.Post("/worker/stock/{id}/toggle", handlers.WorkerStockToggle)
+			r.Post("/worker/stations/{dept}", handlers.WorkerSetStation) // close/reopen your own kitchen or bar
+			r.Post("/worker/stations/{dept}/busy", handlers.WorkerSetBusy)
 		})
 
-		// DJ terminal: DJ department only.
+		// Collect: waiters and managers settle tables.
 		r.Group(func(r chi.Router) {
-			r.Use(handlers.RequireDepartment(models.DepartmentDJ))
+			r.Use(handlers.RequireDepartment(models.DepartmentSuperworker, models.DepartmentWaiter))
+			r.Get("/worker/pay", handlers.WorkerPayList)
+			r.Post("/worker/pay/table/{number}/paid", handlers.WorkerPayTable)
+		})
+
+		// DJ terminal: the DJ, and managers (who cover every station).
+		r.Group(func(r chi.Router) {
+			r.Use(handlers.RequireDepartment(models.DepartmentDJ, models.DepartmentSuperworker))
 			r.Get("/worker/dj/ws", handlers.WorkerDJWS)
 			r.Post("/worker/dj/{id}/accept", handlers.WorkerDJAccept)
 			r.Post("/worker/dj/{id}/reject", handlers.WorkerDJReject)
@@ -314,7 +517,7 @@ func main() {
 			IdleTimeout:       60 * time.Second,
 		}
 		go func() {
-			log.Printf("🔒 Local HTTPS also listening on https://<this machine's LAN IP>%s (cert: %s)", tlsAddr, certFile)
+			log.Printf("🔒 Local HTTPS also listening on https://<this machine's LAN IP>%s (cert: %s)", tlsAddr, certFile) // #nosec G706 -- operator settings
 			if err := tlsSrv.ListenAndServeTLS(certFile, keyFile); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Printf("HTTPS listener error: %v", err)
 			}
@@ -342,7 +545,11 @@ func main() {
 		}
 	}()
 
-	log.Println("🚀 BiteBox Go server running on http://localhost:8080/table/1")
+	if t, err := db.GetTable(1); err == nil {
+		log.Printf("🚀 BiteBox Go server running on http://localhost:8080 — table 1's QR code: http://localhost:8080/t/%s (all codes: /admin/map/qr)", t.QRToken)
+	} else {
+		log.Println("🚀 BiteBox Go server running on http://localhost:8080 (table QR codes: /admin/map/qr)")
+	}
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("Server error: %v", err)
 	}

@@ -45,7 +45,7 @@ Most small-venue ordering software is either a heavyweight cloud POS with a mont
 
 ### For guests
 
-- **QR table sessions with single-host locking.** The first phone to open `/table/{n}` becomes that table's host and the only device allowed to order; every other phone that scans the same code gets a read-only "table is occupied" view. No double-ordering, no race between two people's phones.
+- **QR table sessions with single-host locking.** Each table's printed QR code holds a secret link (`/t/{token}`, printable from **Map editor → QR codes**), so nobody can reach a table by counting `/table/1`, `/table/2`…. The first phone to scan it becomes that table's host and the only device allowed to order; every other phone that scans the same code gets a read-only "table is occupied" view. No double-ordering, no race between two people's phones.
 - **Live menu, grouped by category.** Categories are admin-defined, not a fixed list — a venue names its own (Brunch, Cocktails, Red Wine, whatever its actual menu looks like) and each becomes a filter tab, with price, availability, and remaining stock all pushed live. An admin marking an item out of stock removes it from every open guest's screen instantly, no refresh.
 - **Ingredient customization that actually reads clearly.** One panel per item shows both what can be **removed** (green by default, tap to exclude, always free) and what can be **added extra** (blue by default, tap to include, turns green) — extras can carry a real price, shown right on the chip, and green always means "this is on my order," for either kind.
 
@@ -99,7 +99,7 @@ Every mutation in BiteBox follows the same shape: render the affected fragment o
 
 ```mermaid
 flowchart LR
-  G["Guest scans /table/7"] --> H["Claims table as host"]
+  G["Guest scans table 7's QR code"] --> H["Claims table as host"]
   H -->|orders, customizes, pays| O["Order created"]
   O -->|live push| K["Kitchen / Bar feed"]
   K -->|marks ready| W["Waiter feed"]
@@ -127,19 +127,30 @@ You should see:
 
 ```
 ⚡ [SQLite] Database initialized and seeded successfully
-🚀 BiteBox Go server running on http://localhost:8080/table/1
+🚀 BiteBox Go server running on http://localhost:8080 — table 1's QR code: http://localhost:8080/t/<token> (all codes: /admin/map/qr)
 ```
+
+### Live reload while developing
+
+Instead of `go run`, use [Air](https://github.com/air-verse/air) (config in `.air.toml`):
+
+```bash
+go install github.com/air-verse/air@latest   # once
+air                                          # or: make dev
+```
+
+Saving a `.go` file rebuilds and restarts the server (a compile error keeps the last working server running and prints the error). Templates, CSS and JS are read from disk on every request, so those changes show up on a plain browser refresh, with no restart.
 
 On first launch, BiteBox creates `bitebox.db`, seeds a sample menu across a handful of admin-managed categories, and creates one staff account per department — see [Seed accounts](#seed-accounts) below.
 
 | What | URL |
 |---|---|
-| Scan a table (becomes host on first visit) | `http://localhost:8080/table/1` |
+| Scan a table (becomes host on first visit) | the `/t/<token>` link printed at startup, or any code on `/admin/map/qr` |
 | Staff / admin login | `http://localhost:8080/login` |
 | Admin dashboard | `http://localhost:8080/admin` |
 | Worker dashboard | `http://localhost:8080/worker` |
 
-Open `/table/1` in one browser and in a private/incognito window to see the host-lock behavior — the second "device" gets the read-only guest view instead of stealing the ordering session.
+Open table 1's `/t/<token>` link in one browser and in a private/incognito window to see the host-lock behavior — the second "device" gets the read-only guest view instead of stealing the ordering session.
 
 ### Resetting the database
 
@@ -154,8 +165,17 @@ go run ./cmd/resetdb    # re-runs migrations/seeding against whatever bitebox.db
 
 ```bash
 go build -o bitebox ./cmd/server
-./bitebox
+PUBLIC_URL=https://order.example.com ./bitebox
 ```
+
+Settings for a real deployment (all optional, as environment variables):
+
+| Variable | What it does |
+|---|---|
+| `PUBLIC_URL` | The address printed inside the table QR codes. Without it, the codes use whatever address the QR page was opened on, so set it whenever you print from a laptop on `localhost` or a LAN IP. |
+| `TRUSTED_PROXIES` | Comma-separated IPs of your reverse proxy (e.g. `127.0.0.1,::1` for Caddy/nginx on the same machine). Rate limits then count each real visitor instead of lumping everyone behind the proxy together. Never list an address clients can reach directly. |
+| `BITEBOX_SECRET_KEY` | 32 random bytes, base64 (`openssl rand -base64 32`): the key that encrypts two-step login secrets inside the database. Without it, BiteBox creates `bitebox.key` next to the database on first use. Keep it (or that file) out of backups and git. |
+| `BITEBOX_KEY_FILE` | Where that key file lives, if not `./bitebox.key`. |
 
 ## Seed accounts
 
@@ -185,6 +205,19 @@ flowchart TB
   WAI -->|delivers| SV["served"]
   SUP["Manager / Admin: sees every stage, every category"]
 ```
+
+### Manager: the owner's right hand
+
+The **Manager** is one step under the admin: the person who runs the floor and fixes what goes wrong, without holding the keys to the business.
+
+| The manager can | Only the admin can |
+|---|---|
+| Use **every station's tools** in the staff app: kitchen and bar queues, deliver, collect payment, sold-out board, DJ requests | Create or remove accounts, change roles or page access |
+| Open Dashboard, Bookings, Floor, Menu &amp; stock, Orders, Logs | Settings, backups, and the sales CSV export |
+| **Fix an order**: move it to another stage, cancel it while it's New or Preparing (stock goes back) | Look &amp; brand, and the map layout |
+| **Help staff**: set a new password or sign a lost device out, for waiter, bar, kitchen and DJ accounts | Touch an admin or another manager's account |
+
+Everything a manager does to an order or an account is written to the staff activity log under their name. What each account can open is set per account in Staff → Page access; admin-only pages can't be granted to anyone else, even by custom access (`models.User.Can`).
 
 Admin accounts bypass department checks entirely — they're not "in" a department, they can reach every worker view. A worker account's department is a genuine access boundary enforced on the server (`RequireDepartment` middleware), not just a UI filter. Which department a category routes to (kitchen or bar) is itself admin-configurable per category, not hardcoded — see [Menu &amp; inventory management](#for-admins) above.
 
@@ -237,7 +270,7 @@ See `TODO.md` for the full, actively-maintained log — it's more current than t
 ## Known limitations
 
 - **No real payment processing.** Card checkout is a UI-labeled demo; only cash is a genuine "collect in person" flow.
-- **Seeded passwords are fixed and public in this README** — fine for local dev/demos, must be changed before touching a real venue's network. There's no forced-change or self-service reset flow yet.
+- **Seeded passwords are fixed and public in this README** — every seeded account must pick a new password at its first login, but whoever logs in first gets to pick it: change them before the server is reachable from a real network.
 - **No automated tests, no cart-reservation expiry timer** — a guest who abandons a table without hitting "Leave" keeps their cart's stock reserved until an admin force-releases the table.
 
 The full, unfiltered list — including intentional design tradeoffs versus genuine gaps — lives in `TODO.md`.
@@ -247,6 +280,12 @@ The full, unfiltered list — including intentional design tradeoffs versus genu
 - Passwords are hashed with bcrypt — never stored or logged in plaintext.
 - Staff auth sessions are opaque server-side tokens stored in SQLite (`auth_sessions`), separate from the anonymous guest table-host session, so logout, expiry (24h), and deactivation are enforced on the server rather than trusted to the client — deactivating an account force-closes any WebSocket connection it currently has open within seconds.
 - No client-supplied identifier is trusted for authorization: which table a guest can order onto, and which ingredients they can exclude/add, are always re-derived or validated server-side, never taken at face value from a form field.
+- **Passwords:** at least 8 characters, and the obvious ones (common passwords, the username plus digits) are refused. A password someone else set (a new account, a staff reset) works once: the account picks its own at the next login. Changing a password signs out every other device.
+- **Two-step login** (authenticator app codes, RFC 6238) is required for admins and optional for everyone else (**Two-step login** in the account menu). Codes can't be reused, each login gets 5 tries, and the secrets are encrypted in the database with a key kept outside it (`BITEBOX_SECRET_KEY` / `bitebox.key`), so a copied database or backup can't mint codes. Lost phone: a staff reset, or `go run ./cmd/resetpassword <user>` on the server, which prints a one-time password.
+- **Table QR codes** hold an unguessable token (`/t/{token}`); typing `/table/{n}` gets nothing unless your phone already hosts that table, and only the host can open a table's live feed. **New code** on the QR sheet revokes a lost or copied sticker.
+- **Content-Security-Policy** runs no inline script (`script-src 'self'`; page scripts live in `static/js/`), and websockets may only connect back to this server. Plus `frame-ancestors 'none'`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, and HSTS behind an HTTPS proxy.
+- **Rate limits** per client IP on login and login codes, table claims, cart, orders, call-waiter, DJ requests, phone alerts and online booking.
+- **Scans on every push** (`.github/workflows/security.yml`, or `make scan` locally): govulncheck, staticcheck, gosec, gitleaks, tests under `-race`, and an OWASP ZAP baseline. Dependabot keeps modules current.
 - The seeded accounts documented above use fixed, publicly-known passwords by design, for local development and demos — treat them as compromised from the moment this repository is cloned, and replace every one of them before any real-world use.
 
 ## Contributing

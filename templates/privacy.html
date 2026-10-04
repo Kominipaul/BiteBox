@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy · {{ .VenueName }}</title>
+  <link rel="stylesheet" href="/static/site.css?v={{ .V }}">
+  <link rel="stylesheet" href="/brand.css">
+  <link rel="icon" href="/brand/icon.png">
+</head>
+<body>
+  <header class="topbar">
+    <a class="wordmark" href="/"><span class="brand-logo" aria-hidden="true"></span><span class="brand-name">{{ .VenueName }}</span></a>
+  </header>
+  <main class="wrap prose">
+    <h1>Privacy</h1>
+    <p>{{ .VenueName }}{{ if .VAT }} (VAT {{ .VAT }}{{ if .TaxOffice }}, {{ .TaxOffice }}{{ end }}){{ end }} runs this site and is responsible for the personal data it holds.{{ if .Phone }} Contact: <a href="tel:{{ .Phone }}">{{ .Phone }}</a>.{{ end }}</p>
+
+    <h2>Ordering at your table</h2>
+    <p>You don't sign up or give your name. Your phone gets one cookie that links it to your table's order and is deleted when you close the browser. Orders are kept for the venue's accounts but aren't linked to you.</p>
+
+    <h2>Booking</h2>
+    <p>We ask for your name and phone number, and optionally your email and any special requests, only to hold and manage your booking. We need these to fulfil your booking (GDPR Art. 6(1)(b)). Staff see them, and we never sell them or use them for marketing. Your booking, with all its details, is deleted automatically twelve months after your visit.</p>
+
+    <h2>Notifications</h2>
+    <p>If you allow order alerts, your browser's push service (Google, Apple or Mozilla, depending on your browser) delivers them. Your subscription is deleted after two days.</p>
+
+    <h2>Cookies</h2>
+    <p>We only use cookies the site needs to work: the table cookie above and a staff login cookie. There is no analytics, advertising or third-party tracking, and fonts and scripts are served from this site.</p>
+
+    <h2>Your rights</h2>
+    <p>You can ask to see, correct or delete your data, or object to how we use it. {{ if .Phone }}Call <a href="tel:{{ .Phone }}">{{ .Phone }}</a>.{{ else }}Ask any member of staff.{{ end }} You can also complain to the Hellenic Data Protection Authority at <a href="https://www.dpa.gr">dpa.gr</a>.</p>
+
+    <footer><p><a href="/">Back to {{ .VenueName }}</a></p></footer>
+  </main>
+</body>
+</html>

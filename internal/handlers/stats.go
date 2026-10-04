@@ -131,5 +131,5 @@ func AdminStatsPeriod(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to load stats", http.StatusInternalServerError)
 		return
 	}
-	w.Write(b)
+	w.Write(b) // #nosec G705 -- our own html/template output
 }

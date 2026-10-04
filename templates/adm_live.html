@@ -1,0 +1,40 @@
+{{ define "title" }}Order feed{{ end }}
+
+{{/* The staff app inside the admin shell: same panels and script as /worker
+     (templates/_worker_panels.html, static/worker.js), so the admin sees the
+     live order feed, collects payment, sells items out and answers song
+     requests without leaving the back office. */}}
+{{ define "content" }}
+<div class="wk-root wk-embed" data-wk data-kind="{{ .Kind }}" data-first="{{ .First }}" data-bucket="{{ .Bucket }}" data-vapid="{{ .VAPIDPublicKey }}">
+  <div class="page-head">
+    <div>
+      <h1>Order feed</h1>
+      <p>Everything the floor is doing right now, live.</p>
+    </div>
+    <div class="wk-head-r">
+      <span class="live-pill" id="livePill" title="Live updates"><i></i><span>Live</span></span>
+      <details class="wk-alerts">
+        <summary class="wicon" aria-label="Alerts" title="Alerts">{{ template "i-bell" }}</summary>
+        <div class="wk-alerts-body">
+          <button type="button" class="wswitch" id="setSound" role="switch" aria-checked="true"><span><b>Sound alerts</b><small>A chime for new and ready orders</small></span><i></i></button>
+          <button type="button" class="wswitch" id="setPhone" role="switch" aria-checked="false"><span><b>Phone alerts</b><small id="phoneHint">Alerts on the lock screen</small></span><i></i></button>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <div class="wconn" id="conn" role="status" hidden>Connection lost. Reconnecting, updates will resume by themselves.</div>
+  <nav class="wtabs" id="tabs" aria-label="Sections">
+    {{ range .Tabs }}<button type="button" class="wtab" data-tab="{{ .Key }}">{{ template "w-icon" .Icon }}<span>{{ .Label }}</span><i class="wbadge" data-badge="{{ .Key }}" hidden></i></button>{{ end }}
+  </nav>
+
+  {{ template "worker-help" . }}
+  {{ template "worker-panels" . }}
+  {{ template "worker-toast" }}
+</div>
+{{ end }}
+
+{{ define "scripts" }}
+<link rel="stylesheet" href="/static/worker.css?v={{ .V }}">
+<script src="/static/worker.js?v={{ .V }}"></script>
+{{ end }}

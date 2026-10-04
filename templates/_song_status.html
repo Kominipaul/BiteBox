@@ -1,7 +1,7 @@
 {{ if .HasRequest }}
 <section class="section" id="songStatusSection">
   {{ if eq .Request.Status "pending" }}
-  <p>🎵 <strong>{{ .Request.SongName }}</strong> — waiting for the DJ to review your request...</p>
+  <p><strong>{{ .Request.SongName }}</strong>: waiting for the DJ to review your request.</p>
   {{ else if eq .Request.Status "accepted" }}
   <p style="color: #28a745;">✅ The DJ accepted <strong>{{ .Request.SongName }}</strong>! Pay €{{ printf "%.2f" .Request.TipAmount }} cash to the DJ/waiter.</p>
   {{ else if eq .Request.Status "rejected" }}

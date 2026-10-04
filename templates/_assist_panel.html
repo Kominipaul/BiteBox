@@ -1,0 +1,38 @@
+{{/* The guest's "Call a waiter" sheet (host_menu.html #assist-panel), in one
+     of three states. Re-rendered by every call/cancel response and pushed live
+     over the guest's own session socket when staff answer (see
+     renderAssistPanelHTML). data-state drives the floating button. */}}
+<div class="as" data-state="{{ .State }}"{{ if .SinceMs }} data-since="{{ .SinceMs }}"{{ end }}>
+{{ if eq .State "pending" }}
+  <div class="as-status">
+    <span class="as-pulse" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></span>
+    <div>
+      <h2 class="as-title" id="assistTitle">A waiter is coming</h2>
+      <p class="as-sub">{{ if .ReasonGuest }}{{ .ReasonGuest }} · {{ end }}called <span data-assist-age>just now</span></p>
+    </div>
+  </div>
+  <p class="as-note">Staff have been alerted on their phones. You can keep browsing the menu.</p>
+  <div class="as-actions">
+    <button type="button" class="as-btn as-btn-ghost" data-assist-close>Keep browsing</button>
+    <button type="button" class="as-btn as-btn-danger" hx-post="/table/{{ .Table }}/assist/cancel" hx-target="#assist-panel" hx-swap="innerHTML" hx-disabled-elt="this">Cancel request</button>
+  </div>
+{{ else }}
+  {{ if eq .State "ack" }}
+  <div class="as-banner" role="status">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+    <span><b>On the way.</b> A waiter saw your call and is heading to you.</span>
+  </div>
+  {{ end }}
+  <h2 class="as-title" id="assistTitle">Call a waiter</h2>
+  <p class="as-sub">We'll alert the staff to come to your table.</p>
+  <form class="as-form" hx-post="/table/{{ .Table }}/assist" hx-target="#assist-panel" hx-swap="innerHTML">
+    <fieldset class="as-reasons">
+      <legend class="as-legend">What do you need?</legend>
+      {{ range $i, $r := .Reasons }}
+      <label class="as-reason"><input type="radio" name="reason" value="{{ $r.Key }}" {{ if eq $i 0 }}checked{{ end }}><span>{{ $r.Guest }}</span></label>
+      {{ end }}
+    </fieldset>
+    <button type="submit" class="as-btn as-btn-primary as-call" hx-disabled-elt="this">Call a waiter</button>
+  </form>
+{{ end }}
+</div>

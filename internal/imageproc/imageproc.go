@@ -2,7 +2,7 @@
 // resolution and format a phone camera or gallery actually produced —
 // into two small, predictable JPEGs (a full size and a thumbnail) safe to
 // store and serve. Every guarantee here is enforced server-side: a browser
-// can (and, via admin_dashboard.html's own JS, does) shrink/convert an
+// can (and, via adm_menu.html's own JS, does) shrink/convert an
 // image before it's ever sent, but nothing about this package trusts that
 // happened. The same "never trust the client" rule the rest of this app
 // already applies to prices, table numbers, and ingredient names.
@@ -19,11 +19,12 @@ import (
 	"image"
 	_ "image/gif"
 	"image/jpeg"
-	_ "image/png"
+	"image/png"
 	"io"
 	"log"
 
 	"golang.org/x/image/draw"
+	_ "golang.org/x/image/webp"
 )
 
 const (
@@ -104,7 +105,7 @@ var (
 	// README: "one Go binary, one SQLite file, no external services... a
 	// Raspberry Pi") is incompatible with that, so this format is
 	// rejected here with a message the frontend surfaces directly, and
-	// converted client-side instead (see admin_dashboard.html's
+	// converted client-side instead (see adm_menu.html's
 	// heicFileToJPEG) in the one browser that can actually decode a HEIC
 	// file to begin with — the same Safari that just produced it.
 	ErrHEICNotSupported = errors.New("HEIC/HEIF photos aren't supported — please convert to JPEG first (iPhone: Settings > Camera > Formats > \"Most Compatible\"), or try the upload again in Safari")
@@ -136,36 +137,9 @@ type Result struct {
 // which internal/handlers/photo.go's photoUploadErrorMessage maps to the
 // text shown on the dashboard.
 func Process(r io.Reader) (Result, error) {
-	raw, err := io.ReadAll(io.LimitReader(r, MaxUploadBytes+1))
+	raw, img, err := decode(r)
 	if err != nil {
 		return Result{}, err
-	}
-	if len(raw) > MaxUploadBytes {
-		return Result{}, ErrTooLarge
-	}
-
-	// Checked by content, not by filename/extension — a phone gallery
-	// picker's reported name/MIME type is exactly the kind of client-
-	// supplied metadata this package doesn't trust. detectHEIC reads the
-	// ISO-BMFF container's own brand box, the same "sniff the actual
-	// bytes" idea net/http.DetectContentType uses for the formats it
-	// knows about (it doesn't know about HEIC specifically — see
-	// detectHEIC's own comment on why this needs its own check).
-	if detectHEIC(raw) {
-		return Result{}, ErrHEICNotSupported
-	}
-
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
-	if err != nil {
-		return Result{}, ErrNotAnImage
-	}
-	if cfg.Width*cfg.Height > MaxPixels {
-		return Result{}, ErrTooManyPixels
-	}
-
-	img, _, err := image.Decode(bytes.NewReader(raw))
-	if err != nil {
-		return Result{}, ErrNotAnImage
 	}
 
 	// Resize first, then correct orientation: a 90°-multiple rotate/flip
@@ -207,6 +181,65 @@ func Process(r io.Reader) (Result, error) {
 		Thumb: Variant{JPEG: thumbJPEG, Width: tb.Dx(), Height: tb.Dy()},
 		Hash:  hex.EncodeToString(sum[:hashBytes]),
 	}, nil
+}
+
+// decode reads and decodes an upload with every guard Process documents
+// (size cap, HEIC refusal, pixel-count check before the real decode).
+func decode(r io.Reader) ([]byte, image.Image, error) {
+	raw, err := io.ReadAll(io.LimitReader(r, MaxUploadBytes+1))
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(raw) > MaxUploadBytes {
+		return nil, nil, ErrTooLarge
+	}
+	if detectHEIC(raw) {
+		return nil, nil, ErrHEICNotSupported
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
+	if err != nil {
+		return nil, nil, ErrNotAnImage
+	}
+	if cfg.Width*cfg.Height > MaxPixels {
+		return nil, nil, ErrTooManyPixels
+	}
+	img, _, err := image.Decode(bytes.NewReader(raw))
+	if err != nil {
+		return nil, nil, ErrNotAnImage
+	}
+	return raw, img, nil
+}
+
+// Brand processes a logo, icon or background photo: upright, at most
+// maxDim on its longest edge, re-encoded (which also strips metadata) as
+// PNG when transparency matters (logos) or JPEG (photos). Hash is of the
+// encoded bytes, for a content-named file.
+type BrandImage struct {
+	Data          []byte
+	Width, Height int
+	Hash          string
+}
+
+func Brand(r io.Reader, maxDim int, asPNG bool) (BrandImage, error) {
+	raw, img, err := decode(r)
+	if err != nil {
+		return BrandImage{}, err
+	}
+	img = applyEXIFOrientation(resizeToMax(img, maxDim), readJPEGOrientation(raw))
+	var data []byte
+	if asPNG {
+		var out bytes.Buffer
+		err = (&png.Encoder{CompressionLevel: png.BestCompression}).Encode(&out, img)
+		data = out.Bytes()
+	} else {
+		data, err = encodeJPEG(img)
+	}
+	if err != nil {
+		return BrandImage{}, err
+	}
+	sum := sha256.Sum256(data)
+	b := img.Bounds()
+	return BrandImage{data, b.Dx(), b.Dy(), hex.EncodeToString(sum[:hashBytes])}, nil
 }
 
 // encodeJPEG re-encodes img as a JPEG at JPEGQuality. Go's stdlib

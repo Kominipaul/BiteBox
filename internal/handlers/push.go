@@ -126,7 +126,7 @@ func InitPush() {
 	pushVAPIDPrivateKey = priv
 }
 
-// PushVAPIDPublicKey exposes the public key to templates — worker_dashboard.html
+// PushVAPIDPublicKey exposes the public key to templates — worker_app.html
 // hands it to the browser's PushManager.subscribe call. Never the private key.
 func PushVAPIDPublicKey() string { return pushVAPIDPublicKey }
 
@@ -296,7 +296,7 @@ func sendPushToSubscriptions(subs []db.PushSubscription, payload pushPayload) {
 
 // summarizeItemsForPush renders an order's items as one line for a push
 // notification's body — same "qty× name" shape as the in-page alert
-// banner (see worker_dashboard.html's summarizeOrderItems), just built
+// banner (see worker_app.html's summarizeOrderItems), just built
 // server-side here since a push has no DOM to read it back out of.
 func summarizeItemsForPush(items []models.OrderItem) string {
 	parts := make([]string, 0, len(items))
@@ -361,9 +361,10 @@ func pushReadyAlert(orderID, tableNumber int, items []models.OrderItem) {
 // non-obvious information), "a guest tapped Call waiter" adds nothing the
 // title doesn't already say — a lock-screen glance should end at the
 // title, not make someone read a second line to learn nothing new.
-func pushAssistanceAlert(tableNumber int) {
+func pushAssistanceAlert(tableNumber int, reason string) {
 	notifyDepartments([]string{models.DepartmentWaiter}, pushPayload{
 		Title: fmt.Sprintf("Table %02d — Needs assistance", tableNumber),
+		Body:  models.AssistReasonLabel(reason),
 		URL:   "/worker",
 		Tag:   fmt.Sprintf("assist-table-%d", tableNumber),
 	})

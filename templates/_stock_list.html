@@ -1,0 +1,20 @@
+{{ define "stock-row" }}
+<div class="sk{{ if not .IsAvailable }} out{{ end }}" data-name="{{ .Name }}">
+  <div class="sk-txt"><b>{{ .Name }}</b><small>{{ .Category }}{{ if ge .Stock 0 }} · {{ .Stock }} left{{ end }}</small></div>
+  <button type="button" class="sk-btn" role="switch" aria-checked="{{ if .IsAvailable }}true{{ else }}false{{ end }}"
+    hx-post="/worker/stock/{{ .ID }}/toggle" hx-target="closest .sk" hx-swap="outerHTML">{{ if .IsAvailable }}On the menu{{ else }}Sold out{{ end }}</button>
+</div>
+{{ end }}
+<div class="feed-meta" data-total="{{ .Sold }}" hidden></div>
+{{ if .Stations }}<section class="sk-stations">{{ template "_stations.html" . }}</section>{{ end }}
+{{ if .Groups }}
+{{ range .Groups }}
+<section class="sk-group" data-group>
+  <h3>{{ .Category }}</h3>
+  {{ range .Items }}{{ template "stock-row" . }}{{ end }}
+</section>
+{{ end }}
+<p class="w-empty-filter" hidden>No item matches.</p>
+{{ else }}
+<div class="w-empty"><span class="w-empty-ico">–</span><b>No items to show.</b><small>Items from your categories appear here.</small></div>
+{{ end }}

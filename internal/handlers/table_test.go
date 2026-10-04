@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"bitebox/internal/cart"
@@ -96,7 +97,7 @@ func TestWorkerAcknowledgeAssistanceRecordsActingUser(t *testing.T) {
 	if err := db.CreateTable(tableNum); err != nil {
 		t.Fatalf("CreateTable: %v", err)
 	}
-	if err := db.RequestAssistance(tableNum); err != nil {
+	if _, err := db.RequestAssistance(tableNum, "help"); err != nil {
 		t.Fatalf("RequestAssistance: %v", err)
 	}
 
@@ -124,5 +125,53 @@ func TestWorkerAcknowledgeAssistanceRecordsActingUser(t *testing.T) {
 	}
 	if entries[0].AcknowledgedBy != "waiter_test_ack" {
 		t.Errorf("AcknowledgedBy = %q, want %q", entries[0].AcknowledgedBy, "waiter_test_ack")
+	}
+}
+
+// TestGuestCallAndCancelAssistance: the host calls a waiter with a reason,
+// someone else's session can't cancel it, and the host's own cancel clears
+// it and hands back the "Call a waiter" form.
+func TestGuestCallAndCancelAssistance(t *testing.T) {
+	const tableNum = 9005
+	if err := db.CreateTable(tableNum); err != nil {
+		t.Fatalf("CreateTable: %v", err)
+	}
+	if err := db.ClaimTable(tableNum, "assist-host"); err != nil {
+		t.Fatalf("ClaimTable: %v", err)
+	}
+	post := func(path, session, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.AddCookie(&http.Cookie{Name: GuestSessionCookieName, Value: session})
+		w := httptest.NewRecorder()
+		if strings.HasSuffix(path, "/cancel") {
+			CancelAssistance(w, r)
+		} else {
+			RequestAssistance(w, r)
+		}
+		return w
+	}
+
+	w := post("/table/9005/assist", "assist-host", "reason=bill")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `data-state="pending"`) {
+		t.Fatalf("call: %d %s", w.Code, w.Body.String())
+	}
+	if call, pending, _ := db.AssistanceState(tableNum); !pending || call.Reason != "bill" {
+		t.Fatalf("after call: %+v pending=%v", call, pending)
+	}
+
+	if w := post("/table/9005/assist/cancel", "someone-else", ""); w.Code != http.StatusForbidden {
+		t.Fatalf("stranger's cancel = %d, want 403", w.Code)
+	}
+	if _, pending, _ := db.AssistanceState(tableNum); !pending {
+		t.Fatal("a stranger cancelled the host's call")
+	}
+
+	w = post("/table/9005/assist/cancel", "assist-host", "")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `data-state="idle"`) {
+		t.Fatalf("cancel: %d %s", w.Code, w.Body.String())
+	}
+	if _, pending, _ := db.AssistanceState(tableNum); pending {
+		t.Fatal("call still pending after the host cancelled")
 	}
 }

@@ -1,0 +1,34 @@
+{{ define "title" }}Categories{{ end }}
+
+{{ define "content" }}
+<div class="page-head">
+  <div>
+    <h1>Categories</h1>
+    <p>What guests browse by, and whether the kitchen or the bar makes it.</p>
+  </div>
+</div>
+  <section class="panel">
+    <div class="panel-header">
+      <h2>Menu categories</h2>
+      <span class="section-sub">What guests browse by. Add as many as the menu needs.</span>
+    </div>
+    <div class="category-pills">
+      {{ range .Categories }}
+      <span class="category-pill category-pill-{{ .Department }}">{{ .Name }}<span class="category-pill-dept">{{ if eq .Department "kitchen" }}Kitchen{{ else }}Bar{{ end }}</span></span>
+      {{ else }}
+      <p class="empty-note">No categories yet.</p>
+      {{ end }}
+    </div>
+    <form class="add-form add-form-category" hx-post="/admin/categories">
+      <input class="field-input" name="name" placeholder="Category name, e.g. Tapas" aria-label="Category name" required>
+      <select class="field-select" name="department" aria-label="Prepared by">
+        <option value="kitchen">Kitchen</option>
+        <option value="bar" selected>Bar</option>
+      </select>
+      <button type="submit" class="btn btn-primary">Add category</button>
+    </form>
+    <p class="empty-note" style="margin-top:10px;">Decides which order feed (kitchen or bar) products in this category route to for prep (see Staff &amp; access).</p>
+  </section>
+{{ end }}
+
+{{ define "scripts" }}{{ end }}

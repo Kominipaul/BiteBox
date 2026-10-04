@@ -167,12 +167,12 @@ func InitDB() {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
-	-- Append-only "call waiter" acknowledgment trail. tables.assistance_requested
-	-- is just a live flag with no memory of who cleared it or how long it sat
-	-- (see db.ClearAssistance) — this is that memory. One row per
-	-- acknowledgment, written in the same transaction that clears the flag;
-	-- a table released (guest left) while a request was still pending logs
-	-- nothing here, since nobody actually acknowledged it.
+	-- Append-only "call waiter" trail. tables.assistance_requested is just a
+	-- live flag with no memory of who cleared it or how long it sat (see
+	-- db.ClearAssistance / db.CancelAssistance) — this is that memory. One row
+	-- per answered or guest-cancelled call (outcome), written in the same
+	-- transaction that clears the flag; a table released (guest left) while a
+	-- request was still pending logs nothing here.
 	CREATE TABLE IF NOT EXISTS assistance_log (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		table_number INTEGER NOT NULL,
@@ -331,6 +331,14 @@ func InitDB() {
 		// before this column existed), never on an admin-created or
 		// admin-reset account, whose password nobody else has seen.
 		{"must_change_password", "INTEGER DEFAULT 0"},
+		// pages: custom back-office access (models.User.Can); NULL = the
+		// role's defaults.
+		{"pages", "TEXT DEFAULT NULL"},
+		// Two-step login (see twofactor.go): the authenticator secret, sealed
+		// with auth.Seal; one being set up; the last code step used.
+		{"totp_secret", "TEXT DEFAULT ''"},
+		{"totp_pending", "TEXT DEFAULT ''"},
+		{"totp_last_step", "INTEGER DEFAULT 0"},
 	} {
 		if err := addColumnIfMissing("users", m.column, m.definition); err != nil {
 			log.Fatalf("Failed to migrate users.%s: %v", m.column, err)
@@ -354,6 +362,86 @@ func InitDB() {
 	}
 	if err := addColumnIfMissing("tables", "assistance_requested_at", "DATETIME"); err != nil {
 		log.Fatalf("Failed to migrate tables.assistance_requested_at: %v", err)
+	}
+	// Why the guest called (models.AssistReasons key), and on the log whether
+	// staff answered it or the guest cancelled it first.
+	if err := addColumnIfMissing("tables", "assistance_reason", "TEXT DEFAULT ''"); err != nil {
+		log.Fatalf("Failed to migrate tables.assistance_reason: %v", err)
+	}
+	if err := addColumnIfMissing("assistance_log", "reason", "TEXT DEFAULT ''"); err != nil {
+		log.Fatalf("Failed to migrate assistance_log.reason: %v", err)
+	}
+	if err := addColumnIfMissing("assistance_log", "outcome", "TEXT DEFAULT 'answered'"); err != nil {
+		log.Fatalf("Failed to migrate assistance_log.outcome: %v", err)
+	}
+	// Menus & hours: scheduled menus, the kitchen/bar close switches, and the
+	// guest menu's Recommended / Popular rows (see models.Schedule).
+	if _, err := DB.Exec(`CREATE TABLE IF NOT EXISTS service_menus (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		days TEXT NOT NULL DEFAULT '1234567',
+		start_min INTEGER NOT NULL,
+		end_min INTEGER NOT NULL,
+		last_orders INTEGER NOT NULL DEFAULT 0,
+		everything INTEGER NOT NULL DEFAULT 0,
+		categories TEXT NOT NULL DEFAULT '[]',
+		products TEXT NOT NULL DEFAULT '[]',
+		enabled INTEGER NOT NULL DEFAULT 1,
+		position INTEGER NOT NULL DEFAULT 0
+	);
+	CREATE TABLE IF NOT EXISTS popularity (
+		product_id INTEGER NOT NULL,
+		daypart INTEGER NOT NULL,
+		qty INTEGER NOT NULL,
+		PRIMARY KEY (product_id, daypart)
+	);
+	CREATE TABLE IF NOT EXISTS special_days (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		date_from TEXT NOT NULL,
+		date_to TEXT NOT NULL,
+		note TEXT NOT NULL DEFAULT '',
+		closed INTEGER NOT NULL DEFAULT 0,
+		hours TEXT NOT NULL DEFAULT '{}'
+	);
+	CREATE TABLE IF NOT EXISTS area_closures (
+		zone TEXT PRIMARY KEY,
+		closed_until TEXT NOT NULL DEFAULT ''
+	);
+	CREATE TABLE IF NOT EXISTS stations (
+		dept TEXT PRIMARY KEY,
+		closed_until TEXT NOT NULL DEFAULT ''
+	);`); err != nil {
+		log.Fatalf("Failed to create menus & hours tables: %v", err)
+	}
+	for _, c := range []struct{ table, col, def string }{
+		{"products", "recommended", "INTEGER DEFAULT 0"},
+		{"settings", "show_recommended", "INTEGER DEFAULT 1"},
+		{"settings", "show_popular", "INTEGER DEFAULT 1"},
+		{"settings", "recommended_title", "TEXT DEFAULT 'Recommended by us'"},
+		{"settings", "popular_days", "INTEGER DEFAULT 30"},
+		{"settings", "popular_count", "INTEGER DEFAULT 6"},
+		{"settings", "popular_scope", "TEXT DEFAULT 'all'"},
+		{"service_menus", "zones", "TEXT NOT NULL DEFAULT '[]'"},
+		{"service_menus", "kind", "TEXT NOT NULL DEFAULT 'menu'"},
+		{"service_menus", "disc_type", "TEXT NOT NULL DEFAULT ''"},
+		{"service_menus", "disc_value", "REAL NOT NULL DEFAULT 0"},
+		{"stations", "hours_set", "INTEGER NOT NULL DEFAULT 0"},
+		{"stations", "open_min", "INTEGER NOT NULL DEFAULT 0"},
+		{"stations", "close_min", "INTEGER NOT NULL DEFAULT 0"},
+		{"stations", "hours_last", "INTEGER NOT NULL DEFAULT 0"},
+		{"stations", "per_day", "INTEGER NOT NULL DEFAULT 0"},
+		{"stations", "week", "TEXT NOT NULL DEFAULT ''"},
+		{"stations", "busy_until", "TEXT NOT NULL DEFAULT ''"},
+		{"stations", "busy_minutes", "INTEGER NOT NULL DEFAULT 0"},
+		{"products", "avail_start", "INTEGER DEFAULT -1"},
+		{"products", "avail_end", "INTEGER DEFAULT -1"},
+		{"settings", "sort_by_popularity", "INTEGER DEFAULT 1"},
+		{"settings", "show_upcoming", "INTEGER DEFAULT 1"},
+		{"settings", "popularity_ranked_at", "TEXT DEFAULT ''"},
+	} {
+		if err := addColumnIfMissing(c.table, c.col, c.def); err != nil {
+			log.Fatalf("Failed to migrate %s.%s: %v", c.table, c.col, err)
+		}
 	}
 
 	// tip_amount is separate from total_amount (which stays "sum of line
@@ -406,8 +494,77 @@ func InitDB() {
 		log.Fatalf("Failed to migrate settings.vapid_private_key: %v", err)
 	}
 
+	// starts_at/ends_at are venue-local models.BookingTimeLayout strings, so
+	// overlap checks are plain string comparisons (see bookings.go).
+	if _, err := DB.Exec(`CREATE TABLE IF NOT EXISTS bookings (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		code TEXT NOT NULL UNIQUE,
+		table_number INTEGER NOT NULL,
+		starts_at TEXT NOT NULL,
+		ends_at TEXT NOT NULL,
+		guests INTEGER NOT NULL,
+		name TEXT NOT NULL,
+		phone TEXT DEFAULT '',
+		email TEXT DEFAULT '',
+		notes TEXT DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'confirmed',
+		source TEXT NOT NULL DEFAULT 'online',
+		created_by TEXT DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_bookings_starts_at ON bookings (starts_at);
+	-- Orders / Logs pages filter by time and page newest-first (lists.go).
+	CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders (created_at);
+	CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items (order_id);
+	CREATE INDEX IF NOT EXISTS idx_assistance_log_ack ON assistance_log (acknowledged_at);
+	CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log (created_at);
+	-- Live lookups that would otherwise scan every order ever placed: the
+	-- order feeds (status), a table's current order, a guest's own orders.
+	CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
+	CREATE INDEX IF NOT EXISTS idx_orders_table ON orders (table_number);
+	CREATE INDEX IF NOT EXISTS idx_orders_session ON orders (session_id);
+	CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions (user_id);
+	CREATE INDEX IF NOT EXISTS idx_guest_push_session ON guest_push_subscriptions (session_id);`); err != nil {
+		log.Fatalf("Failed to create bookings: %v", err)
+	}
+
+	// Floor-plan layout + booking flags per table, and venue booking
+	// settings — see models.Table / models.Settings.
+	for _, m := range []struct{ table, column, definition string }{
+		{"tables", "zone", "TEXT DEFAULT 'Main'"},
+		{"tables", "shape", "TEXT DEFAULT 'round'"},
+		{"tables", "min_guests", "INTEGER DEFAULT 1"},
+		{"tables", "max_guests", "INTEGER DEFAULT 4"},
+		{"tables", "pos_x", "REAL DEFAULT -1"},
+		{"tables", "pos_y", "REAL DEFAULT -1"},
+		{"tables", "bookable", "INTEGER DEFAULT 1"},
+		{"tables", "out_of_service", "INTEGER DEFAULT 0"},
+		{"tables", "label", "TEXT DEFAULT ''"},
+		{"tables", "fee", "REAL DEFAULT 0"},
+		{"tables", "min_spend", "REAL DEFAULT 0"},
+		{"tables", "duration", "INTEGER DEFAULT 0"},
+		{"tables", "avail_from", "TEXT DEFAULT ''"},
+		{"tables", "avail_until", "TEXT DEFAULT ''"},
+		{"tables", "full_day", "INTEGER DEFAULT 0"},
+		{"tables", "qr_token", "TEXT DEFAULT ''"},
+		{"bookings", "hold_token", "TEXT DEFAULT ''"},
+		{"bookings", "hold_expires", "TEXT DEFAULT ''"},
+		{"settings", "booking_enabled", "INTEGER DEFAULT 1"},
+		{"settings", "booking_open", "TEXT DEFAULT '12:00'"},
+		{"settings", "booking_close", "TEXT DEFAULT '22:00'"},
+		{"settings", "booking_duration", "INTEGER DEFAULT 120"},
+		{"settings", "booking_days_ahead", "INTEGER DEFAULT 14"},
+		{"settings", "venue_phone", "TEXT DEFAULT ''"},
+		{"settings", "theme", "TEXT DEFAULT ''"},
+	} {
+		if err := addColumnIfMissing(m.table, m.column, m.definition); err != nil {
+			log.Fatalf("Failed to migrate %s.%s: %v", m.table, m.column, err)
+		}
+	}
+	DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_hold ON bookings (hold_token)")
+
 	// Seed Table 1 if it doesn't exist
-	DB.Exec(`INSERT OR IGNORE INTO tables (number, status, host_session_id) VALUES (1, 'available', '')`)
+	DB.Exec(`INSERT OR IGNORE INTO tables (number, status, host_session_id, qr_token) VALUES (1, 'available', '', ?)`, NewTableToken())
 
 	// Seed EGO's real menu (first client — see seed_ego.go) on a fresh database.
 	var count int
@@ -417,6 +574,21 @@ func InitDB() {
 	}
 
 	seedDefaultUsers()
+
+	// A floor with nothing placed on the map (fresh install, or tables that
+	// predate the floor plan) gets EGO's layout so /book works out of the box.
+	var placed int
+	DB.QueryRow("SELECT COUNT(*) FROM tables WHERE pos_x >= 0 AND pos_y >= 0").Scan(&placed)
+	if placed == 0 {
+		if err := ApplyEGOFloor(); err != nil {
+			log.Printf("Failed to load the EGO floor layout: %v", err)
+		}
+	}
+
+	if err := ensureTableTokens(); err != nil {
+		log.Fatalf("Failed to give tables QR tokens: %v", err)
+	}
+	DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tables_qr_token ON tables (qr_token) WHERE qr_token != ''")
 
 	log.Println("⚡ [SQLite] Database initialized and seeded successfully")
 }
@@ -520,13 +692,15 @@ func backfillMustChangePasswordForKnownDefaults() {
 	}
 }
 
-const userColumns = "id, username, password_hash, role, department, is_active, created_at, last_seen_at, must_change_password"
+const userColumns = "id, username, password_hash, role, department, is_active, created_at, last_seen_at, must_change_password, pages, totp_secret != ''"
 
 func scanUser(u *models.User, scan func(...interface{}) error) error {
 	var lastSeen sql.NullTime
-	if err := scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Department, &u.IsActive, &u.CreatedAt, &lastSeen, &u.MustChangePassword); err != nil {
+	var pages sql.NullString
+	if err := scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Department, &u.IsActive, &u.CreatedAt, &lastSeen, &u.MustChangePassword, &pages, &u.TwoFactor); err != nil {
 		return err
 	}
+	setPages(u, pages)
 	if lastSeen.Valid {
 		t := lastSeen.Time
 		u.LastSeenAt = &t
@@ -573,12 +747,14 @@ func GetUserBySessionID(sessionID string) (models.User, error) {
 	var u models.User
 	var createdAt time.Time
 	var lastSeen sql.NullTime
+	var pages sql.NullString
 	err := DB.QueryRow(`
-		SELECT u.id, u.username, u.password_hash, u.role, u.department, u.is_active, u.created_at, u.last_seen_at, u.must_change_password, s.created_at
+		SELECT u.id, u.username, u.password_hash, u.role, u.department, u.is_active, u.created_at, u.last_seen_at, u.must_change_password, u.pages, u.totp_secret != '', s.created_at
 		FROM auth_sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.session_id = ?`, sessionID).
-		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Department, &u.IsActive, &u.CreatedAt, &lastSeen, &u.MustChangePassword, &createdAt)
+		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Department, &u.IsActive, &u.CreatedAt, &lastSeen, &u.MustChangePassword, &pages, &u.TwoFactor, &createdAt)
+	setPages(&u, pages)
 	if err != nil {
 		return u, err
 	}
@@ -595,6 +771,28 @@ func GetUserBySessionID(sessionID string) (models.User, error) {
 		return u, sql.ErrNoRows
 	}
 	return u, nil
+}
+
+// Maintain drops rows that can never be used again and refreshes SQLite's
+// query-planner statistics. Run at startup and then daily (cmd/server), so
+// the database only grows by real business records — orders, bookings and
+// the two logs, which are kept for good (a few MB a year at venue scale);
+// bookings are deleted a year after the visit.
+func Maintain() {
+	for _, q := range []string{
+		// Sessions expire after 24h (GetUserBySessionID); every login adds one.
+		"DELETE FROM auth_sessions WHERE created_at < datetime('now', '-1 day')",
+		// A guest's session ends when the table is released.
+		"DELETE FROM guest_push_subscriptions WHERE created_at < datetime('now', '-2 days')",
+		// GDPR storage limit, promised on /privacy. Nothing reads bookings
+		// older than the staff list's 30-day "Past" view, so drop them whole.
+		"DELETE FROM bookings WHERE ends_at < datetime('now', '-1 year')",
+		"PRAGMA optimize",
+	} {
+		if _, err := DB.Exec(q); err != nil {
+			log.Printf("maintenance: %s: %v", q, err)
+		}
+	}
 }
 
 // TouchLastSeen records that a user was just active — called from
@@ -679,6 +877,13 @@ func UpdateUserProfile(id int, username, department string) error {
 // must_change_password: whichever path set a new password, the published
 // default this flag exists to move an account off of is no longer in use
 // either way.
+// RequirePasswordChange makes the account pick a new password at its next
+// request (someone else set the current one).
+func RequirePasswordChange(id int) error {
+	_, err := DB.Exec("UPDATE users SET must_change_password = 1 WHERE id = ?", id)
+	return err
+}
+
 func SetUserPassword(id int, passwordHash string) error {
 	_, err := DB.Exec("UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?", passwordHash, id)
 	return err
@@ -694,6 +899,54 @@ func SetUserPassword(id int, passwordHash string) error {
 func LogAudit(actor, action, target, detail string) error {
 	_, err := DB.Exec("INSERT INTO audit_log (actor, action, target, detail) VALUES (?, ?, ?, ?)", actor, action, target, detail)
 	return err
+}
+
+// setPages reads users.pages: NULL = the role's default pages, otherwise a
+// comma-separated custom list (possibly empty).
+func setPages(u *models.User, pages sql.NullString) {
+	u.PagesCustom = pages.Valid
+	u.Pages = nil
+	if pages.Valid && pages.String != "" {
+		u.Pages = strings.Split(pages.String, ",")
+	}
+}
+
+// SetUserPages stores custom page access (custom=false goes back to the
+// role's defaults).
+func SetUserPages(id int, custom bool, pages []string) error {
+	var v interface{}
+	if custom {
+		v = strings.Join(pages, ",")
+	}
+	_, err := DB.Exec("UPDATE users SET pages = ? WHERE id = ?", v, id)
+	return err
+}
+
+// CountAuthSessions is how many devices an account is signed in on (sessions
+// expire after 24h, see GetUserBySessionID).
+func CountAuthSessions(userID int) int {
+	var n int
+	DB.QueryRow("SELECT COUNT(*) FROM auth_sessions WHERE user_id = ? AND datetime(created_at) > datetime('now', '-24 hours')", userID).Scan(&n)
+	return n
+}
+
+// GetAuditForUser is the staff audit trail for one account: things done to
+// it and things it did.
+func GetAuditForUser(username string, limit int) ([]models.AuditEntry, error) {
+	rows, err := DB.Query("SELECT "+auditColumns+" FROM audit_log WHERE target = ? OR actor = ? ORDER BY created_at DESC, id DESC LIMIT ?", username, username, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var entries []models.AuditEntry
+	for rows.Next() {
+		var e models.AuditEntry
+		if err := rows.Scan(&e.ID, &e.Actor, &e.Action, &e.Target, &e.Detail, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, nil
 }
 
 // auditColumns/scanAudit mirror the userColumns/scanUser pattern above.

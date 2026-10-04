@@ -144,6 +144,31 @@ func (s *Store) Remove(sessionID string, productID int, excluded, extras []strin
 	return *c
 }
 
+// Drop removes every line keep rejects (e.g. a dish whose menu ended) and
+// returns them.
+func (s *Store) Drop(sessionID string, keep func(models.OrderItem) bool) []models.OrderItem {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.carts[sessionID]
+	if !ok {
+		return nil
+	}
+	var kept, dropped []models.OrderItem
+	for _, it := range e.cart.Items {
+		if keep(it) {
+			kept = append(kept, it)
+		} else {
+			dropped = append(dropped, it)
+		}
+	}
+	if len(dropped) > 0 {
+		e.cart.Items = kept
+		recalcTotal(&e.cart)
+		e.updatedAt = time.Now()
+	}
+	return dropped
+}
+
 // Clear empties the session's cart, e.g. after checkout or leaving the table.
 func (s *Store) Clear(sessionID string) {
 	s.mu.Lock()

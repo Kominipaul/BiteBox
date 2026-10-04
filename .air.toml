@@ -1,0 +1,28 @@
+# Live reload for development: `air` (or `make dev`) rebuilds and restarts the
+# server whenever a .go file changes. Install once:
+#   go install github.com/air-verse/air@latest
+#
+# Only Go code needs a rebuild. Templates and static files are read from disk
+# on every request, so editing them shows up on a plain browser refresh, with
+# no restart (which is why they're excluded below: a restart would only drop
+# everyone's live websocket connections for nothing).
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/server ./cmd/server"
+  bin = "./tmp/server"
+  include_ext = ["go"]
+  exclude_dir = ["tmp", "static", "templates", "backups", "docs", "scripts", ".git", ".dev-certs"]
+  exclude_regex = ["_test\\.go$"]
+  delay = 300            # ms: let a burst of saves settle into one rebuild
+  stop_on_error = false  # a compile error keeps the last working server running (true would stop it)
+  send_interrupt = true  # graceful shutdown first (main.go drains requests)...
+  kill_delay = "2s"      # ...but don't wait on open websockets for the full 10s
+
+[log]
+  time = false
+  main_only = false
+
+[misc]
+  clean_on_exit = true

@@ -1,0 +1,46 @@
+{{ define "worker" }}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>{{ .RoleLabel }} · {{ .VenueName }}</title>
+  <link rel="stylesheet" href="/static/staff.css?v={{ .V }}">
+  <link rel="stylesheet" href="/static/worker.css?v={{ .V }}">
+  <link rel="stylesheet" href="/brand.css">
+  <link rel="icon" href="/brand/icon.png">
+  <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="{{ .VenueName }}">
+  <script src="/static/js/base.js?v={{ .V }}"></script>
+  <script src="/static/vendor/htmx.min.js"></script>
+  <script src="/static/vendor/htmx-ws.js"></script>
+  <script src="/static/pwa.js?v={{ .V }}" defer></script>
+  <script src="/static/sheet.js?v={{ .V }}"></script>
+</head>
+<body class="wk wk-root kind-{{ .Kind }}" data-wk data-kind="{{ .Kind }}" data-first="{{ .First }}" data-bucket="{{ .Bucket }}"
+  data-keep-awake="{{ .KeepAwake }}" data-vapid="{{ .VAPIDPublicKey }}">
+
+{{ template "worker-top" . }}
+
+{{ template "worker-tabs" . }}
+
+<div class="wconn" id="conn" role="status" hidden>Connection lost. Reconnecting, updates will resume by themselves.</div>
+
+{{ template "worker-help" . }}
+
+<main class="wmain">
+  {{ template "worker-panels" . }}
+</main>
+
+<!-- Menu sheet: who I am, my alerts, every other page I can open. -->
+{{ template "worker-sheet" . }}
+
+{{ template "worker-toast" }}
+
+<script src="/static/worker.js?v={{ .V }}"></script>
+</body>
+</html>
+{{ end }}

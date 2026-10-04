@@ -1,0 +1,125 @@
+{{/* The staff app's live panels, shared by /worker (worker_app.html) and the
+     admin's /admin/live (adm_live.html): both are the same code, so they
+     can't drift apart. Needs .Has and .HasHelp. */}}
+{{ define "worker-help" }}
+{{ if .HasHelp }}
+<div class="help-strip-wrap" hx-ext="ws" ws-connect="/worker/assistance/ws">
+  <div id="assistance-alerts" class="help-strip" aria-live="assertive">{{ .HelpHTML }}</div>
+</div>
+{{ end }}
+<div class="alert-stack" id="alert-stack" aria-live="polite"></div>
+{{ end }}
+
+{{ define "worker-panels" }}
+{{ if .Has.queue }}
+  <section class="wpanel" data-panel="queue" id="p-queue" aria-label="Orders" hidden>
+    <div hx-ext="ws" ws-connect="/worker/orders/ws">
+      <div id="order-feed">{{ if .FeedHTML }}{{ .FeedHTML }}{{ else }}<div class="w-skel"><i></i><i></i><i></i></div>{{ end }}</div>
+    </div>
+  </section>
+  {{ end }}
+
+  {{ if .Has.pay }}
+  <section class="wpanel" data-panel="pay" id="p-pay" aria-label="Collect payment" hidden>
+    <div id="pay-list" hx-get="/worker/pay" hx-trigger="payRefresh from:body">{{ .PayHTML }}</div>
+  </section>
+  {{ end }}
+
+  {{ if .Has.stock }}
+  <section class="wpanel" data-panel="stock" id="p-stock" aria-label="Sold out" hidden>
+    <div class="sk-tools">
+      <label class="search">{{ template "i-search" }}<input class="input" id="stockQ" type="search" placeholder="Find an item" autocomplete="off" aria-label="Find an item"></label>
+      <p class="sk-hint">Tap an item to take it off the menu when you run out. Guests stop seeing it right away. Tap again when it's back.</p>
+    </div>
+    <div id="stock-list" hx-get="/worker/stock" hx-trigger="stockShow"></div>
+  </section>
+  {{ end }}
+
+  {{ if .Has.dj }}
+  <section class="wpanel" data-panel="dj" id="p-dj" aria-label="Song requests" hidden>
+    <div hx-ext="ws" ws-connect="/worker/dj/ws">
+      <div id="dj-feed">{{ if .DJHTML }}{{ .DJHTML }}{{ else }}<div class="w-skel"><i></i><i></i></div>{{ end }}</div>
+    </div>
+  </section>
+  {{ end }}
+{{ end }}
+
+{{ define "worker-toast" }}<div class="wtoast" id="wToast" role="status"><span id="wToastMsg"></span><button type="button" id="wToastUndo" hidden>Undo</button></div>{{ end }}
+
+{{ define "w-icon" }}{{ if eq . "list" }}{{ template "i-list" }}{{ else if eq . "map" }}{{ template "i-map" }}{{ else if eq . "cal" }}{{ template "i-cal" }}
+{{ else if eq . "ban" }}{{ template "i-ban" }}
+{{ else if eq . "cash" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6 10v.01M18 14v.01"/></svg>
+{{ else if eq . "music" }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
+{{ else }}{{ template "i-dot" }}{{ end }}{{ end }}
+
+{{/* Work-mode chrome, shared by the staff app (worker_app.html) and its Floor
+     and Bookings pages (wk_layout.html): one look, one place for the
+     Work / Admin switch, so switching never feels like changing apps. */}}
+{{ define "worker-top" }}
+<header class="wtop">
+  <a class="wbrand brand" href="/worker" aria-label="{{ .VenueName }}">
+    <span class="brand-logo" aria-hidden="true"></span>
+    <span class="brand-mark">{{ template "i-cal" }}</span>
+    <span class="wbrand-txt"><b class="brand-name">{{ .VenueName }}</b><small>{{ .RoleLabel }}</small></span>
+  </a>
+  <div class="wtop-r">
+    {{ template "mode-switch" . }}
+    <span class="live-pill" id="livePill" title="Live updates"><i></i><span>Live</span></span>
+    <button type="button" class="wicon" id="soundBtn" aria-pressed="true" aria-label="Sound alerts" title="Sound alerts">{{ template "i-bell" }}</button>
+    <button type="button" class="wavatar" id="menuBtn" aria-label="Menu" aria-haspopup="dialog">{{ .Initials }}</button>
+  </div>
+</header>
+{{ end }}
+
+{{ define "worker-tabs" }}
+<nav class="wtabs" id="tabs" aria-label="Sections" style="--n:{{ len .Tabs }}">
+  {{ range .Tabs }}
+  {{ if .Href }}<a class="wtab" href="{{ .Href }}"{{ if eq .Key $.Active }} aria-current="page"{{ end }}>{{ template "w-icon" .Icon }}<span>{{ .Label }}</span></a>
+  {{ else }}<button type="button" class="wtab" data-tab="{{ .Key }}">{{ template "w-icon" .Icon }}<span>{{ .Label }}</span><i class="wbadge" data-badge="{{ .Key }}" hidden></i></button>{{ end }}
+  {{ end }}
+  <button type="button" class="wtab more" id="moreBtn" aria-haspopup="dialog">{{ template "i-menu-lines" }}<span>More</span></button>
+</nav>
+{{ end }}
+
+{{ define "worker-sheet" }}
+<div class="wsheet" id="sheet" hidden>
+  <div class="wsheet-scrim" data-close></div>
+  <aside class="wsheet-panel" role="dialog" aria-modal="true" aria-label="Menu">
+    <div class="wsheet-grip" aria-hidden="true"></div>
+    <div class="wme">
+      <span class="wavatar lg">{{ .Initials }}</span>
+      <div><b>{{ .Username }}</b><small>{{ .RoleLabel }}{{ if .Served }} · {{ .Served }} served today{{ end }}</small></div>
+      <button type="button" class="wicon" data-close aria-label="Close">{{ template "i-x" }}</button>
+    </div>
+
+    <div class="wset">
+      <button type="button" class="wswitch" id="setSound" role="switch" aria-checked="true"><span><b>Sound alerts</b><small>A chime for new and ready orders</small></span><i></i></button>
+      <button type="button" class="wswitch" id="setPhone" role="switch" aria-checked="false"><span><b>Phone alerts</b><small id="phoneHint">Alerts on the lock screen</small></span><i></i></button>
+      <button type="button" class="wswitch" id="setAwake" role="switch" aria-checked="false" hidden><span><b>Keep screen on</b><small>For a mounted kitchen or bar tablet</small></span><i></i></button>
+    </div>
+
+    {{ if .More }}
+    <div class="wpages">
+      <h4>More</h4>
+      {{ range .More }}{{ if .Href }}<a href="{{ .Href }}">{{ .Label }}<span>›</span></a>
+      {{ else }}<button type="button" data-goto="{{ .Key }}">{{ .Label }}<span>›</span></button>{{ end }}{{ end }}
+    </div>
+    {{ end }}
+
+    {{ if .Pages }}
+    <div class="wpages">
+      <h4>Admin tools</h4>
+      {{ range .Pages }}<a href="{{ .Href }}">{{ .Label }}<span>›</span></a>{{ end }}
+    </div>
+    {{ end }}
+
+    <div class="wacct">
+      <a href="/admin/guide">{{ template "i-help" }}How it works</a>
+      <a href="/change-password">{{ template "i-key" }}Change password</a>
+      <a href="/account/2fa">{{ template "i-shield" }}Two-step login</a>
+      <form method="POST" action="/logout"><button type="submit">{{ template "i-logout" }}Sign out</button></form>
+    </div>
+    <button type="button" class="wscreen" data-screeninfo>Screen info</button>
+  </aside>
+</div>
+{{ end }}

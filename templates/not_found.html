@@ -3,37 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Page Not Found - BiteBox</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
-  <style>
-    *, *::before, *::after {
-      box-sizing: border-box;
-    }
-    html { touch-action: manipulation; }
-    body {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 90vh;
-      text-align: center;
-    }
-    .card {
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 2rem;
-      background: var(--background-alt);
-    }
-  </style>
+  <title>Page not found</title>
+  <link rel="stylesheet" href="/static/site.css?v={{ .V }}">
+  <link rel="stylesheet" href="/brand.css">
+  <link rel="icon" href="/brand/icon.png">
+  <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest-site.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="{{ .VenueName }}">
 </head>
-<body>
-
+<body class="msg">
   <div class="card">
-    <h2>🔍 Page Not Found</h2>
+    <span class="eyebrow">Error 404</span>
+    <h2>Page not found</h2>
     <p>That page doesn't exist. Check the link, or scan your table's QR code again.</p>
-    <p style="font-size: 0.9rem; color: var(--text-muted);">
-      <a href="/">Go home</a>
-    </p>
+    <p class="muted">Or head back to the start.</p>
+    <a class="btn" href="/">Go home</a>
   </div>
-
 </body>
 </html>

@@ -1,0 +1,92 @@
+{{ define "title" }}Bookings{{ end }}
+
+{{ define "content" }}
+<div class="page-head">
+  <div>
+    <h1>Bookings</h1>
+    <p>Every booking: online, phone and walk-in.</p>
+  </div>
+  <button type="button" class="act primary lg hide-phone" data-modal="/admin/bookings/new">{{ template "i-plus" }}New booking</button>
+</div>
+
+<div class="banner ok" id="savedBanner" role="status" hidden>{{ template "i-check" }}<span></span></div>
+
+<section class="card">
+  <form class="filters" id="filters" hx-get="/admin/bookings/rows" hx-target="#rows"
+    hx-trigger="input changed delay:250ms from:#q, change" hx-push-url="false" data-nosubmit>
+    <label class="search">{{ template "i-search" }}<input class="input" id="q" name="q" value="{{ .Q }}" placeholder="Search name, phone, code or spot" aria-label="Search bookings" autocomplete="off"></label>
+    <select class="input" name="when" aria-label="When">
+      {{ $w := .When }}{{ range .Ranges }}<option value="{{ .Key }}" {{ if eq .Key $w }}selected{{ end }}>{{ .Label }}</option>{{ end }}
+    </select>
+    <select class="input" name="status" aria-label="Status">
+      {{ $s := .Status }}{{ range .Statuses }}<option value="{{ .Key }}" {{ if eq .Key $s }}selected{{ end }}>{{ .Label }}</option>{{ end }}
+    </select>
+    <select class="input" name="zone" aria-label="Zone">
+      <option value="">All zones</option>
+      {{ $z := .Zone }}{{ range .Zones }}<option {{ if eq . $z }}selected{{ end }}>{{ . }}</option>{{ end }}
+    </select>
+  </form>
+  <div id="rows" hx-get="/admin/bookings/rows" hx-include="#filters" hx-trigger="refresh" hx-sync="this:replace">
+    {{ template "rows" . }}
+  </div>
+</section>
+
+{{ end }}
+
+{{ define "rows" }}
+{{ if .Msg }}<div class="banner err" role="alert" style="margin:14px 14px 0">{{ .Msg }}</div>{{ end }}
+<div class="sumline"><span><b>{{ len .Rows }}</b> bookings</span><span><b>{{ .Covers }}</b> guests expected</span>
+  <span class="now-sum" data-now-sum hidden><span class="ns seated"><b data-n="seated">0</b> seated now</span><span class="ns late"><b data-n="late">0</b> late</span><span class="ns soon"><b data-n="soon">0</b> arriving within 1h</span><span class="ns ending"><b data-n="ending">0</b> ending in 15m</span></span></div>
+{{ if .Rows }}
+<div class="table-wrap"><table class="list">
+  <thead><tr>
+    <th>Guest</th><th>Spot</th><th>When</th><th>Guests</th><th>Status</th><th class="hide-md">Source</th><th></th>
+  </tr></thead>
+  <tbody>
+  {{ range .Rows }}
+  <tr class="{{ if or (eq .Status "cancelled") (eq .Status "no_show") (eq .Status "completed") }}dim{{ end }}" data-bk data-status="{{ .Status }}" data-start="{{ .StartMs }}" data-end="{{ .EndMs }}">
+    <td class="c-who">
+      <div class="who">
+        <span class="av av{{ .Hue }}">{{ .Initials }}</span>
+        <div><b>{{ .Name }}</b><code>{{ .Code }}</code>{{ if .Phone }}<code><a href="tel:{{ .Phone }}" style="color:inherit">{{ .Phone }}</a></code>{{ end }}
+          {{ if .Notes }}<div class="note">“{{ .Notes }}”</div>{{ end }}</div>
+      </div>
+    </td>
+    <td class="spot"><b>{{ .Spot }}</b><small>{{ .Zone }}</small></td>
+    <td class="when"><b>{{ .From }}–{{ .Until }}</b><small>{{ .Day }}</small></td>
+    <td class="num">{{ .Guests }}</td>
+    <td class="c-status">
+      {{ if eq .Status "confirmed" }}<span class="pill confirmed">{{ template "i-check" }}Confirmed</span>
+      {{ else if eq .Status "seated" }}<span class="pill seated">{{ template "i-seat" }}Seated</span>
+      {{ else if eq .Status "completed" }}<span class="pill completed">{{ template "i-check" }}Completed</span>
+      {{ else if eq .Status "no_show" }}<span class="pill no_show">{{ template "i-x" }}No-show</span>
+      {{ else }}<span class="pill cancelled">{{ template "i-ban" }}Cancelled</span>{{ end }}
+      <small class="cd" data-cd></small>
+    </td>
+    <td class="src hide-md">{{ if eq .Source "walk_in" }}walk-in{{ else }}{{ .Source }}{{ end }}</td>
+    <td class="c-actions">
+      <div class="row-actions">
+        {{ if eq .Status "confirmed" }}
+        <button class="act green" hx-post="/admin/bookings/{{ .ID }}/status" hx-vals='{"status":"seated"}' hx-include="#filters" hx-target="#rows">{{ template "i-seat" }}Seat</button>
+        <button class="act ghost" hx-post="/admin/bookings/{{ .ID }}/status" hx-vals='{"status":"no_show"}' hx-include="#filters" hx-target="#rows" hx-confirm="Mark {{ .Name }} as a no-show?">No-show</button>
+        <button class="act danger" hx-post="/admin/bookings/{{ .ID }}/status" hx-vals='{"status":"cancelled"}' hx-include="#filters" hx-target="#rows" hx-confirm="Cancel the booking for {{ .Name }}?">Cancel</button>
+        {{ else if eq .Status "seated" }}
+        <button class="act" hx-post="/admin/bookings/{{ .ID }}/status" hx-vals='{"status":"completed"}' hx-include="#filters" hx-target="#rows" title="They've left: frees the spot now">{{ template "i-check" }}Finish</button>
+        {{ else }}
+        <button class="act ghost" hx-post="/admin/bookings/{{ .ID }}/status" hx-vals='{"status":"confirmed"}' hx-include="#filters" hx-target="#rows">{{ template "i-undo" }}Restore</button>
+        {{ end }}
+        <button type="button" class="act" data-modal="/admin/bookings/{{ .ID }}/edit" aria-label="Edit booking" title="Edit">{{ template "i-edit" }}Edit</button>
+      </div>
+    </td>
+  </tr>
+  {{ end }}
+  </tbody>
+</table></div>
+{{ else }}
+<div class="empty"><b>No bookings here</b>Try another date range or clear the search.</div>
+{{ end }}
+{{ end }}
+
+{{ define "scripts" }}
+<script src="/static/js/bookings-list.js?v={{ .V }}"></script>
+{{ end }}

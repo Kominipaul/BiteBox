@@ -23,8 +23,8 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'BiteBox';
   const options = {
     body: data.body || '',
-    icon: '/static/icons/icon-192.png',
-    badge: '/static/icons/icon-192.png',
+    icon: '/brand/icon.png?s=192',
+    badge: '/brand/icon.png?s=128',
     tag: data.tag || 'bitebox-order',   // same tag replaces a still-unread notification for the same order instead of stacking duplicates
     renotify: true,                     // ...but still re-alerts (sound/vibrate) when that happens
     vibrate: [200, 100, 200],
@@ -40,23 +40,9 @@ self.addEventListener('push', (event) => {
   // Checks both `focused` and `visibilityState`, not just `focused` alone
   // — iOS Safari has documented gaps in Service Worker Clients API fields,
   // and this app's own live testing shows the notification still firing
-  // with the app on screen even with this check in place, so something
-  // here isn't matching reality yet. The fetch() below is a TEMPORARY
-  // diagnostic (see handlers.DebugPushClientState) reporting exactly what
-  // this device saw at push time, straight to the server log — once
-  // that's confirmed matching what actually happened on screen, both this
-  // fetch() and the debug endpoint come back out.
+  // with the app on screen even with this check in place.
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      const clientStates = windowClients.map((c) => ({
-        url: c.url, focused: c.focused, visibilityState: c.visibilityState,
-      }));
-      fetch('/debug/push-client-state', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tag: data.tag, clientCount: windowClients.length, clients: clientStates }),
-      }).catch(() => {}); // diagnostic only — never let this block real notification delivery
-
       const appIsOnScreen = windowClients.some(
         (client) => client.focused || client.visibilityState === 'visible'
       );

@@ -9,6 +9,11 @@ bitebox.db-shm
 bitebox.db-wal
 bitebox.db-journal
 
+# The key that encrypts two-step login secrets inside the database (see
+# internal/auth/seal.go). Never commit it, and keep it out of database
+# backups: a backup is only safe because this lives elsewhere.
+bitebox.key
+
 # scripts/backup-db.sh's output — snapshots of the same live data above,
 # same reasoning for keeping them out of git.
 backups/
@@ -23,3 +28,6 @@ static/uploads/
 # whatever reverse proxy fronts the VPS, not from this.
 .dev-certs/
 static/mkcert-root-ca.pem
+
+# air live-reload build output
+tmp/

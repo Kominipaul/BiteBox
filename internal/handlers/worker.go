@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"html/template"
 	"net/http"
+	"sort"
 	"strconv"
 
 	"bitebox/internal/auth"
@@ -16,28 +17,46 @@ import (
 var nextStatusLabel = map[string]string{
 	models.OrderStatusPreparing: "Start preparing",
 	models.OrderStatusReady:     "Mark ready",
-	models.OrderStatusServed:    "Mark served",
+	models.OrderStatusServed:    "Delivered",
+}
+
+// lineView is one item on a ticket. Mine is false for items that belong to
+// the other department on a mixed order (a burger on a bar ticket): shown
+// dimmed, for context only.
+type lineView struct {
+	models.OrderItem
+	Mine bool
 }
 
 type orderView struct {
 	models.Order
+	Lines      []lineView
+	Table      string
 	NextStatus string
 	NextLabel  string
 	HasNext    bool
+	Others     int  // lines that aren't this department's
+	ShowPay    bool // waiter / manager also collect payment from the card
+	CanPrint   bool
 }
 
-func buildOrderViews(orders []models.Order) []orderView {
-	views := make([]orderView, 0, len(orders))
-	for _, o := range orders {
-		v := orderView{Order: o}
-		if next, ok := models.NextOrderStatus(o.Status); ok {
-			v.NextStatus = next
-			v.NextLabel = nextStatusLabel[next]
-			v.HasNext = true
-		}
-		views = append(views, v)
-	}
-	return views
+type orderGroup struct {
+	Key, Title string
+	Orders     []orderView
+}
+
+type prepLine struct {
+	Name string
+	Qty  int
+}
+
+// feedRole is how a bucket's feed reads: what each stage is called and what
+// an empty feed says.
+var feedRoles = map[string]struct{ Empty string }{
+	models.DepartmentKitchen:     {"All caught up. No food orders waiting."},
+	models.DepartmentBar:         {"All caught up. No drink orders waiting."},
+	models.DepartmentWaiter:      {"Nothing to deliver right now."},
+	models.DepartmentSuperworker: {"No active orders."},
 }
 
 var departmentLabels = map[string]string{
@@ -53,22 +72,6 @@ func departmentLabel(department string) string {
 		return label
 	}
 	return "Manager"
-}
-
-func WorkerHome(w http.ResponseWriter, r *http.Request) {
-	user, _ := UserFromContext(r)
-	showDJ := user.Role == models.RoleAdmin || user.Department == models.DepartmentDJ
-	showOrders := user.Role == models.RoleAdmin || user.Department != models.DepartmentDJ
-
-	tmpl := template.Must(template.ParseFiles("templates/worker_dashboard.html"))
-	tmpl.Execute(w, map[string]interface{}{
-		"ShowOrders":      showOrders,
-		"ShowDJ":          showDJ,
-		"Username":        user.Username,
-		"DepartmentLabel": departmentLabel(user.Department),
-		"VAPIDPublicKey":  PushVAPIDPublicKey(),
-		"IconVersion":     IconVersion(),
-	})
 }
 
 // orderFeedBucket maps a user to their order-feed topic/filter bucket:
@@ -87,6 +90,83 @@ func orderFeedBucket(user models.User) string {
 	default:
 		return models.DepartmentSuperworker
 	}
+}
+
+// buildFeed turns a bucket's orders into stage groups (oldest first inside
+// each) plus the batch summary a prep station works from.
+func buildFeed(bucket string, orders []models.Order) map[string]interface{} {
+	station := bucket == models.DepartmentKitchen || bucket == models.DepartmentBar
+	var mine map[string]bool
+	var cats map[int]string
+	if station {
+		names, _ := db.CategoryNamesForDepartment(bucket)
+		mine = map[string]bool{}
+		for _, n := range names {
+			mine[n] = true
+		}
+		cats = db.ProductCategories()
+	}
+	labels := tableNames()
+	summary := map[string]int{}
+	groups := map[string]*orderGroup{}
+	var order []string
+	add := func(key, title string) *orderGroup {
+		if g, ok := groups[key]; ok {
+			return g
+		}
+		groups[key] = &orderGroup{Key: key, Title: title}
+		order = append(order, key)
+		return groups[key]
+	}
+	switch bucket {
+	case models.DepartmentWaiter:
+		add("ready", "Ready to deliver")
+	case models.DepartmentSuperworker:
+		add("pending", "New")
+		add("preparing", "In progress")
+		add("ready", "Ready to serve")
+	default:
+		add("pending", "New")
+		add("preparing", "In progress")
+	}
+	for _, o := range orders {
+		v := orderView{Order: o, Table: labels[o.TableNumber], ShowPay: !station, CanPrint: bucket != models.DepartmentWaiter}
+		if v.Table == "" {
+			v.Table = strconv.Itoa(o.TableNumber)
+		}
+		if next, ok := models.NextOrderStatus(o.Status); ok {
+			v.NextStatus, v.NextLabel, v.HasNext = next, nextStatusLabel[next], true
+		}
+		for _, it := range o.Items {
+			l := lineView{OrderItem: it, Mine: !station || mine[cats[it.ProductID]]}
+			if !l.Mine {
+				v.Others++
+			} else if station {
+				summary[it.Name] += it.Quantity
+			}
+			v.Lines = append(v.Lines, l)
+		}
+		if g, ok := groups[o.Status]; ok {
+			g.Orders = append(g.Orders, v)
+		}
+	}
+	feed := make([]orderGroup, 0, len(order))
+	total := 0
+	for _, k := range order {
+		feed = append(feed, *groups[k])
+		total += len(groups[k].Orders)
+	}
+	var prep []prepLine
+	for n, q := range summary {
+		prep = append(prep, prepLine{n, q})
+	}
+	sort.Slice(prep, func(i, j int) bool {
+		if prep[i].Qty != prep[j].Qty {
+			return prep[i].Qty > prep[j].Qty
+		}
+		return prep[i].Name < prep[j].Name
+	})
+	return map[string]interface{}{"Groups": feed, "Total": total, "Prep": prep, "Empty": feedRoles[bucket].Empty, "Bucket": bucket}
 }
 
 func renderOrderFeedHTML(bucket string) ([]byte, error) {
@@ -109,7 +189,7 @@ func renderOrderFeedHTML(bucket string) ([]byte, error) {
 	}
 	var buf bytes.Buffer
 	tmpl := template.Must(template.ParseFiles("templates/_order_feed.html"))
-	if err := tmpl.Execute(&buf, map[string]interface{}{"Orders": buildOrderViews(orders)}); err != nil {
+	if err := tmpl.Execute(&buf, buildFeed(bucket, orders)); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -138,7 +218,7 @@ func renderOrderFeed(w http.ResponseWriter, bucket string) {
 		http.Error(w, "Failed to load orders", http.StatusInternalServerError)
 		return
 	}
-	w.Write(b)
+	w.Write(b) // #nosec G705 -- our own html/template output
 	BroadcastOrderFeed()
 }
 
@@ -239,45 +319,42 @@ func WorkerCancelOrder(w http.ResponseWriter, r *http.Request) {
 // the waiter UI's "Undo" on a payment toast, not a purely client-side revert
 // (which would leave this client's screen disagreeing with everyone else's
 // live view).
-func WorkerMarkUnpaid(w http.ResponseWriter, r *http.Request) {
+func WorkerMarkUnpaid(w http.ResponseWriter, r *http.Request) { setOrderPaid(w, r, false) }
+
+func WorkerMarkPaid(w http.ResponseWriter, r *http.Request) { setOrderPaid(w, r, true) }
+
+// setOrderPaid flips one order's payment. Called from an order card it
+// answers with the order feed; from the Collect panel (view=pay) with that
+// panel — the same action either way, so every screen agrees.
+func setOrderPaid(w http.ResponseWriter, r *http.Request, paid bool) {
 	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
 		http.Error(w, "Invalid order id", http.StatusBadRequest)
 		return
 	}
-	if user, _ := UserFromContext(r); !authorizeDepartmentMutation(user, id) {
+	user, _ := UserFromContext(r)
+	if !authorizeDepartmentMutation(user, id) {
 		http.Error(w, "403 Forbidden: not your department's order", http.StatusForbidden)
 		return
 	}
-	if err := db.UpdateOrderPaymentStatus(id, models.PaymentStatusUnpaid); err != nil {
+	status := models.PaymentStatusUnpaid
+	if paid {
+		status = models.PaymentStatusPaid
+	}
+	if err := db.UpdateOrderPaymentStatus(id, status); err != nil {
 		http.Error(w, "Failed to update payment status", http.StatusInternalServerError)
 		return
 	}
-	user, _ := UserFromContext(r)
-	renderOrderFeed(w, orderFeedBucket(user))
-	if order, err := db.GetOrderByID(id); err == nil {
-		BroadcastTableStatus(order.TableNumber)
-		BroadcastPlacedOrders(order.TableNumber, order.SessionID)
-	}
-	BroadcastAdminStats()
+	afterPaymentChange(w, r, user, id)
 }
 
-func WorkerMarkPaid(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "Invalid order id", http.StatusBadRequest)
-		return
+func afterPaymentChange(w http.ResponseWriter, r *http.Request, user models.User, id int) {
+	if r.FormValue("view") == "pay" {
+		renderPayList(w)
+		BroadcastOrderFeed()
+	} else {
+		renderOrderFeed(w, orderFeedBucket(user))
 	}
-	if user, _ := UserFromContext(r); !authorizeDepartmentMutation(user, id) {
-		http.Error(w, "403 Forbidden: not your department's order", http.StatusForbidden)
-		return
-	}
-	if err := db.UpdateOrderPaymentStatus(id, models.PaymentStatusPaid); err != nil {
-		http.Error(w, "Failed to update payment status", http.StatusInternalServerError)
-		return
-	}
-	user, _ := UserFromContext(r)
-	renderOrderFeed(w, orderFeedBucket(user))
 	if order, err := db.GetOrderByID(id); err == nil {
 		BroadcastTableStatus(order.TableNumber)
 		BroadcastPlacedOrders(order.TableNumber, order.SessionID)
@@ -292,7 +369,7 @@ func renderDJFeedHTML() ([]byte, error) {
 	}
 	var buf bytes.Buffer
 	tmpl := template.Must(template.ParseFiles("templates/_dj_feed.html"))
-	if err := tmpl.Execute(&buf, map[string]interface{}{"Requests": requests}); err != nil {
+	if err := tmpl.Execute(&buf, map[string]interface{}{"Requests": requests, "Tables": tableNames()}); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -340,25 +417,31 @@ func WorkerDJReject(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// renderAssistanceAlertsHTML renders the worker-facing "tables asking for
-// help" panel — every table with AssistanceRequested set (see
-// RequestAssistance in table.go), most-recently-requested first isn't
-// tracked separately; GetAllTables already orders by number, which is fine
-// for a handful of concurrent requests at this app's scale.
+// renderAssistanceAlertsHTML renders the staff app's "tables asking for
+// help" strip, longest-waiting first.
 func renderAssistanceAlertsHTML() ([]byte, error) {
-	tables, err := db.GetAllTables()
+	calls, err := db.PendingHelp()
 	if err != nil {
 		return nil, err
 	}
-	var needsHelp []models.Table
-	for _, t := range tables {
-		if t.AssistanceRequested {
-			needsHelp = append(needsHelp, t)
+	labels := tableNames()
+	type callView struct {
+		Number  int
+		Label   string
+		SinceMs int64
+		Reason  string // staff wording, "" = not given
+	}
+	var views []callView
+	for _, c := range calls {
+		l := labels[c.Number]
+		if l == "" {
+			l = strconv.Itoa(c.Number)
 		}
+		views = append(views, callView{c.Number, l, c.Since.UnixMilli(), models.AssistReasonLabel(c.Reason)})
 	}
 	var buf bytes.Buffer
 	tmpl := template.Must(template.ParseFiles("templates/_assistance_alerts.html"))
-	if err := tmpl.Execute(&buf, map[string]interface{}{"Tables": needsHelp}); err != nil {
+	if err := tmpl.Execute(&buf, map[string]interface{}{"Calls": views}); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

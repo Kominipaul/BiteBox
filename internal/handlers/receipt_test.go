@@ -88,3 +88,40 @@ func TestAdminOrderReceiptRejectsUnknownOrder(t *testing.T) {
 		t.Errorf("status = %d, want 404 for a nonexistent order", w.Code)
 	}
 }
+
+// TestGuestOrderReceiptOnlyForOwnOrder: a guest can open the receipt of an
+// order placed from their own session, and nobody else's.
+func TestGuestOrderReceiptOnlyForOwnOrder(t *testing.T) {
+	if err := db.CreateTable(602); err != nil {
+		t.Fatalf("CreateTable: %v", err)
+	}
+	db.CreateCategory("Test Receipt Bar", models.DepartmentBar) // may already exist from the test above
+	pid, err := db.CreateProduct("Guest Receipt Coffee", 9.0, -1, "Test Receipt Bar", "", "", 24)
+	if err != nil {
+		t.Fatalf("CreateProduct: %v", err)
+	}
+	orderID, err := db.CreateOrder(602, "guest-receipt-owner", models.PaymentMethodCash, models.PaymentStatusUnpaid, "", 9.0, 0, 1,
+		[]models.OrderItem{{ProductID: pid, Name: "Guest Receipt Coffee", Price: 9.0, Quantity: 1, VATRate: 24}})
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	get := func(session string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, "/orders/"+strconv.Itoa(orderID)+"/receipt", nil)
+		r = withChiURLParam(r, "id", strconv.Itoa(orderID))
+		if session != "" {
+			r.AddCookie(&http.Cookie{Name: GuestSessionCookieName, Value: session})
+		}
+		w := httptest.NewRecorder()
+		GuestOrderReceipt(w, r)
+		return w
+	}
+	if w := get("guest-receipt-owner"); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Guest Receipt Coffee") {
+		t.Fatalf("owner: %d %s", w.Code, w.Body.String())
+	}
+	if w := get("someone-else"); w.Code != http.StatusNotFound || strings.Contains(w.Body.String(), "Guest Receipt Coffee") {
+		t.Fatalf("other session got %d", w.Code)
+	}
+	if w := get(""); w.Code != http.StatusForbidden {
+		t.Fatalf("no session got %d", w.Code)
+	}
+}

@@ -1,0 +1,114 @@
+{{/* Add / edit a staff account, loaded into the layer from the Staff page.
+     Save answers 204 + staffSaved (closes the panel); password reset and
+     (de)activation re-render the panel with a notice. */}}
+{{ define "staff-editor" }}
+{{ $u := .U }}
+<div class="bk-form">
+  <header class="modal-head">
+    {{ if .New }}<span class="modal-icon">{{ template "i-users" }}</span>
+    {{ else }}<span class="av av{{ $u.Hue }} modal-av">{{ $u.Initials }}</span>{{ end }}
+    <div>
+      <h2>{{ if .New }}Add account{{ else }}{{ $u.Username }}{{ end }}</h2>
+      <p>{{ if .New }}They log in at /login with this username and password.{{ else }}{{ $u.RoleName }} · {{ if not $u.IsActive }}Deactivated{{ else }}{{ $u.StatusLabel }}{{ end }}{{ end }}</p>
+    </div>
+    <button type="button" class="modal-x" data-close aria-label="Close">
+      <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </header>
+
+  <div class="modal-body">
+    <p class="modal-warn" data-error hidden role="alert"></p>
+    {{ if .Notice }}<p class="modal-ok" role="status">{{ .Notice }}</p>{{ end }}
+
+{{ if not .Limited }}
+    <form id="staffForm" class="ped" hx-swap="none"
+      hx-post="{{ if .New }}/admin/staff?from=editor{{ else }}/admin/staff/{{ $u.ID }}?from=editor{{ end }}">
+      <div class="fgrid">
+        <label class="f {{ if .New }}span2 ph2{{ else }}span3{{ end }}">Username<input name="username" value="{{ $u.Username }}" maxlength="50" required autocomplete="off" autocapitalize="off" placeholder="e.g. maria_bar"></label>
+        {{ if .New }}<label class="f ph2">Password<span class="pw"><input name="password" type="password" minlength="8" maxlength="72" required autocomplete="new-password" placeholder="First-login password, 8+ characters"><button type="button" class="pw-eye" aria-label="Show password">{{ template "i-eye" }}</button></span></label>{{ end }}
+      </div>
+
+      <div>
+        <span class="f">Role</span>
+        {{ if and (not .New) (eq $u.RoleKey "admin") }}
+        <p class="role-fixed"><b>Admin</b> · Everything: menu, staff, reports and settings. Admin accounts stay admin; to change that, deactivate this one and add a new account.</p>
+        {{ else }}
+        <div class="role-grid" role="radiogroup" aria-label="Role">
+          {{ range .Roles }}{{ if or $.New (ne .Key "admin") }}
+          <label class="choice"><input type="radio" name="{{ if $.New }}role{{ else }}department{{ end }}" value="{{ .Key }}" data-defaults="{{ index $.Defaults .Key }}" {{ if eq .Key $u.RoleKey }}checked{{ end }}>
+            <b>{{ .Name }}</b><span>{{ .Access }}</span></label>
+          {{ end }}{{ end }}
+        </div>
+        {{ end }}
+      </div>
+
+      {{ if not (and (not .New) (eq $u.RoleKey "admin")) }}
+      <div class="access" id="access">
+        <input type="hidden" name="access_form" value="1">
+        <div class="access-head">
+          <span class="f">Page access</span>
+          <label class="ped-check"><input type="checkbox" name="access_custom" value="1" class="access-custom" {{ if .Custom }}checked{{ end }}> Custom</label>
+        </div>
+        <small class="ped-hint">Which back-office pages they can open. Off = what their role gets by default. Staff and Settings are admin-only.</small>
+        <div class="access-grid{{ if not .Custom }} is-default{{ end }}">
+          {{ range .Pages }}
+          <label class="access-item"><input type="checkbox" name="pages" value="{{ .Key }}" {{ if .Checked }}checked{{ end }} {{ if not $.Custom }}disabled{{ end }}>
+            <span><b>{{ .Name }}</b><small>{{ .Desc }}</small></span></label>
+          {{ end }}
+        </div>
+      </div>
+      {{ end }}
+    </form>
+{{ end }}
+
+    {{ if not .New }}
+    <form class="ped-section" id="password" hx-post="/admin/staff/{{ $u.ID }}/reset-password?from=editor" hx-target="#bkModalBody"
+      hx-confirm="Change {{ $u.Username }}'s password? They'll be logged out everywhere.">
+      <span class="f">Password</span>
+      <small class="ped-hint">Forgot it? Set a new one here and tell them. They'll be logged out.</small>
+      <div class="ped-inline">
+        <span class="pw"><input name="password" type="password" minlength="8" maxlength="72" required autocomplete="new-password" placeholder="Temporary password, at least 8 characters" aria-label="New password"><button type="button" class="pw-eye" aria-label="Show password">{{ template "i-eye" }}</button></span>
+        <button type="submit" class="mbtn">Change</button>
+      </div>
+    </form>
+
+    <div class="ped-section" id="sessions">
+      <span class="f">Devices</span>
+      <div class="ped-inline ped-row">
+        <span class="ped-sess">{{ if $u.Sessions }}<i class="sonline-dot"></i>Signed in on {{ $u.Sessions }} {{ if eq $u.Sessions 1 }}device{{ else }}devices{{ end }}{{ else }}Not signed in anywhere{{ end }}</span>
+        <button type="button" class="mbtn" hx-post="/admin/staff/{{ $u.ID }}/signout?from=editor" hx-target="#bkModalBody" {{ if not $u.Sessions }}disabled{{ end }}
+          hx-confirm="Sign {{ $u.Username }} out on every phone, tablet and computer? Their password stays the same.">Sign out everywhere</button>
+      </div>
+    </div>
+
+    <div class="ped-section" id="history">
+      <span class="f">History</span>
+      {{ if .History }}
+      <ol class="hist">
+        {{ range .History }}<li><span>{{ .Text }}</span><time>{{ .When }}</time></li>{{ end }}
+      </ol>
+      {{ else }}<small class="ped-hint">Nothing recorded yet.</small>{{ end }}
+    </div>
+    {{ end }}
+  </div>
+
+  {{ if .Limited }}
+  <footer class="modal-foot ped-foot"><span class="ped-foot-gap"></span><button type="button" class="mbtn primary" data-close>Done</button></footer>
+  {{ else }}
+  <footer class="modal-foot ped-foot{{ if not .New }} ped-foot-3{{ end }}">
+    {{ if not .New }}
+    {{ if $u.IsSelf }}<span class="ped-self">This is you</span>
+    {{ else if $u.IsActive }}
+    <button type="button" class="mbtn danger" hx-post="/admin/staff/{{ $u.ID }}/deactivate?from=editor" hx-target="#bkModalBody"
+      hx-confirm="Deactivate {{ $u.Username }}? They're logged out now and can't sign in until you activate them again.">Deactivate</button>
+    {{ else }}
+    <button type="button" class="mbtn" hx-post="/admin/staff/{{ $u.ID }}/activate?from=editor" hx-target="#bkModalBody">Activate again</button>
+    {{ end }}
+    {{ end }}
+    <span class="ped-foot-gap"></span>
+    <button type="button" class="mbtn" data-close>Cancel</button>
+    <button type="submit" form="staffForm" class="mbtn primary">{{ if .New }}Add account{{ else }}Save{{ end }}</button>
+  </footer>
+  {{ end }}
+</div>
+{{ end }}

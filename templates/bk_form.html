@@ -1,0 +1,61 @@
+{{/* The new/edit booking form, loaded into the layer on the Bookings page
+     (bk_list.html #bkModal). Saving re-renders this fragment on an error, or
+     answers 204 + HX-Trigger bookingSaved on success. */}}
+{{ define "booking-form" }}
+{{ $f := .F }}
+<form class="bk-form" hx-post="{{ $f.Action }}" hx-target="#bkModalBody" id="bookingForm">
+  <header class="modal-head">
+    <span class="modal-icon">{{ if $f.Edit }}{{ template "i-edit" }}{{ else }}{{ template "i-cal" }}{{ end }}</span>
+    <div>
+      <h2>{{ if $f.Edit }}Edit booking{{ else }}New booking{{ end }}</h2>
+      <p>{{ if $f.Edit }}Booking <span class="mono">{{ $f.Code }}</span>. Changes show on the floor straight away.{{ else }}The guest gets a booking code as soon as you save.{{ end }}</p>
+    </div>
+    <button type="button" class="modal-x" data-close aria-label="Close">
+      <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </header>
+
+  <div class="modal-body">
+    {{ if $f.Error }}<p class="modal-warn" role="alert">{{ $f.Error }}</p>{{ end }}
+
+    {{ if not $f.Edit }}
+    <div class="choice-row" role="radiogroup" aria-label="How did they book?">
+      <label class="choice"><input type="radio" name="source" value="phone" {{ if ne $f.Source "walk_in" }}{{ if ne $f.Source "other" }}checked{{ end }}{{ end }}>
+        <b>Phone booking</b><span>They called ahead and arrive later</span></label>
+      <label class="choice"><input type="radio" name="source" value="walk_in" {{ if eq $f.Source "walk_in" }}checked{{ end }}>
+        <b>Walk-in</b><span>They're here now, seat them straight away</span></label>
+      <label class="choice"><input type="radio" name="source" value="other" {{ if eq $f.Source "other" }}checked{{ end }}>
+        <b>Other</b><span>Email, social media or in person</span></label>
+    </div>
+    {{ else }}<input type="hidden" name="source" value="{{ $f.Source }}">{{ end }}
+
+    <div class="fgrid">
+      <label class="f span2 ph3">Name<input name="name" value="{{ $f.Name }}" maxlength="80" autocomplete="off" placeholder="Who's the booking for?"></label>
+      <label class="f ph1">Guests<input type="number" name="guests" min="1" max="200" inputmode="numeric" value="{{ $f.Guests }}" required></label>
+
+      <label class="f ph2">Phone<input type="tel" name="phone" value="{{ $f.Phone }}" maxlength="30" placeholder="Optional"></label>
+      <label class="f ph2">Email<input type="email" name="email" value="{{ $f.Email }}" maxlength="120" placeholder="Optional"></label>
+      <label class="f ph3">Spot
+        <select name="table">
+          <option value="0">Any free spot that fits</option>
+          {{ range $f.Groups }}<optgroup label="{{ .Zone }}">
+            {{ range .Tables }}<option value="{{ .Number }}" {{ if eq .Number $f.Table }}selected{{ end }}>{{ .Name }} · seats {{ .MinGuests }}–{{ .MaxGuests }}{{ if .OutOfService }} · out of service{{ end }}</option>{{ end }}
+          </optgroup>{{ end }}
+        </select>
+        <small>"Any free spot" never picks a beach set or cabana.</small>
+      </label>
+
+      <label class="f ph2">Date<input type="date" name="date" value="{{ $f.Date }}" required></label>
+      <label class="f ph2">Arrival<input type="time" name="time" value="{{ $f.Time }}" required></label>
+      <label class="f ph1">Minutes<input type="number" name="duration" min="15" max="1440" step="15" value="{{ $f.Duration }}" inputmode="numeric" required aria-label="Length in minutes"></label>
+      
+      <label class="f span3">Special requests<textarea name="notes" rows="2" maxlength="500" placeholder="Birthday, allergies, high chair…">{{ $f.Notes }}</textarea></label>
+    </div>
+  </div>
+
+  <footer class="modal-foot">
+    <button type="button" class="mbtn" data-close>Cancel</button>
+    <button type="submit" class="mbtn primary">{{ if $f.Edit }}Save changes{{ else }}Save booking{{ end }}</button>
+  </footer>
+</form>
+{{ end }}

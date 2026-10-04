@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -178,4 +179,97 @@ func mustLatestOrderID(t *testing.T, tableNum int) int {
 		t.Fatalf("most recent order is for table %d, want %d", orders[0].TableNumber, tableNum)
 	}
 	return orders[0].ID
+}
+
+// TestClosedStationBlocksOrdering: closing the bar (Menus & hours) stops a
+// guest adding a drink and checking out one already in the cart, and
+// reopening lets both through again. Enforced on the server, not just
+// hidden from the menu.
+func TestClosedStationBlocksOrdering(t *testing.T) {
+	db.CreateCategory("Test Station Bar", models.DepartmentBar)
+	pid, err := db.CreateProduct("Test Station Beer", 5.0, -1, "Test Station Bar", "", "", 24)
+	if err != nil {
+		t.Fatalf("CreateProduct: %v", err)
+	}
+	const tableNum, sess = 9202, "station-test-session"
+	if err := db.CreateTable(tableNum); err != nil {
+		t.Fatalf("CreateTable: %v", err)
+	}
+	if err := db.ClaimTable(tableNum, sess); err != nil {
+		t.Fatalf("ClaimTable: %v", err)
+	}
+	store := cart.NewStore()
+	h := &CartHandlers{Cart: store}
+	post := func(path, body string, fn func(http.ResponseWriter, *http.Request)) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.AddCookie(&http.Cookie{Name: GuestSessionCookieName, Value: sess})
+		w := httptest.NewRecorder()
+		fn(w, r)
+		return w
+	}
+	store.Add(sess, pid, "Test Station Beer", 5.0, nil, nil) // already in the cart before closing
+
+	if err := db.SetStationClosed(models.DepartmentBar, models.StationClosedManual); err != nil {
+		t.Fatalf("SetStationClosed: %v", err)
+	}
+	defer db.SetStationClosed(models.DepartmentBar, "")
+	if w := post("/cart/add", "product_id="+strconv.Itoa(pid), h.Add); w.Code != http.StatusConflict {
+		t.Fatalf("add while bar closed = %d, want 409", w.Code)
+	}
+	if w := post("/cart/checkout", "payment_method=card", h.Checkout); w.Code != http.StatusConflict {
+		t.Fatalf("checkout while bar closed = %d (%s), want 409", w.Code, w.Body.String())
+	}
+
+	db.SetStationClosed(models.DepartmentBar, "")
+	if w := post("/cart/add", "product_id="+strconv.Itoa(pid), h.Add); w.Code != http.StatusOK {
+		t.Fatalf("add after reopening = %d, want 200", w.Code)
+	}
+}
+
+// TestHappyHourPriceIsCharged: while an offer runs, the lower price is what
+// goes into the cart and what the order is charged: not just shown.
+func TestHappyHourPriceIsCharged(t *testing.T) {
+	db.CreateCategory("Test HH Cocktails", models.DepartmentBar)
+	pid, err := db.CreateProduct("Test HH Mojito", 10.0, -1, "Test HH Cocktails", "", "", 24)
+	if err != nil {
+		t.Fatalf("CreateProduct: %v", err)
+	}
+	ruleID, err := db.SaveServiceMenu(models.ServiceMenu{Name: "Test happy hour", Kind: "price", Days: "1234567", Start: 0, End: 23*60 + 59,
+		Products: []int{pid}, DiscType: "percent", DiscValue: 20, Enabled: true})
+	if err != nil {
+		t.Fatalf("SaveServiceMenu: %v", err)
+	}
+	defer db.DeleteServiceMenu(ruleID)
+	const tableNum, sess = 9203, "hh-test-session"
+	db.CreateTable(tableNum)
+	if err := db.ClaimTable(tableNum, sess); err != nil {
+		t.Fatalf("ClaimTable: %v", err)
+	}
+	store := cart.NewStore()
+	h := &CartHandlers{Cart: store}
+	post := func(path, body string, fn func(http.ResponseWriter, *http.Request)) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.AddCookie(&http.Cookie{Name: GuestSessionCookieName, Value: sess})
+		w := httptest.NewRecorder()
+		fn(w, r)
+		return w
+	}
+	if w := post("/cart/add", "product_id="+strconv.Itoa(pid), h.Add); w.Code != http.StatusOK {
+		t.Fatalf("add = %d %s", w.Code, w.Body.String())
+	}
+	if got := store.Get(sess).Items[0].Price; got != 8 {
+		t.Fatalf("cart price = %v, want 8 (20%% off 10)", got)
+	}
+	if w := post("/cart/checkout", "payment_method=card", h.Checkout); w.Code != http.StatusOK {
+		t.Fatalf("checkout = %d %s", w.Code, w.Body.String())
+	}
+	order, err := db.GetOrderByID(mustLatestOrderID(t, tableNum))
+	if err != nil {
+		t.Fatalf("GetOrderByID: %v", err)
+	}
+	if order.TotalAmount != 8 {
+		t.Errorf("order total = %v, want 8", order.TotalAmount)
+	}
 }

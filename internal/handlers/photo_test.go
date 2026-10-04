@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -427,4 +428,20 @@ func withChiURLParam(r *http.Request, key, value string) *http.Request {
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add(key, value)
 	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+}
+
+// A "../" image_url must never be stored: deleteLocalPhotoIfAny would later
+// os.Remove it (e.g. the live bitebox.db).
+func TestParseImageURLRejectsPathTraversal(t *testing.T) {
+	for _, u := range []string{
+		"/static/uploads/products/../../../bitebox.db",
+		"/static/demo/../../templates/login.html",
+		"/static/uploads/products/1/./x_full.jpg",
+	} {
+		r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(url.Values{"image_url": {u}}.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if _, ok := parseImageURL(r); ok {
+			t.Errorf("parseImageURL accepted %q", u)
+		}
+	}
 }

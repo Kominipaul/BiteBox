@@ -42,7 +42,7 @@ func IsSecureRequest(r *http.Request) bool {
 }
 
 func SetSessionCookie(w http.ResponseWriter, r *http.Request, sessionID string) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- HttpOnly + SameSite set; Secure whenever the request came over HTTPS (auth.IsSecureRequest)
 		Name:     SessionCookieName,
 		Value:    sessionID,
 		Path:     "/",
@@ -54,7 +54,7 @@ func SetSessionCookie(w http.ResponseWriter, r *http.Request, sessionID string) 
 }
 
 func ClearSessionCookie(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- HttpOnly + SameSite set; Secure whenever the request came over HTTPS (auth.IsSecureRequest)
 		Name:     SessionCookieName,
 		Value:    "",
 		Path:     "/",

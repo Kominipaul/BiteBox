@@ -1,0 +1,51 @@
+{{/* Add / edit a special day (Menus & hours): closed, or different kitchen /
+     bar hours, on a date or a date range (holidays, events, winter hours).
+     A save closes the layer; the page updates itself live. */}}
+{{ define "special-day-form" }}
+{{ $d := .D }}
+<form class="bk-form sd-form" hx-post="/admin/menu/hours/special{{ if $d.ID }}/{{ $d.ID }}{{ end }}" hx-target="#bkModalBody" hx-swap="innerHTML">
+  <header class="modal-head">
+    <span class="modal-icon">{{ template "i-cal" }}</span>
+    <div>
+      <h2>{{ if $d.ID }}Edit special day{{ else }}Special day{{ end }}</h2>
+      <p>A holiday, an event, or different hours for a season.</p>
+    </div>
+    <button type="button" class="modal-x" data-close aria-label="Close">
+      <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </header>
+  <div class="modal-body">
+    {{ if .Error }}<p class="modal-warn" role="alert">{{ .Error }}</p>{{ end }}
+    <div class="sd-dates">
+      <label class="f">From<input type="date" name="from" value="{{ $d.From }}" required></label>
+      <label class="f">To<input type="date" name="to" value="{{ $d.To }}"><small>Same day for one date.</small></label>
+    </div>
+    <div class="segc sd-kind" role="radiogroup" aria-label="What happens">
+      <label><input type="radio" name="kind" value="closed" {{ if $d.Closed }}checked{{ end }}><span>Closed all day</span></label>
+      <label><input type="radio" name="kind" value="hours" {{ if not $d.Closed }}checked{{ end }}><span>Different hours</span></label>
+    </div>
+    <div class="sd-hours">
+      {{ range .Stations }}
+      <div class="sd-station">
+        <b>{{ .Name }}</b>
+        <div class="segc" role="radiogroup" aria-label="{{ .Name }}">
+          <label><input type="radio" name="{{ .Dept }}_mode" value="usual" {{ if not .Set }}checked{{ end }}><span>Usual</span></label>
+          <label><input type="radio" name="{{ .Dept }}_mode" value="hours" {{ if and .Set (not .Closed) }}checked{{ end }}><span>Hours</span></label>
+          <label><input type="radio" name="{{ .Dept }}_mode" value="closed" {{ if and .Set .Closed }}checked{{ end }}><span>Closed</span></label>
+        </div>
+        <div class="sd-times">
+          <input type="time" name="{{ .Dept }}_open" value="{{ .OpenAt }}" aria-label="{{ .Name }} opens">
+          <span>–</span>
+          <input type="time" name="{{ .Dept }}_close" value="{{ .CloseAt }}" aria-label="{{ .Name }} closes">
+        </div>
+      </div>
+      {{ end }}
+    </div>
+    <label class="f">Note <span class="opt">guests see it when you're closed</span><input name="note" value="{{ $d.Note }}" maxlength="80" placeholder="e.g. Public holiday, Private event, Winter hours"></label>
+  </div>
+  <footer class="modal-foot">
+    <button type="button" class="mbtn" data-close>Cancel</button>
+    <button type="submit" class="mbtn primary">Save</button>
+  </footer>
+</form>
+{{ end }}

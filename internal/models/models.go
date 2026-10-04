@@ -23,6 +23,32 @@ type Settings struct {
 	// db.go's migration for the obviously-fake defaults.
 	BusinessVATNumber string
 	TaxOffice         string
+	// Booking* configure the public /book page and staff booking tools.
+	// BookingOpen/BookingClose are "HH:MM" first and last arrival slots on
+	// the same day (close must be after open).
+	// ShowRecommended / ShowPopular switch the guest menu's Recommended
+	// (staff picks) and Popular (best sellers, last 30 days) rows.
+	ShowRecommended bool
+	ShowPopular     bool
+	// RecommendedTitle is the guest-facing heading ("Chef's picks"…).
+	// Popular* shape the best-sellers row: over how many days, how many
+	// dishes, and from "all", "kitchen" or "bar".
+	RecommendedTitle string
+	PopularDays      int
+	PopularCount     int
+	PopularScope     string
+	// SortByPopularity orders dishes inside each guest menu category by the
+	// popularity snapshot (see Popularity), best sellers first.
+	SortByPopularity bool
+	// ShowUpcoming lists dishes coming later today greyed out ("From 19:00")
+	// instead of hiding them, so guests can plan.
+	ShowUpcoming     bool
+	BookingEnabled   bool
+	BookingOpen      string
+	BookingClose     string
+	BookingDuration  int // minutes a booking holds its table
+	BookingDaysAhead int
+	VenuePhone       string
 }
 
 type Product struct {
@@ -57,7 +83,25 @@ type Product struct {
 	// breakdown table (see Order.VATBreakdown) — display structure, not a
 	// real tax calculation feeding any actual filing or myDATA submission.
 	VATRate float64 `json:"vat_rate"`
+	// Recommended puts the dish in the guest menu's "Recommended" row
+	// (staff pick it in the item editor).
+	Recommended bool `json:"recommended"`
+	// AvailStart/AvailEnd are the dish's own hours, minutes after midnight
+	// (-1 = none): "orange juice only until 12:00", without a whole menu.
+	AvailStart int `json:"avail_start"`
+	AvailEnd   int `json:"avail_end"`
 }
+
+// HasOwnHours reports whether the dish is limited to its own hours.
+func (p Product) HasOwnHours() bool {
+	return p.AvailStart >= 0 && p.AvailEnd >= 0 && p.AvailStart != p.AvailEnd
+}
+
+func (p Product) OwnStartClock() string { return Clock(p.AvailStart) }
+func (p Product) OwnEndClock() string   { return Clock(p.AvailEnd) }
+
+// OwnHoursLabel is "07:00–12:00" for the dish's own hours.
+func (p Product) OwnHoursLabel() string { return Clock(p.AvailStart) + "–" + Clock(p.AvailEnd) }
 
 // CategoryOther is the one fallback category always guaranteed to exist
 // (seeded by db.go) — used when a product's category is blank or no longer
@@ -78,15 +122,107 @@ type Category struct {
 }
 
 type Table struct {
-	ID            int    `json:"id"`
-	Number        int    `json:"number"`
-	Status        string `json:"status"` // "available" or "occupied"
-	HostSessionID string `json:"host_session_id"`
+	ID     int    `json:"id"`
+	Number int    `json:"number"`
+	Status string `json:"status"` // "available" or "occupied"
+	// Never serialized: the host session is a guest's bearer credential and
+	// QRToken is what the table's printed QR code opens (/t/{token}).
+	HostSessionID string `json:"-"`
+	QRToken       string `json:"-"`
 	// AssistanceRequested is set by the guest-facing "Call waiter" button
 	// and cleared when a staff member acknowledges it (see
 	// TableHandlers.RequestAssistance/AcknowledgeAssistance).
 	AssistanceRequested bool `json:"assistance_requested"`
+	// Floor-plan layout, edited by admins on /admin/bookings. PosX/PosY
+	// are floor coordinates; negative means "not placed yet" and the
+	// renderer auto-places it. Shape is one of TableShapes.
+	Zone      string  `json:"zone"`
+	Shape     string  `json:"shape"`
+	MinGuests int     `json:"min_guests"`
+	MaxGuests int     `json:"max_guests"`
+	PosX      float64 `json:"pos_x"`
+	PosY      float64 `json:"pos_y"`
+	// Bookable: guests can pick it on /book (staff can always book it).
+	// OutOfService: staff-set, blocks all new bookings for it.
+	Bookable     bool `json:"bookable"`
+	OutOfService bool `json:"out_of_service"`
+	// Label is what guests and staff see ("S01", "V02"); blank shows Number.
+	Label string `json:"label"`
+	// Fee is the booking fee (sunbeds) or deposit (everything else), and
+	// MinSpend the minimum spend — shown to guests, settled at the venue.
+	Fee      float64 `json:"fee"`
+	MinSpend float64 `json:"min_spend"`
+	// Duration in minutes a booking holds it; 0 uses the venue default.
+	Duration int `json:"duration"`
+	// AvailFrom/AvailUntil: "HH:MM" first/last online arrival, "" = any.
+	// For a FullDay spot they are instead the day it's booked for (e.g.
+	// beach sets 10:00-19:00, whatever time the guest arrives).
+	AvailFrom  string `json:"avail_from"`
+	AvailUntil string `json:"avail_until"`
+	FullDay    bool   `json:"full_day"`
 }
+
+// Name is the table's display label.
+func (t Table) Name() string {
+	if t.Label != "" {
+		return t.Label
+	}
+	return fmt.Sprint(t.Number)
+}
+
+var TableShapes = []string{"round", "high", "rect4", "lounge", "set", "cabana"}
+
+// Booking statuses. Only Active ones hold their table. Held is a guest's
+// 5-minute hold on /book while they type their details.
+const (
+	BookingHeld      = "held"
+	BookingConfirmed = "confirmed"
+	BookingSeated    = "seated"
+	BookingCompleted = "completed"
+	BookingCancelled = "cancelled"
+	BookingNoShow    = "no_show"
+)
+
+// BookingTimeLayout is how starts_at/ends_at are stored (venue local time),
+// chosen so plain string comparison in SQL orders them correctly.
+const BookingTimeLayout = "2006-01-02 15:04"
+
+type Booking struct {
+	ID          int
+	Code        string
+	TableNumber int
+	StartsAt    string // BookingTimeLayout
+	EndsAt      string
+	Guests      int
+	Name        string
+	Phone       string
+	Email       string
+	Notes       string
+	Status      string
+	Source      string // online, phone, walk_in, other
+	CreatedBy   string // staff username, "" for online
+	HoldExpires string // HoldTimeLayout, only for BookingHeld
+}
+
+const HoldTimeLayout = "2006-01-02 15:04:05"
+
+func (b Booking) Active() bool {
+	return b.Status == BookingConfirmed || b.Status == BookingSeated ||
+		(b.Status == BookingHeld && b.HoldExpires > time.Now().Format(HoldTimeLayout))
+}
+
+func (b Booking) Start() time.Time {
+	t, _ := time.ParseInLocation(BookingTimeLayout, b.StartsAt, time.Local)
+	return t
+}
+
+func (b Booking) End() time.Time {
+	t, _ := time.ParseInLocation(BookingTimeLayout, b.EndsAt, time.Local)
+	return t
+}
+
+// DurationMin is the booking length in minutes (for the staff edit form).
+func (b Booking) DurationMin() int { return int(b.End().Sub(b.Start()).Minutes()) }
 
 type OrderItem struct {
 	ProductID int      `json:"product_id"`
@@ -205,7 +341,30 @@ type AssistanceLogEntry struct {
 	AcknowledgedAt time.Time `json:"acknowledged_at"`
 	AcknowledgedBy string    `json:"acknowledged_by"`
 	WaitSeconds    int       `json:"wait_seconds"`
+	Reason         string    `json:"reason"`  // AssistReasons key; "" = not given
+	Outcome        string    `json:"outcome"` // "answered" or "cancelled" (by the guest)
 }
+
+// AssistReasons are what a guest can pick when calling a waiter, keyed as
+// stored; the value is how staff see it. Order = order on the guest's sheet.
+var AssistReasons = []struct{ Key, Guest, Staff string }{
+	{"help", "Help with something", "Needs help"},
+	{"bill", "The bill, please", "Wants the bill"},
+	{"extras", "Water, napkins or cutlery", "Wants water / napkins / cutlery"},
+}
+
+// AssistReasonLabel is the staff-facing label for a stored reason key.
+func AssistReasonLabel(key string) string {
+	for _, r := range AssistReasons {
+		if r.Key == key {
+			return r.Staff
+		}
+	}
+	return ""
+}
+
+// ReasonLabel is AssistReasonLabel for this entry, for templates.
+func (e AssistanceLogEntry) ReasonLabel() string { return AssistReasonLabel(e.Reason) }
 
 // WaitLabel renders WaitSeconds for display — "42s" or "3m 07s" — so
 // templates don't need arithmetic helpers to show it.
@@ -233,6 +392,80 @@ type User struct {
 	// creating a new staff account or resetting one themselves picks a
 	// password nobody else has seen, so neither of those paths sets it.
 	MustChangePassword bool `json:"-"`
+	// Pages is the back-office pages this account may open when
+	// PagesCustom is set; otherwise its role's defaults apply (see Can).
+	Pages       []string `json:"-"`
+	PagesCustom bool     `json:"-"`
+	// TwoFactor: logging in also needs a code from an authenticator app.
+	// Required for admins (NeedsTwoFactor), optional for everyone else.
+	TwoFactor bool `json:"-"`
+}
+
+// NeedsTwoFactor: admins can download the whole database, change any
+// account and every setting, so a stolen password alone mustn't be enough.
+func (u User) NeedsTwoFactor() bool { return u.Role == RoleAdmin }
+
+// BackOfficePage is one page (or group of pages) of the /admin back office
+// that access can be granted to per account.
+type BackOfficePage struct {
+	Key, Name, Desc string
+	AdminOnly       bool // never grantable: only admins
+}
+
+var BackOfficePages = []BackOfficePage{
+	{"dashboard", "Dashboard", "Sales, orders and bookings at a glance", false},
+	{"bookings", "Bookings", "See, take and change bookings", false},
+	{"floor", "Floor", "Live floor: seat, release tables, answer help calls", false},
+	{"menu", "Menu & stock", "Items, prices, photos, stock and categories", false},
+	{"map", "Map editor", "Move, add and remove spots on the floor plan", false},
+	{"orders", "Orders", "Order history, payments and receipts", false},
+	{"live", "Order feed", "Live orders, collecting payment, sold out and song requests", true},
+	{"logs", "Logs", "Call-waiter and staff activity logs", false},
+	{"team", "Staff help", "See the team, reset a forgotten password, sign a lost device out", false},
+	{"staff", "Staff accounts", "Create and remove accounts, roles and page access", true},
+	{"settings", "Settings", "Venue, payments and online booking", true},
+	{"system", "Look & brand", "Colours, logos, fonts and the login page", true},
+}
+
+// DefaultPages is what a worker in department can open when it has no
+// custom access set.
+//
+// A manager is the owner's right hand: every station's tools in the staff
+// app plus the pages for running and fixing the day (menu, orders, logs,
+// helping staff with passwords). What stays admin-only is what could hurt the
+// business if misused: settings and backups, the sales export, look & brand,
+// the map layout, and creating/removing accounts or changing who can do what.
+func DefaultPages(department string) []string {
+	switch department {
+	case DepartmentSuperworker:
+		return []string{"dashboard", "bookings", "floor", "menu", "orders", "logs", "team"}
+	case DepartmentWaiter:
+		return []string{"bookings", "floor"}
+	}
+	return nil
+}
+
+// Can reports whether u may open the back-office page key. Admins can open
+// everything; admin-only pages are never grantable to anyone else.
+func (u User) Can(key string) bool {
+	if u.Role == RoleAdmin {
+		return true
+	}
+	for _, p := range BackOfficePages {
+		if p.Key == key && p.AdminOnly {
+			return false
+		}
+	}
+	pages := u.Pages
+	if !u.PagesCustom {
+		pages = DefaultPages(u.Department)
+	}
+	for _, p := range pages {
+		if p == key {
+			return true
+		}
+	}
+	return false
 }
 
 type Order struct {
@@ -257,6 +490,16 @@ type Order struct {
 	RefundRequested bool        `json:"refund_requested,omitempty"`
 	CreatedAt       time.Time   `json:"created_at"`
 	Items           []OrderItem `json:"items,omitempty"`
+}
+
+// ItemCount is how many things are on the order (quantities summed), for
+// the guest's "4 items".
+func (o Order) ItemCount() int {
+	n := 0
+	for _, it := range o.Items {
+		n += it.Quantity
+	}
+	return n
 }
 
 // GrandTotal is what the guest actually pays — items plus tip.

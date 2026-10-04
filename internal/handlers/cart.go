@@ -141,12 +141,13 @@ func jsonArray(items []string) string {
 // reasoning as the base product price already got: an admin can change an
 // extra's price, or delete it outright, after a guest already added it to
 // their cart, and the cart should reflect that the moment it re-renders.
-func resolveCart(c models.Cart) (views []cartItemView, total float64, hasUnavailable bool, totalQty int) {
+func resolveCart(c models.Cart, zone string) (views []cartItemView, total float64, hasUnavailable bool, totalQty int) {
+	rules := loadMenuRules() // Menus & hours: a menu that ended / a closed kitchen makes a line unavailable
 	for _, item := range c.Items {
 		v := cartItemView{OrderItem: item, ExcludedJSON: jsonArray(item.Excluded), ExtrasJSON: jsonArray(item.Extras)}
 		totalQty += item.Quantity
 		product, err := db.GetProductByID(item.ProductID)
-		if err != nil || !product.IsAvailable || (product.Stock != -1 && product.Stock < item.Quantity) {
+		if err != nil || !product.IsAvailable || (product.Stock != -1 && product.Stock < item.Quantity) || !rules.item(product, zone).Orderable {
 			v.Unavailable = true
 			hasUnavailable = true
 		} else {
@@ -158,7 +159,8 @@ func resolveCart(c models.Cart) (views []cartItemView, total float64, hasUnavail
 				}
 			}
 			v.Name = product.Name
-			v.Price = product.Price + extrasPrice
+			price, _ := rules.price(product, zone) // a running happy hour
+			v.Price = price + extrasPrice
 			total += v.Price * float64(v.Quantity)
 		}
 		v.LineTotal = v.Price * float64(v.Quantity)
@@ -174,8 +176,8 @@ func resolveCart(c models.Cart) (views []cartItemView, total float64, hasUnavail
 // AdminToggleCashOrders same as any other menu-affecting change), so
 // threading the current setting through here is all a guest's checkout
 // screen needs to stay in sync — no separate settings-fetch endpoint.
-func renderCartSummary(w http.ResponseWriter, c models.Cart) {
-	views, total, hasUnavailable, totalQty := resolveCart(c)
+func renderCartSummary(w http.ResponseWriter, c models.Cart, zone string) {
+	views, total, hasUnavailable, totalQty := resolveCart(c, zone)
 	settings, _ := db.GetSettings()
 	tmpl := template.Must(template.ParseFiles("templates/_cart_summary.html"))
 	tmpl.Execute(w, map[string]interface{}{
@@ -195,10 +197,36 @@ func renderCartSummary(w http.ResponseWriter, c models.Cart) {
 func (h *CartHandlers) Summary(w http.ResponseWriter, r *http.Request) {
 	sessionCookie, err := r.Cookie(GuestSessionCookieName)
 	if err != nil {
-		renderCartSummary(w, models.Cart{})
+		renderCartSummary(w, models.Cart{}, "")
 		return
 	}
-	renderCartSummary(w, h.Cart.Get(sessionCookie.Value))
+	zone := ""
+	if t, err := db.GetTableByHostSession(sessionCookie.Value); err == nil {
+		zone = t.Zone
+	}
+	// A menu ended / the kitchen closed since these went in: take them out
+	// and say so (a stock shortage stays, so the guest can lower the amount).
+	rules := loadMenuRules()
+	dropped := h.Cart.Drop(sessionCookie.Value, func(it models.OrderItem) bool {
+		p, err := db.GetProductByID(it.ProductID)
+		return err == nil && p.IsAvailable && rules.item(p, zone).Orderable
+	})
+	if len(dropped) > 0 {
+		names := make([]string, len(dropped))
+		for i, it := range dropped {
+			names[i] = it.Name
+		}
+		msg := "Removed from your order: " + strings.Join(names, ", ") + " (not served right now)"
+		b, _ := json.Marshal(map[string]string{"cartRemoved": msg})
+		w.Header().Set("HX-Trigger", string(b))
+	}
+	renderCartSummary(w, h.Cart.Get(sessionCookie.Value), zone)
+	if len(dropped) > 0 {
+		// Their reserved stock is free again: refresh the staff list only. A
+		// guest-menu push here would replace the hidden element that asked for
+		// this cart, and the "removed" toast would fire on nothing.
+		BroadcastAdminMenu()
+	}
 }
 
 // validCustomization filters raw excluded/extra ingredient names down to
@@ -238,7 +266,7 @@ func validCustomization(productID int, rawExcluded, rawExtras []string) (exclude
 }
 
 func (h *CartHandlers) Add(w http.ResponseWriter, r *http.Request) {
-	_, sessionID, err := resolveHostedTable(r)
+	table, sessionID, err := resolveHostedTable(r)
 	if err != nil {
 		http.Error(w, "You are not currently hosting a table", http.StatusForbidden)
 		return
@@ -260,6 +288,11 @@ func (h *CartHandlers) Add(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Product not available", http.StatusBadRequest)
 		return
 	}
+	rules := loadMenuRules()
+	if !rules.item(product, table.Zone).Orderable {
+		http.Error(w, "That's not being served right now", http.StatusConflict)
+		return
+	}
 
 	if product.Stock != -1 {
 		// Reserved across every guest's cart, not just this session's own —
@@ -272,13 +305,14 @@ func (h *CartHandlers) Add(w http.ResponseWriter, r *http.Request) {
 	}
 
 	excluded, extras, extrasPrice := validCustomization(product.ID, r.Form["excluded"], r.Form["extras"])
-	updated := h.Cart.Add(sessionID, product.ID, product.Name, product.Price+extrasPrice, excluded, extras)
-	renderCartSummary(w, updated)
+	price, _ := rules.price(product, table.Zone) // a running happy hour
+	updated := h.Cart.Add(sessionID, product.ID, product.Name, price+extrasPrice, excluded, extras)
+	renderCartSummary(w, updated, table.Zone)
 	BroadcastAllMenus()
 }
 
 func (h *CartHandlers) Remove(w http.ResponseWriter, r *http.Request) {
-	_, sessionID, err := resolveHostedTable(r)
+	table, sessionID, err := resolveHostedTable(r)
 	if err != nil {
 		http.Error(w, "You are not currently hosting a table", http.StatusForbidden)
 		return
@@ -296,7 +330,7 @@ func (h *CartHandlers) Remove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updated := h.Cart.Remove(sessionID, productID, r.Form["excluded"], r.Form["extras"])
-	renderCartSummary(w, updated)
+	renderCartSummary(w, updated, table.Zone)
 	BroadcastAllMenus()
 }
 
@@ -310,11 +344,14 @@ func (h *CartHandlers) Clear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.Cart.Clear(sessionID)
-	renderCartSummary(w, models.Cart{})
+	renderCartSummary(w, models.Cart{}, "")
 	BroadcastAllMenus()
 }
 
 func (h *CartHandlers) Checkout(w http.ResponseWriter, r *http.Request) {
+	if tooMany(orderLimiter, w, r) {
+		return
+	}
 	table, sessionID, err := resolveHostedTable(r)
 	if err != nil {
 		http.Error(w, "You are not currently hosting a table", http.StatusForbidden)
@@ -327,7 +364,7 @@ func (h *CartHandlers) Checkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	views, total, hasUnavailable, _ := resolveCart(guestCart)
+	views, total, hasUnavailable, _ := resolveCart(guestCart, table.Zone)
 	if hasUnavailable {
 		http.Error(w, "Some items in your cart are no longer available — please remove them first", http.StatusConflict)
 		return
@@ -383,5 +420,5 @@ func (h *CartHandlers) Checkout(w http.ResponseWriter, r *http.Request) {
 	pushNewOrderAlert(orderID, table.Number, items)
 	pushOrderConfirmedAlert(sessionID, orderID, table.Number, items)
 
-	w.Header().Set("HX-Redirect", "/table/"+strconv.Itoa(table.Number))
+	w.Header().Set("HX-Redirect", "/table/"+strconv.Itoa(table.Number)+"?placed=1") // full reload, opening the Service sheet on "Your orders"
 }

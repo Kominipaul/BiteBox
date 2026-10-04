@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 
@@ -15,13 +16,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 )
-
-// orderHistoryPageSize is how many rows the order-history panel loads at a
-// time — the first page renders inline with the rest of AdminHome, each
-// "Load more" click (AdminOrderHistoryPage) fetches the next one, so the
-// panel scales to a venue's real all-time order count instead of the old
-// flat 200-row cutoff.
-const orderHistoryPageSize = 50
 
 // Length caps on free-text admin input — not a business rule, just a floor
 // against a multi-megabyte name/description bloating storage and breaking
@@ -71,8 +65,10 @@ func parseImageURL(r *http.Request) (string, bool) {
 	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
 		return url, true
 	}
+	// path.Clean rejects "/static/uploads/products/../../../bitebox.db":
+	// deleteLocalPhotoIfAny later os.Remove()s this path.
 	for _, prefix := range localImagePathPrefixes {
-		if strings.HasPrefix(url, prefix) {
+		if strings.HasPrefix(url, prefix) && path.Clean(url) == url {
 			return url, true
 		}
 	}
@@ -92,6 +88,13 @@ const lowStockThreshold = 5
 // accidentally write a reservation-adjusted number back as real inventory.
 type productView struct {
 	models.Product
+	// OffNow: on the menu but guests can't order it at this moment, and why
+	// ("Kitchen closed", "Not on a menu now"). Admin list only.
+	OffNow string
+	Later  string
+	// WasPrice/Deal: a happy hour is on (Price is already the lower price).
+	WasPrice       float64
+	Deal           string
 	AvailableStock int
 	Reserved       int // Stock - AvailableStock, i.e. currently sitting in someone's cart
 	// ThumbURL is the small (see imageproc.ThumbMaxDimension), separately-
@@ -255,7 +258,7 @@ func buildTrendBars(days []db.DayRevenue) []trendBarView {
 	return views
 }
 
-// AdminHome renders the dashboard shell. The menu list, table grid, stats,
+// AdminHome renders the admin overview page. The menu list, table grid, stats,
 // and staff list are all deliberately left for their own lazy hx-get (same
 // "start empty, fetch once" pattern used for every other live-updating panel
 // in this app) rather than computed here — keeps this handler's own DB work
@@ -263,21 +266,9 @@ func buildTrendBars(days []db.DayRevenue) []trendBarView {
 // of which has a dedicated fragment endpoint of its own).
 func AdminHome(w http.ResponseWriter, r *http.Request) {
 	products, _ := db.GetAllProducts() // only for the low-stock alert
-	categories, _ := db.GetCategories()
-	history, _ := db.GetOrderHistory(orderHistoryPageSize, 0)
-	historyTotal, _ := db.GetOrderHistoryCount()
 	trend, _ := db.GetRevenueTrend(7)
 	prevWeek, _ := db.GetRevenueForRange(13, 7)
-	settings, _ := db.GetSettings()
-
-	productViews := buildProductViews(products)
-	lowStock, hasLowStock := findLowStockProduct(productViews)
-	// CategoryTabs drives the menu panel's category filter bar — built from
-	// the same data #menuList itself renders from (GetAllProducts, every
-	// product regardless of availability), so the counts shown on each tab
-	// always match what's actually there, and a category with nothing in it
-	// simply doesn't get a tab (same "skip empty buckets" rule as the list).
-	categoryTabs := groupProductsByCategory(productViews, categoryNames(categories))
+	lowStock, hasLowStock := findLowStockProduct(buildProductViews(products))
 
 	var trendTotal float64
 	for _, d := range trend {
@@ -288,53 +279,160 @@ func AdminHome(w http.ResponseWriter, r *http.Request) {
 	if hasTrendDelta {
 		trendDeltaPercent = (trendTotal - prevWeek) / prevWeek * 100
 	}
-
-	tmpl := template.Must(template.ParseFiles("templates/admin_dashboard.html"))
-	tmpl.Execute(w, map[string]interface{}{
-		"Categories":        categories,
-		"CategoryTabs":      categoryTabs,
-		"History":           history,
-		"HasMoreHistory":    historyTotal > len(history),
-		"NextHistoryOffset": len(history),
+	day := buildDay("", "")
+	staffPage(w, r, "adm_home.html", "home", map[string]interface{}{
 		"Trend":             buildTrendBars(trend),
 		"TrendTotal":        trendTotal,
 		"HasTrendDelta":     hasTrendDelta,
 		"TrendDeltaPercent": trendDeltaPercent,
 		"LowStock":          lowStock,
 		"HasLowStock":       hasLowStock,
-		"DJRequestsEnabled": settings.DJRequestsEnabled,
-		"AllowCashOrders":   settings.AllowCashOrders,
-		"BusinessVATNumber": settings.BusinessVATNumber,
-		"TaxOffice":         settings.TaxOffice,
-		"VenueName":         settings.VenueName,
+		"BookingsToday":     day.Active,
+		"CoversToday":       day.Covers,
+		"FreeNow":           day.Free,
 	})
 }
 
-// AdminOrderHistoryPage serves one page of the order-history panel past the
-// first (which AdminHome renders inline) — the "Load more" button's target,
-// requesting the next offset each time. Renders the same row markup as the
-// initial page (_order_history_rows.html, a `{{define}}` block shared with
-// admin_dashboard.html) plus, when more remain, a fresh "Load more" button
-// pointing at the next offset — when it doesn't, nothing replaces the old
-// button, so it simply disappears from the page (see hx-swap="outerHTML" on
-// the button itself in admin_dashboard.html).
-func AdminOrderHistoryPage(w http.ResponseWriter, r *http.Request) {
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	if offset < 0 {
-		offset = 0
-	}
-	history, err := db.GetOrderHistory(orderHistoryPageSize, offset)
-	if err != nil {
-		http.Error(w, "Failed to load order history", http.StatusInternalServerError)
-		return
-	}
-	total, _ := db.GetOrderHistoryCount()
-	tmpl := template.Must(template.ParseFiles("templates/admin_dashboard.html"))
-	tmpl.ExecuteTemplate(w, "order-history-rows", map[string]interface{}{
-		"History":           history,
-		"HasMoreHistory":    total > offset+len(history),
-		"NextHistoryOffset": offset + len(history),
+// The admin's other pages — each one section of what used to be a single
+// long dashboard, now inside the same sidebar shell as the booking tools.
+
+func AdminMenuPage(w http.ResponseWriter, r *http.Request) {
+	products, _ := db.GetAllProducts()
+	categories, _ := db.GetCategories()
+	// CategoryTabs drives the category filter bar — built from the same data
+	// #menuList renders from, so tab counts always match the list.
+	staffPage(w, r, "adm_menu.html", "menu", map[string]interface{}{
+		"Categories":   categories,
+		"CategoryTabs": groupProductsByCategory(buildProductViews(products), categoryNames(categories)),
 	})
+}
+
+func AdminCategoriesPage(w http.ResponseWriter, r *http.Request) {
+	categories, _ := db.GetCategories()
+	staffPage(w, r, "adm_categories.html", "categories", map[string]interface{}{"Categories": categories})
+}
+
+func AdminTeamPage(w http.ResponseWriter, r *http.Request) {
+	me, _ := UserFromContext(r)
+	roles := staffRoles
+	if me.Role != models.RoleAdmin { // a manager only sees who they can help
+		roles = nil
+		for _, sr := range staffRoles {
+			if sr.Key != models.DepartmentSuperworker && sr.Key != models.RoleAdmin {
+				roles = append(roles, sr)
+			}
+		}
+	}
+	staffPage(w, r, "adm_team.html", "team", map[string]interface{}{"Roles": roles, "Limited": me.Role != models.RoleAdmin})
+}
+
+// ----- Logs page: call-waiter answers and staff activity, paged -----
+
+type helpRow struct {
+	models.AssistanceLogEntry
+	Table, When, Day string
+}
+
+type auditRow struct {
+	models.AuditEntry
+	Text, When, Day string
+}
+
+func logTab(r *http.Request) string {
+	if r.FormValue("tab") == "staff" {
+		return "staff"
+	}
+	return "help"
+}
+
+// logPage is one page of the selected log for the current filters.
+func logPage(r *http.Request) map[string]interface{} {
+	when := r.FormValue("when")
+	if when == "" {
+		when = "week"
+	}
+	before, _ := strconv.Atoi(r.FormValue("before"))
+	q := strings.TrimSpace(r.FormValue("q"))
+	data := map[string]interface{}{"Tab": logTab(r), "When": when}
+	rng := db.RangeFor(when)
+	if logTab(r) == "help" {
+		names := tableNames()
+		f := db.HelpFilter{Range: rng}
+		if q != "" {
+			f.Tables = searchTables(q, names)
+			if n, err := strconv.Atoi(q); err == nil {
+				f.Tables = append(f.Tables, n)
+			}
+			f.Text = q
+		}
+		entries, _ := db.ListHelp(f, before, pageSize+1)
+		more := len(entries) > pageSize
+		if more {
+			entries = entries[:pageSize]
+			data["Next"] = entries[len(entries)-1].ID
+		}
+		rows := make([]helpRow, 0, len(entries))
+		for _, e := range entries {
+			t := names[e.TableNumber]
+			if t == "" {
+				t = strconv.Itoa(e.TableNumber)
+			}
+			local := e.AcknowledgedAt.Local()
+			rows = append(rows, helpRow{e, t, local.Format("15:04"), local.Format("Mon 2 Jan")})
+		}
+		data["Rows"], data["More"] = rows, more
+		if before == 0 {
+			sum, _ := db.SummarizeHelp(f)
+			data["Sum"] = sum
+			data["Avg"] = models.AssistanceLogEntry{WaitSeconds: sum.AvgWait}.WaitLabel()
+			data["Slow"] = models.AssistanceLogEntry{WaitSeconds: sum.Slow}.WaitLabel()
+		}
+		return data
+	}
+	f := db.AuditFilter{Range: rng, Action: r.FormValue("action"), Text: q}
+	entries, _ := db.ListAudit(f, before, pageSize+1)
+	more := len(entries) > pageSize
+	if more {
+		entries = entries[:pageSize]
+		data["Next"] = entries[len(entries)-1].ID
+	}
+	rows := make([]auditRow, 0, len(entries))
+	for _, e := range entries {
+		text := auditText[e.Action]
+		if text == "" {
+			text = e.Action
+		}
+		local := e.CreatedAt.Local()
+		rows = append(rows, auditRow{e, text, local.Format("15:04"), local.Format("Mon 2 Jan")})
+	}
+	data["Rows"], data["More"] = rows, more
+	return data
+}
+
+var logRanges = []struct{ Key, Label string }{
+	{"today", "Today"}, {"yesterday", "Yesterday"}, {"week", "Last 7 days"}, {"month", "This month"}, {"all", "All time"},
+}
+
+func AdminLogsPage(w http.ResponseWriter, r *http.Request) {
+	data := logPage(r)
+	data["Ranges"], data["Q"], data["Action"] = logRanges, r.FormValue("q"), r.FormValue("action")
+	actions := []struct{ Key, Label string }{{"", "Any action"}}
+	for _, k := range []string{"create", "update", "access", "reset_password", "sign_out_all", "deactivate", "activate", "order_status", "order_cancel", "order_payment", "station_close", "station_open", "station_hours", "station_busy", "area_pause", "area_resume", "special_day"} {
+		actions = append(actions, struct{ Key, Label string }{k, auditText[k]})
+	}
+	data["Actions"] = actions
+	staffPage(w, r, "adm_logs.html", "logs", data)
+}
+
+// AdminLogRows re-renders the list for new filters, or (before=ID) the next
+// page of rows for "Show more".
+func AdminLogRows(w http.ResponseWriter, r *http.Request) {
+	tmpl := template.Must(template.ParseFiles("templates/bk_layout.html", "templates/adm_logs.html"))
+	name := "log-rows"
+	if r.FormValue("before") != "" {
+		name = "log-trs"
+	}
+	tmpl.ExecuteTemplate(w, name, logPage(r))
 }
 
 // AdminToggleDJRequests flips the venue-wide DJ-requests feature toggle and
@@ -404,6 +502,7 @@ func AdminUpdateVenueName(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to update venue name", http.StatusInternalServerError)
 		return
 	}
+	RefreshTheme() // the logo monogram and home-screen icon use its first letter
 	renderVenuePanel(w)
 	fmt.Fprintf(w, `<h1 class="venue-name" id="venue-name-admin" hx-swap-oob="true">%s</h1>`, template.HTMLEscapeString(name))
 	BroadcastVenueName(name)
@@ -458,7 +557,27 @@ func renderAdminProductListHTML() ([]byte, error) {
 	}
 	var buf bytes.Buffer
 	tmpl := template.Must(template.ParseFiles("templates/_product_list.html"))
-	if err := tmpl.Execute(&buf, map[string]interface{}{"MenuGroups": groupProductsByCategory(buildProductViews(products), categoryNames(categories))}); err != nil {
+	views := buildProductViews(products)
+	rules := loadMenuRules()
+	for i, v := range views {
+		some, all := rules.anyZone(v.Product)
+		if !v.IsAvailable || all {
+			continue
+		}
+		switch closed, _ := rules.sched.StationClosed(rules.dept[v.Category], rules.now); {
+		case closed:
+			views[i].OffNow = stationName[rules.dept[v.Category]] + " closed"
+		case !func() bool { in, _ := rules.sched.WithinHours(rules.dept[v.Category], rules.now); return in }():
+			views[i].OffNow = stationName[rules.dept[v.Category]] + " outside hours"
+		case v.HasOwnHours() && !(models.Schedule{}).Item(v.Product, "", "", rules.now).Orderable:
+			views[i].OffNow = "Served " + v.OwnHoursLabel()
+		case some:
+			views[i].OffNow = "Only some areas now"
+		default:
+			views[i].OffNow = "Not on a menu now"
+		}
+	}
+	if err := tmpl.Execute(&buf, map[string]interface{}{"MenuGroups": groupProductsByCategory(views, categoryNames(categories))}); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -478,43 +597,10 @@ func AdminProductList(w http.ResponseWriter, r *http.Request) {
 	renderProductList(w)
 }
 
-func renderTableListHTML() ([]byte, error) {
-	tables, err := db.GetAllTables()
-	if err != nil {
-		return nil, err
-	}
-	var buf bytes.Buffer
-	tmpl := template.Must(template.ParseFiles("templates/_table_list.html"))
-	if err := tmpl.Execute(&buf, map[string]interface{}{"Tables": tables}); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-// BroadcastAdminTables pushes a fresh table grid to every admin dashboard —
-// called whenever any table's occupancy changes, from any direction (a
-// guest claiming/leaving it, or an admin creating/force-releasing/removing
-// one).
-func BroadcastAdminTables() {
-	b, err := renderTableListHTML()
-	if err != nil {
-		return
-	}
-	Hub.Broadcast(topicAdminTables, oobWrap("table-grid", b))
-}
-
-func renderTableList(w http.ResponseWriter) {
-	b, err := renderTableListHTML()
-	if err != nil {
-		http.Error(w, "Failed to load tables", http.StatusInternalServerError)
-		return
-	}
-	w.Write(b)
-}
-
-// AdminTableList serves the #table-grid fragment for its initial hx-get load.
-func AdminTableList(w http.ResponseWriter, r *http.Request) {
-	renderTableList(w)
+// BroadcastFloor tells every open Floor page to reload — called whenever a
+// table's occupancy, help request, layout or bookings change.
+func BroadcastFloor() {
+	Hub.Broadcast(topicFloor, []byte("changed"))
 }
 
 // parseStock reads the optional "stock" form field: blank means -1
@@ -603,14 +689,22 @@ func AdminCreateProduct(w http.ResponseWriter, r *http.Request) {
 	// keyed by product ID, so this can only happen after the insert above.
 	if hasPhoto {
 		if url, werr := writeProductPhoto(id, photo); werr != nil {
-			log.Printf("product %d: failed to save uploaded photo: %v", id, werr)
+			log.Printf("product %d: failed to save uploaded photo: %v", id, werr) // #nosec G706 -- integer id and our own error
 		} else if uerr := db.UpdateProduct(id, name, price, stock, parseCategory(r), description, url, vatRate); uerr != nil {
-			log.Printf("product %d: failed to attach uploaded photo: %v", id, uerr)
+			log.Printf("product %d: failed to attach uploaded photo: %v", id, uerr) // #nosec G706 -- integer id and our own error
 		}
 	}
 
-	renderProductList(w)
+	if r.FormValue("recommended") != "" {
+		db.SetProductRecommended(id, true)
+	}
+	saveOwnHours(r, id)
 	BroadcastAllMenus()
+	if fromEditor(r) {
+		productSaved(w, name+" added")
+		return
+	}
+	renderProductList(w)
 }
 
 func AdminUpdateProduct(w http.ResponseWriter, r *http.Request) {
@@ -659,8 +753,16 @@ func AdminUpdateProduct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to update product", http.StatusInternalServerError)
 		return
 	}
-	renderProductList(w)
+	if r.FormValue("from") == "editor" { // the item editor always sends its "Recommended" tick (unticked = absent)
+		db.SetProductRecommended(id, r.FormValue("recommended") != "")
+	}
+	saveOwnHours(r, id)
 	BroadcastAllMenus()
+	if fromEditor(r) {
+		productSaved(w, name+" saved")
+		return
+	}
+	renderProductList(w)
 }
 
 func AdminToggleProduct(w http.ResponseWriter, r *http.Request) {
@@ -678,8 +780,12 @@ func AdminToggleProduct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to update product", http.StatusInternalServerError)
 		return
 	}
-	renderProductList(w)
 	BroadcastAllMenus()
+	if fromEditor(r) {
+		renderProductEditor(w, id)
+		return
+	}
+	renderProductList(w)
 }
 
 // AdminDeleteProduct permanently removes a product — the one thing
@@ -719,8 +825,12 @@ func AdminDeleteProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	deleteLocalPhotoIfAny(product.ImageURL)
-	renderProductList(w)
 	BroadcastAllMenus()
+	if fromEditor(r) {
+		productSaved(w, product.Name+" deleted")
+		return
+	}
+	renderProductList(w)
 }
 
 // isValidCategoryDepartment is deliberately narrower than
@@ -800,8 +910,12 @@ func AdminAddIngredient(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to add ingredient", http.StatusInternalServerError)
 		return
 	}
-	renderProductList(w)
 	BroadcastAllMenus()
+	if fromEditor(r) {
+		renderProductEditor(w, productID)
+		return
+	}
+	renderProductList(w)
 }
 
 func AdminDeleteIngredient(w http.ResponseWriter, r *http.Request) {
@@ -814,29 +928,20 @@ func AdminDeleteIngredient(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to remove ingredient", http.StatusInternalServerError)
 		return
 	}
-	renderProductList(w)
 	BroadcastAllMenus()
-}
-
-func AdminCreateTable(w http.ResponseWriter, r *http.Request) {
-	number, err := strconv.Atoi(r.FormValue("number"))
-	if err != nil || number <= 0 {
-		http.Error(w, "Invalid table number", http.StatusBadRequest)
+	if fromEditor(r) {
+		pid, _ := strconv.Atoi(r.URL.Query().Get("product"))
+		renderProductEditor(w, pid)
 		return
 	}
-	if err := db.CreateTable(number); err != nil {
-		http.Error(w, "Table number already exists", http.StatusConflict)
-		return
-	}
-	renderTableList(w)
-	BroadcastAdminTables()
+	renderProductList(w)
 }
 
-// AdminReleaseTable force-releases an occupied table (e.g. a guest walked
+// StaffReleaseTable force-releases an occupied table (e.g. a guest walked
 // off without hitting "Leave Table"). Also clears whatever cart that guest's
 // session had — otherwise its reserved stock would stay locked away from
 // everyone else forever, since nothing else would ever clear it.
-func AdminReleaseTable(w http.ResponseWriter, r *http.Request) {
+func StaffReleaseTable(w http.ResponseWriter, r *http.Request) {
 	number, err := strconv.Atoi(chi.URLParam(r, "number"))
 	if err != nil {
 		http.Error(w, "Invalid table number", http.StatusBadRequest)
@@ -854,27 +959,10 @@ func AdminReleaseTable(w http.ResponseWriter, r *http.Request) {
 	if table.HostSessionID != "" && CartStore != nil {
 		CartStore.Clear(table.HostSessionID)
 	}
-	renderTableList(w)
-	BroadcastAdminTables()
+	endGuestSession(number, table.HostSessionID)
+	BroadcastFloor()
 	BroadcastAllMenus()
-}
-
-func AdminDeleteTable(w http.ResponseWriter, r *http.Request) {
-	number, err := strconv.Atoi(chi.URLParam(r, "number"))
-	if err != nil {
-		http.Error(w, "Invalid table number", http.StatusBadRequest)
-		return
-	}
-	if err := db.DeleteTable(number); err != nil {
-		if err == db.ErrTableOccupied {
-			http.Error(w, "Cannot remove an occupied table", http.StatusConflict)
-			return
-		}
-		http.Error(w, "Failed to remove table", http.StatusInternalServerError)
-		return
-	}
-	renderTableList(w)
-	BroadcastAdminTables()
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // sanitizeCSVField neutralizes formula injection: a field starting with a
@@ -901,27 +989,412 @@ func sanitizeCSVField(s string) string {
 
 // AdminExportCSV downloads the full (uncapped) order history as CSV.
 func AdminExportCSV(w http.ResponseWriter, r *http.Request) {
-	orders, err := db.GetOrderHistory(-1, 0) // SQLite: LIMIT -1 means no limit
+	f := orderFilter(r, tableNames())
+	name := "all"
+	switch orderWhen(r) {
+	case "today", "yesterday", "week", "month":
+		name = orderWhen(r)
+	}
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", `attachment; filename="bitebox-orders-`+name+`.csv"`)
+	fmt.Fprintln(w, "order_id,table,created_at,status,payment_method,payment_status,served_by,total,tip,items")
+	// Streamed a batch at a time (keyset, like the list), so exporting
+	// years of orders never holds them all in memory.
+	for before := 0; ; {
+		orders, err := db.ListOrders(f, before, 500)
+		if err != nil {
+			log.Printf("export: %v", err)
+			return
+		}
+		for _, o := range orders {
+			items := ""
+			for i, it := range o.Items {
+				if i > 0 {
+					items += "; "
+				}
+				items += fmt.Sprintf("%dx %s", it.Quantity, sanitizeCSVField(it.Name))
+			}
+			fmt.Fprintf(w, "%d,%d,%s,%s,%s,%s,%s,%.2f,%.2f,%q\n",
+				o.ID, o.TableNumber, o.CreatedAt.Local().Format("2006-01-02 15:04"),
+				sanitizeCSVField(o.Status), sanitizeCSVField(o.PaymentMethod), sanitizeCSVField(o.PaymentStatus),
+				sanitizeCSVField(o.ServedBy), o.TotalAmount, o.TipAmount, items)
+		}
+		if len(orders) < 500 {
+			return
+		}
+		before = orders[len(orders)-1].ID
+	}
+}
+
+// ----- Item editor (the layer on the Menu & stock page) -----
+
+// fromEditor: the request came from the item editor panel rather than the
+// list, so it answers with the panel (or closes it) instead of the list.
+func fromEditor(r *http.Request) bool { return r.URL.Query().Get("from") == "editor" }
+
+// productSaved closes the editor panel with a short confirmation; the list
+// itself refreshes over /admin/menu/ws (BroadcastAllMenus).
+func productSaved(w http.ResponseWriter, msg string) {
+	w.Header().Set("HX-Trigger", fmt.Sprintf(`{"productSaved":%q}`, msg))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func renderProductEditor(w http.ResponseWriter, id int) {
+	data := map[string]interface{}{"New": id == 0}
+	if id != 0 {
+		p, err := db.GetProductByID(id)
+		if err != nil {
+			http.Error(w, "Item not found", http.StatusNotFound)
+			return
+		}
+		ings, _ := db.GetIngredientsByProductIDs([]int{id})
+		data["P"] = buildProductView(p, ings[id])
+	} else {
+		data["P"] = productView{Product: models.Product{Stock: -1, VATRate: 24, IsAvailable: true}, AvailableStock: -1}
+	}
+	data["Categories"], _ = db.GetCategories()
+	tmpl := template.Must(template.ParseFiles("templates/bk_layout.html", "templates/_product_editor.html"))
+	if err := tmpl.ExecuteTemplate(w, "product-editor", data); err != nil {
+		log.Printf("product editor: %v", err)
+	}
+}
+
+// AdminProductEditor serves the editor panel for one item.
+func AdminProductEditor(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "Failed to export orders", http.StatusInternalServerError)
+		http.Error(w, "Invalid product id", http.StatusBadRequest)
 		return
 	}
+	renderProductEditor(w, id)
+}
 
-	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", `attachment; filename="bitebox-orders.csv"`)
+// AdminProductNew serves the empty editor panel for a new item.
+func AdminProductNew(w http.ResponseWriter, r *http.Request) { renderProductEditor(w, 0) }
 
-	fmt.Fprintln(w, "order_id,table,created_at,status,payment_method,payment_status,served_by,total,tip,items")
-	for _, o := range orders {
-		items := ""
-		for i, it := range o.Items {
-			if i > 0 {
-				items += "; "
-			}
-			items += fmt.Sprintf("%dx %s", it.Quantity, sanitizeCSVField(it.Name))
-		}
-		fmt.Fprintf(w, "%d,%d,%s,%s,%s,%s,%s,%.2f,%.2f,%q\n",
-			o.ID, o.TableNumber, o.CreatedAt.Local().Format("2006-01-02 15:04"),
-			sanitizeCSVField(o.Status), sanitizeCSVField(o.PaymentMethod), sanitizeCSVField(o.PaymentStatus),
-			sanitizeCSVField(o.ServedBy), o.TotalAmount, o.TipAmount, items)
+// AdminProductStock nudges a tracked item's stock by delta (the list's
+// quick −/+ buttons); unlimited items are left alone.
+func AdminProductStock(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid product id", http.StatusBadRequest)
+		return
 	}
+	delta, err := strconv.Atoi(r.FormValue("delta"))
+	if err != nil || delta < -1000 || delta > 1000 {
+		http.Error(w, "Invalid amount", http.StatusBadRequest)
+		return
+	}
+	p, err := db.GetProductByID(id)
+	if err != nil {
+		http.Error(w, "Product not found", http.StatusNotFound)
+		return
+	}
+	if p.Stock != -1 {
+		stock := p.Stock + delta
+		if stock < 0 {
+			stock = 0
+		}
+		if err := db.UpdateProduct(id, p.Name, p.Price, stock, p.Category, p.Description, p.ImageURL, p.VATRate); err != nil {
+			http.Error(w, "Failed to update stock", http.StatusInternalServerError)
+			return
+		}
+	}
+	renderProductList(w)
+	BroadcastAllMenus()
+}
+
+// ----- Orders page -----
+
+// pageSize is how many rows the Orders and Logs lists show at a time;
+// "Show more" fetches the next page (see db.ListOrders).
+const pageSize = 10
+
+type orderRow struct {
+	models.Order
+	Table, When, Day, Summary string
+	ItemCount                 int
+	Lines                     []orderLine
+}
+
+type orderLine struct {
+	models.OrderItem
+	Total float64
+}
+
+var orderRanges = []struct{ Key, Label string }{
+	{"today", "Today"}, {"yesterday", "Yesterday"}, {"week", "Last 7 days"}, {"month", "This month"}, {"all", "All time"},
+}
+
+var orderStatusFilters = []struct{ Key, Label string }{
+	{"", "Any status"}, {"open", "Open (not served yet)"}, {models.OrderStatusServed, "Served"},
+	{models.OrderStatusCompleted, "Completed"}, {models.OrderStatusCancelled, "Cancelled"},
+}
+
+var orderPaymentFilters = []struct{ Key, Label string }{
+	{"", "Any payment"}, {models.PaymentStatusUnpaid, "Unpaid"}, {models.PaymentStatusPaid, "Paid"},
+}
+
+func tableNames() map[int]string {
+	names := map[int]string{}
+	tables, _ := db.GetAllTables()
+	for _, t := range tables {
+		names[t.Number] = t.Name()
+	}
+	return names
+}
+
+// searchTables turns a search box value into the table numbers it names:
+// the number itself, or any spot whose label contains it ("F0" -> F01…F04).
+func searchTables(q string, names map[int]string) []int {
+	var out []int
+	lq := strings.ToLower(q)
+	for n, label := range names {
+		if strings.Contains(strings.ToLower(label), lq) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func toOrderRow(o models.Order, names map[int]string) orderRow {
+	row := orderRow{Order: o, Table: names[o.TableNumber]}
+	if row.Table == "" {
+		row.Table = strconv.Itoa(o.TableNumber)
+	}
+	local := o.CreatedAt.Local()
+	row.When, row.Day = local.Format("15:04"), local.Format("Mon 2 Jan")
+	parts := make([]string, 0, len(o.Items))
+	for _, it := range o.Items {
+		parts = append(parts, fmt.Sprintf("%d× %s", it.Quantity, it.Name))
+		row.ItemCount += it.Quantity
+		row.Lines = append(row.Lines, orderLine{OrderItem: it, Total: it.Price * float64(it.Quantity)})
+	}
+	row.Summary = strings.Join(parts, ", ")
+	return row
+}
+
+func orderWhen(r *http.Request) string {
+	if w := r.FormValue("when"); w != "" {
+		return w
+	}
+	return "today"
+}
+
+// orderFilter reads the Orders page filters into a database filter.
+func orderFilter(r *http.Request, names map[int]string) db.OrderFilter {
+	f := db.OrderFilter{Range: db.RangeFor(orderWhen(r)), Status: r.FormValue("status"), Pay: r.FormValue("pay")}
+	if q := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(r.FormValue("q")), "#")); q != "" {
+		f.Number, _ = strconv.Atoi(q)
+		f.Tables = searchTables(q, names)
+		f.Text = q
+	}
+	return f
+}
+
+// orderPage is one page of rows (+ whether there's more) for a filter.
+func orderPage(r *http.Request) map[string]interface{} {
+	names := tableNames()
+	f := orderFilter(r, names)
+	before, _ := strconv.Atoi(r.FormValue("before"))
+	orders, _ := db.ListOrders(f, before, pageSize+1)
+	more := len(orders) > pageSize
+	if more {
+		orders = orders[:pageSize]
+	}
+	rows := make([]orderRow, 0, len(orders))
+	for _, o := range orders {
+		rows = append(rows, toOrderRow(o, names))
+	}
+	data := map[string]interface{}{"Rows": rows, "More": more, "Shown": before > 0}
+	if more {
+		data["Next"] = orders[len(orders)-1].ID
+	}
+	if before == 0 {
+		data["Sum"], _ = db.SummarizeOrders(f)
+	}
+	return data
+}
+
+func AdminOrdersPage(w http.ResponseWriter, r *http.Request) {
+	data := orderPage(r)
+	data["Ranges"], data["Statuses"], data["Pays"] = orderRanges, orderStatusFilters, orderPaymentFilters
+	data["When"], data["Q"], data["Status"], data["Pay"] = orderWhen(r), r.FormValue("q"), r.FormValue("status"), r.FormValue("pay")
+	staffPage(w, r, "adm_orders.html", "orders", data)
+}
+
+// AdminOrderRows re-renders the list for new filters, or (before=ID) just
+// the next page of rows for "Show more".
+func AdminOrderRows(w http.ResponseWriter, r *http.Request) {
+	tmpl := template.Must(template.ParseFiles("templates/bk_layout.html", "templates/adm_orders.html"))
+	name := "order-rows"
+	if r.FormValue("before") != "" {
+		name = "order-trs"
+	}
+	tmpl.ExecuteTemplate(w, name, orderPage(r))
+}
+
+func renderOrderDetail(w http.ResponseWriter, id int) {
+	o, err := db.GetOrderByID(id)
+	if err != nil {
+		http.Error(w, "Order not found", http.StatusNotFound)
+		return
+	}
+	o.Items, _ = db.GetOrderItems(id)
+	tmpl := template.Must(template.ParseFiles("templates/bk_layout.html", "templates/adm_orders.html"))
+	if err := tmpl.ExecuteTemplate(w, "order-detail", map[string]interface{}{"O": toOrderRow(o, tableNames())}); err != nil {
+		log.Printf("order detail: %v", err)
+	}
+}
+
+// AdminOrderDetail is one order in the side panel.
+func AdminOrderDetail(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid order id", http.StatusBadRequest)
+		return
+	}
+	renderOrderDetail(w, id)
+}
+
+// AdminOrderPayment marks an order paid (paid=1) or unpaid from the panel.
+func AdminOrderPayment(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid order id", http.StatusBadRequest)
+		return
+	}
+	status := models.PaymentStatusUnpaid
+	if r.FormValue("paid") == "1" {
+		status = models.PaymentStatusPaid
+	}
+	if err := db.UpdateOrderPaymentStatus(id, status); err != nil {
+		http.Error(w, "Failed to update payment", http.StatusInternalServerError)
+		return
+	}
+	db.LogAudit(actorUsername(r), "order_payment", "#"+strconv.Itoa(id), "marked "+status)
+	if o, err := db.GetOrderByID(id); err == nil {
+		BroadcastTableStatus(o.TableNumber)
+		BroadcastPlacedOrders(o.TableNumber, o.SessionID)
+	}
+	BroadcastAdminStats()
+	w.Header().Set("HX-Trigger", "ordersChanged")
+	renderOrderDetail(w, id)
+}
+
+// fixableStages are the stages a stuck order can be moved between by hand.
+var fixableStages = map[string]string{
+	models.OrderStatusPending: "New", models.OrderStatusPreparing: "Preparing",
+	models.OrderStatusReady: "Ready", models.OrderStatusServed: "Served",
+}
+
+// afterOrderFix tells every live screen (feeds, the guest's own tracker, the
+// dashboard numbers) and redraws the panel.
+func afterOrderFix(w http.ResponseWriter, o models.Order) {
+	BroadcastOrderFeed()
+	BroadcastTableStatus(o.TableNumber)
+	BroadcastPlacedOrders(o.TableNumber, o.SessionID)
+	BroadcastAdminStats()
+	w.Header().Set("HX-Trigger", "ordersChanged")
+	renderOrderDetail(w, o.ID)
+}
+
+// AdminOrderStatus moves an order to another stage: the fix for "the kitchen
+// marked the wrong one" or "nobody pressed Delivered". Written to the staff
+// activity log, so a manager using it is accountable for it.
+func AdminOrderStatus(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid order id", http.StatusBadRequest)
+		return
+	}
+	status := r.FormValue("status")
+	to, ok := fixableStages[status]
+	o, gerr := db.GetOrderByID(id)
+	if !ok || gerr != nil {
+		http.Error(w, "Order or stage not found", http.StatusNotFound)
+		return
+	}
+	from, fixable := fixableStages[o.Status]
+	if !fixable {
+		http.Error(w, "A cancelled or completed order can't be moved.", http.StatusConflict)
+		return
+	}
+	if o.Status != status {
+		if err := db.UpdateOrderStatus(id, status); err != nil {
+			http.Error(w, "Failed to update the order", http.StatusInternalServerError)
+			return
+		}
+		if status == models.OrderStatusServed {
+			db.SetServedBy(id, actorUsername(r))
+		}
+		db.LogAudit(actorUsername(r), "order_status", "#"+strconv.Itoa(id), from+" → "+to)
+	}
+	afterOrderFix(w, o)
+}
+
+// AdminOrderCancel cancels an order that hasn't been served yet (its items go
+// back into stock).
+func AdminOrderCancel(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid order id", http.StatusBadRequest)
+		return
+	}
+	o, gerr := db.GetOrderByID(id)
+	if gerr != nil {
+		http.Error(w, "Order not found", http.StatusNotFound)
+		return
+	}
+	if _, err := db.CancelOrder(id); err != nil {
+		if err == db.ErrCannotCancel {
+			http.Error(w, "This order can no longer be cancelled.", http.StatusConflict)
+			return
+		}
+		http.Error(w, "Failed to cancel the order", http.StatusInternalServerError)
+		return
+	}
+	db.LogAudit(actorUsername(r), "order_cancel", "#"+strconv.Itoa(id), "was "+fixableStages[o.Status])
+	BroadcastAllMenus() // stock is back
+	afterOrderFix(w, o)
+}
+
+// AdminGuide is the how-it-works guide, open to every signed-in account. It
+// opens on the reader's own role (the owner on the owner's part).
+func AdminGuide(w http.ResponseWriter, r *http.Request) {
+	user, _ := UserFromContext(r)
+	who := map[string]string{models.DepartmentSuperworker: "manager", models.DepartmentWaiter: "waiter",
+		models.DepartmentKitchen: "station", models.DepartmentBar: "station", models.DepartmentDJ: "dj"}[user.Department]
+	if user.Role == models.RoleAdmin || who == "" {
+		who = "owner"
+	}
+	// Staff with no back office read it inside the staff app.
+	pageFor(w, r, user.Role != models.RoleAdmin && !hasAdminMode(user), "adm_guide.html", "guide", map[string]interface{}{"Who": who})
+}
+
+func AdminSettingsPage(w http.ResponseWriter, r *http.Request) {
+	settings, _ := db.GetSettings()
+	staffPage(w, r, "adm_settings.html", "settings", map[string]interface{}{
+		"Settings":          settings,
+		"DJRequestsEnabled": settings.DJRequestsEnabled,
+		"AllowCashOrders":   settings.AllowCashOrders,
+		"BusinessVATNumber": settings.BusinessVATNumber,
+		"TaxOffice":         settings.TaxOffice,
+	})
+}
+
+// saveOwnHours stores the item editor's "Serving hours" (only between X and Y).
+func saveOwnHours(r *http.Request, id int) {
+	if r.FormValue("from") != "editor" {
+		return
+	}
+	start, end := -1, -1
+	if r.FormValue("own_hours") == "1" {
+		a, ok1 := models.ClockMinutes(r.FormValue("avail_start"))
+		b, ok2 := models.ClockMinutes(r.FormValue("avail_end"))
+		if ok1 && ok2 && a != b {
+			start, end = a, b
+		}
+	}
+	db.SetProductHours(id, start, end)
 }

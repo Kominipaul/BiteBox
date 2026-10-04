@@ -1,0 +1,232 @@
+{{ define "title" }}Menus & hours{{ end }}
+
+{{ define "content" }}
+<div class="page-head">
+  <div>
+    <h1>Menus &amp; hours</h1>
+    <p>What guests can order, and when. Everything here updates live.</p>
+  </div>
+</div>
+
+<!-- Live: kitchen/bar state, which menus are on, and the suggestion
+     previews follow every change (from here, the staff app or the clock). -->
+<div class="hours-grid" hx-ext="ws" ws-connect="/admin/menu/hours/ws">
+  <div id="warningsWrap">{{ template "hours-warnings" . }}</div>
+  <section class="card card-body hours-card">
+    <div class="hours-head">
+      <div><h2 class="hours-h">Opening hours</h2><small class="hours-note">Set when you open and close; close early or mark busy with one tap.</small></div>
+    </div>
+    <div id="stationsWrap">{{ template "_stations.html" . }}</div>
+    <div class="hours-sub{{ if not .ShowAreas }} one{{ end }}">
+      {{ if .ShowAreas }}
+      <div class="hours-subcol">
+        <div class="hours-subhead"><b>Areas</b><small class="hours-note">Pause one area, or give it its own hours and menu.</small></div>
+        <div id="areasWrap">{{ template "hours-areas" . }}</div>
+      </div>
+      {{ end }}
+      <div class="hours-subcol">
+        <div class="hours-subhead"><b>Special days</b><button type="button" class="linkbtn gold" data-modal="/admin/menu/hours/special/new">{{ template "i-plus" }}Add</button></div>
+        <div id="specialsWrap">{{ template "hours-specials" . }}</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card card-body hours-card">
+    <div class="hours-head"><div><h2 class="hours-h">Check what guests see</h2><small class="hours-note">Pick an area, a day and a time: see exactly what's orderable then.</small></div></div>
+    <form class="pv-form" hx-get="/admin/menu/hours/preview" hx-target="#pvResult" hx-swap="innerHTML" hx-trigger="submit, change">
+      {{ if .ShowAreas }}<label class="f">Area<select name="zone"><option value="">All areas</option>{{ range .Zones }}<option>{{ . }}</option>{{ end }}</select></label>{{ end }}
+      <label class="f">Day<input type="date" name="date" value="{{ .Today }}" required></label>
+      <label class="f">Time<input type="time" name="time" value="{{ .NowClock }}" required></label>
+      <button type="submit" class="act primary">Check</button>
+    </form>
+    <div id="pvResult" class="pv-result"></div>
+  </section>
+
+  <section class="card card-body hours-card">
+    <div class="hours-head">
+      <div><h2 class="hours-h">Happy hour &amp; offers</h2><small class="hours-note">Lower prices at set times, e.g. cocktails 20% off 18:00–20:00. Guests see the old price crossed out.</small></div>
+      <button type="button" class="act" data-modal="/admin/menu/hours/new?kind=price">{{ template "i-plus" }}Add offer</button>
+    </div>
+    <div id="dealsWrap">{{ template "hours-deals" . }}</div>
+  </section>
+
+  <details class="card card-body hours-card hours-adv"{{ if .Menus }} open{{ end }}>
+    <summary class="hours-head">
+      <div><h2 class="hours-h">Advanced: custom menus</h2><small class="hours-note">For anything the hours above can't do: a late-night menu with only some dishes, weekend brunch, different times for the beach and the bar area.</small></div>
+      <span class="adv-count">{{ if .Menus }}{{ len .Menus }} menu{{ if ne (len .Menus) 1 }}s{{ end }}{{ else }}Optional{{ end }}</span>
+    </summary>
+    <div class="adv-body">
+      <div class="adv-bar"><button type="button" class="act primary" data-modal="/admin/menu/hours/new">{{ template "i-plus" }}Add menu</button></div>
+      <div id="menusWrap">{{ template "hours-menus" . }}</div>
+    </div>
+  </details>
+
+  <section class="card card-body hours-card">
+    <h2 class="hours-h">Guest suggestions</h2>
+    <form class="sugg" hx-post="/admin/menu/hours/suggestions" hx-trigger="change" hx-swap="none">
+      <div class="sugg-block">
+        <label class="sw"><input type="checkbox" name="recommended" value="1" {{ if .Settings.ShowRecommended }}checked{{ end }}><i aria-hidden="true"></i><b>Recommended</b></label>
+        <label class="sugg-field"><span>Heading guests see</span><input class="sugg-title" name="recommended_title" value="{{ .Settings.RecommendedTitle }}" maxlength="40" placeholder="e.g. Chef's picks"></label>
+        <div class="sugg-field"><span>Dishes</span>
+          <div id="picksWrap">{{ template "hours-picks" . }}</div>
+          <label class="rp-search">{{ template "i-search" }}<input type="search" id="rpSearch" placeholder="Add a dish: type its name" autocomplete="off" aria-label="Find a dish to recommend"></label>
+          <div class="rp-results" id="rpResults"></div>
+        </div>
+      </div>
+
+      <div class="sugg-block">
+        <label class="sw"><input type="checkbox" name="popular" value="1" {{ if .Settings.ShowPopular }}checked{{ end }}><i aria-hidden="true"></i><b>Popular</b></label>
+        <small class="hours-note">Follows the time of day and only shows what's being served.</small>
+        <div class="segc-rows">
+          <div class="segc-row"><span>Sales from</span><div class="segc">
+            {{ range .DayChoices }}<label><input type="radio" name="popular_days" value="{{ . }}" {{ if eq . $.Settings.PopularDays }}checked{{ end }}><span>{{ . }} days</span></label>{{ end }}
+          </div></div>
+          <div class="segc-row"><span>Show</span><div class="segc">
+            {{ range .CountChoices }}<label><input type="radio" name="popular_count" value="{{ . }}" {{ if eq . $.Settings.PopularCount }}checked{{ end }}><span>{{ . }}</span></label>{{ end }}
+          </div></div>
+          {{ if .MultiStation }}<div class="segc-row"><span>From</span><div class="segc">
+            <label><input type="radio" name="popular_scope" value="all" {{ if eq .Settings.PopularScope "all" }}checked{{ end }}><span>All</span></label>
+            <label><input type="radio" name="popular_scope" value="kitchen" {{ if eq .Settings.PopularScope "kitchen" }}checked{{ end }}><span>Food</span></label>
+            <label><input type="radio" name="popular_scope" value="bar" {{ if eq .Settings.PopularScope "bar" }}checked{{ end }}><span>Drinks</span></label>
+          </div></div>{{ end }}
+        </div>
+        <div id="popularWrap">{{ template "hours-popular" . }}</div>
+      </div>
+
+      <div class="sugg-block">
+        <label class="sw"><input type="checkbox" name="sort_popular" value="1" {{ if .Settings.SortByPopularity }}checked{{ end }}><i aria-hidden="true"></i><b>Best sellers first</b></label>
+        <small class="hours-note">Orders categories and the dishes inside them by what sells at this time of day, so drinks rise at night.</small>
+        <small class="hours-note">It's a monthly snapshot, not a live leaderboard: the menu doesn't reshuffle after every order, only on a real sales spike.</small>
+        <div id="rankWrap">{{ template "hours-rank" . }}</div>
+        <label class="sw sugg-extra"><input type="checkbox" name="show_upcoming" value="1" {{ if .Settings.ShowUpcoming }}checked{{ end }}><i aria-hidden="true"></i><b>Show dishes coming later</b></label>
+        <small class="hours-note">Greyed out with "From 19:00", so guests can plan instead of wondering where dinner went.</small>
+      </div>
+    </form>
+  </section>
+</div>
+{{ end }}
+
+{{ define "hours-menus" }}
+{{ if .Menus }}
+<div class="smenus">
+  {{ range .Menus }}
+  <article class="smenu{{ if not .Enabled }} is-off{{ end }}{{ if .OnNow }} is-on{{ end }}">
+    <div class="smenu-top">
+      <b>{{ .Name }}</b>
+      {{ if .OnNow }}<span class="pill seated">On now</span>{{ end }}
+      <label class="sw sm" title="{{ if .Enabled }}Switch off{{ else }}Switch on{{ end }}"><input type="checkbox" {{ if .Enabled }}checked{{ end }} hx-post="/admin/menu/hours/{{ .ID }}/toggle" hx-swap="none" aria-label="{{ .Name }} switched on"><i aria-hidden="true"></i></label>
+    </div>
+    <div class="smenu-when">{{ template "i-clock" }}{{ .Label }}{{ if .LastOrders }} · last orders −{{ .LastOrders }}′{{ end }}</div>
+    <div class="smenu-what" title="{{ .ZonesLabel }} · {{ .Serves }}"><b class="smenu-zone">{{ .ZonesLabel }}</b> · {{ .Serves }}</div>
+    <div class="smenu-acts">
+      <button type="button" class="linkbtn" data-modal="/admin/menu/hours/{{ .ID }}/edit">{{ template "i-edit" }}Edit</button>
+      <button type="button" class="linkbtn danger" hx-post="/admin/menu/hours/{{ .ID }}/delete" hx-swap="none" hx-confirm="Delete the menu “{{ .Name }}”?">{{ template "i-trash" }}Delete</button>
+    </div>
+  </article>
+  {{ end }}
+</div>
+{{ else }}
+<div class="hours-empty">
+  <p><b>No custom menus.</b> Guests can order everything while the kitchen and bar are open. Add a menu when you need more, e.g. <em>Late night</em> Fri–Sat 23:00–03:00 with only the bar and crêpes, or <em>Beach</em> ordering until 22:00.</p>
+</div>
+{{ end }}
+{{ end }}
+
+{{ define "hours-deals" }}
+{{ if .Deals }}
+<div class="smenus">
+  {{ range .Deals }}
+  <article class="smenu{{ if not .Enabled }} is-off{{ end }}{{ if .OnNow }} is-on{{ end }}">
+    <div class="smenu-top">
+      <b>{{ .Name }}</b>
+      <span class="pill confirmed">{{ .DealLabel }}</span>
+      <label class="sw sm"><input type="checkbox" {{ if .Enabled }}checked{{ end }} hx-post="/admin/menu/hours/{{ .ID }}/toggle" hx-swap="none" aria-label="{{ .Name }} switched on"><i aria-hidden="true"></i></label>
+    </div>
+    <div class="smenu-when">{{ template "i-clock" }}{{ .Label }}{{ if .OnNow }} · <b class="on-now">on now</b>{{ end }}</div>
+    <div class="smenu-what" title="{{ .ZonesLabel }} · {{ .Serves }}"><b class="smenu-zone">{{ .ZonesLabel }}</b> · {{ .Serves }}</div>
+    <div class="smenu-acts">
+      <button type="button" class="linkbtn" data-modal="/admin/menu/hours/{{ .ID }}/edit">{{ template "i-edit" }}Edit</button>
+      <button type="button" class="linkbtn danger" hx-post="/admin/menu/hours/{{ .ID }}/delete" hx-swap="none" hx-confirm="Delete the offer “{{ .Name }}”?">{{ template "i-trash" }}Delete</button>
+    </div>
+  </article>
+  {{ end }}
+</div>
+{{ else }}<small class="hours-note">No offers yet.</small>{{ end }}
+{{ end }}
+
+{{ define "hours-warnings" }}
+{{ if .Warnings }}
+<div class="hours-warn" role="status">
+  <b>Check your set-up</b>
+  <ul>{{ range .Warnings }}<li>{{ . }}</li>{{ end }}</ul>
+</div>
+{{ end }}
+{{ end }}
+
+{{ define "hours-preview-result" }}
+<div class="pv-head"><b>{{ .Where }} · {{ .When }}</b><span>{{ .Total }} dishes orderable</span></div>
+{{ range .Notices }}<p class="pv-note {{ .Kind }}">{{ .Text }}</p>{{ end }}
+{{ if .Sections }}
+<div class="pv-secs">{{ range .Sections }}<span class="pv-sec{{ if not .Now }} is-later{{ end }}"><b>{{ .Name }}</b>{{ if .Now }}{{ .Now }}{{ end }}{{ if .Later }}<small>{{ if .Now }}+{{ end }}{{ .Later }} later</small>{{ end }}</span>{{ end }}</div>
+{{ else }}<p class="hours-note">Nothing on the menu at that moment.</p>{{ end }}
+{{ end }}
+
+{{ define "hours-areas" }}
+<div class="areas" id="areasBox">
+  {{ range .Areas }}
+  <div class="area{{ if .Closed }} is-closed{{ end }}">
+    <span class="area-name">{{ .Zone }}{{ range .Menus }}<small class="area-menu">{{ . }}</small>{{ end }}</span>
+    {{ if .Closed }}
+    <span class="area-state">Paused{{ if .Until }} until {{ .Until }}{{ end }}</span>
+    <button type="button" class="linkbtn gold" hx-post="/admin/areas/pause" hx-vals='{"zone":"{{ .Zone }}","close":"open"}' hx-target="#areasBox" hx-swap="outerHTML">Resume</button>
+    {{ else }}
+    <span class="area-state">Ordering</span>
+    <span class="area-acts">
+      <button type="button" class="linkbtn" hx-post="/admin/areas/pause" hx-vals='{"zone":"{{ .Zone }}","close":"60"}' hx-target="#areasBox" hx-swap="outerHTML">1 h</button>
+      <button type="button" class="linkbtn" hx-post="/admin/areas/pause" hx-vals='{"zone":"{{ .Zone }}","close":"today"}' hx-target="#areasBox" hx-swap="outerHTML">Today</button>
+      <button type="button" class="linkbtn" hx-post="/admin/areas/pause" hx-vals='{"zone":"{{ .Zone }}","close":"manual"}' hx-target="#areasBox" hx-swap="outerHTML">Pause</button>
+    </span>
+    {{ end }}
+    <button type="button" class="linkbtn gold" data-modal="/admin/menu/hours/new?zone={{ urlquery .Zone }}" title="A menu just for {{ .Zone }}: its own hours and dishes">{{ template "i-plus" }}Own hours</button>
+  </div>
+  {{ else }}<small class="hours-note">Your tables have no areas yet (set them in the map editor).</small>{{ end }}
+</div>
+{{ end }}
+
+{{ define "hours-specials" }}
+<div class="specials">
+  {{ range .Specials }}
+  <div class="special{{ if .Now }} is-now{{ end }}{{ if .Closed }} is-closed{{ end }}">
+    <div class="special-main">
+      <b>{{ .Label }}{{ if .Now }} <span class="pill seated">Today</span>{{ end }}</b>
+      <small>{{ .Summary }}{{ if .Note }} · {{ .Note }}{{ end }}</small>
+    </div>
+    <button type="button" class="linkbtn" data-modal="/admin/menu/hours/special/{{ .ID }}/edit" aria-label="Edit">{{ template "i-edit" }}</button>
+    <button type="button" class="linkbtn danger" hx-post="/admin/menu/hours/special/{{ .ID }}/delete" hx-swap="none" hx-confirm="Delete this special day?" aria-label="Delete">{{ template "i-trash" }}</button>
+  </div>
+  {{ else }}<small class="hours-note">None coming up. Add holidays, events or winter hours.</small>{{ end }}
+</div>
+{{ end }}
+
+{{ define "hours-picks" }}
+<div class="rp-chips">
+  {{ range .Picks }}<button type="button" class="rp-chip on" hx-post="/admin/products/{{ .ID }}/recommend" hx-swap="none" aria-label="Stop recommending {{ .Name }}">★ {{ .Name }}<span aria-hidden="true">×</span></button>{{ else }}<small class="hours-note">None picked yet.</small>{{ end }}
+</div>
+<template id="rpPool">{{ range .Others }}<button type="button" class="rp-chip" data-search="{{ .Name }} {{ .Category }}" hx-post="/admin/products/{{ .ID }}/recommend" hx-swap="none">+ {{ .Name }}<small>{{ .Category }}</small></button>{{ end }}</template>
+{{ end }}
+
+{{ define "hours-popular" }}
+<div class="pop-preview">
+  {{ if .Popular }}<span class="pop-title">{{ .PopularTitle }}</span>{{ range .Popular }}<span class="pop-chip">{{ . }}</span>{{ end }}
+  {{ else }}<span class="hours-note">{{ if .Settings.ShowPopular }}Not enough orders in this period yet to show a Popular row.{{ else }}Switched off.{{ end }}</span>{{ end }}
+</div>
+{{ end }}
+
+{{ define "hours-rank" }}
+<div class="rank-row"><small class="hours-note">{{ .RankedAt }}</small>
+  <button type="button" class="act ghost sm" hx-post="/admin/menu/hours/rerank" hx-swap="none">Re-rank now</button></div>
+{{ end }}
+
+{{ define "scripts" }}
+<script src="/static/js/hours.js?v={{ .V }}"></script>
+{{ end }}

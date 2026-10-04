@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{ .VenueName }}: book your spot</title>
+<link rel="stylesheet" href="/static/floor.css?v={{ .V }}">
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#14110E; --surface:#1A1511; --blue:#8DB2D4; --raise:#1C1712; --glass:rgba(28,23,18,.92); --line:#2E261E; --line-strong:#4A3C2E;
+  --ink:#F3ECE2; --muted:#978876; --faint:#6B5F52;
+  --gold:#CB9A5E; --gold-ink:#1A130C; --gold-soft:rgba(203,154,94,.14);
+  --sand:#1A1612;
+  --warn:#E0B87F; --err:#E58B74;
+  --font:"Archivo","Helvetica Neue",Arial,system-ui,sans-serif;
+  --panelW:360px;
+  color-scheme:dark;
+}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px);background:var(--bg)}
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.5 var(--font);-webkit-font-smoothing:antialiased;overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:var(--gold)}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.app{height:100%;display:flex;flex-direction:column}
+
+/* Top bar */
+.bar{flex:none;display:grid;gap:10px;padding:12px 14px 12px;border-bottom:1px solid var(--line);background:var(--bg);z-index:3}
+.venue{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.venue .brand{font-weight:600;font-size:13px;color:var(--muted);order:2}
+.venue h1{font-weight:800;font-size:22px;letter-spacing:.06em;margin:0;line-height:1}
+.venue h1 a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:10px;--logo-h:30px}
+.venue p{display:none}
+.controls{display:flex;gap:8px;align-items:stretch;min-width:0}
+.dates{display:flex;gap:6px;overflow-x:auto;min-width:0;flex:1;scrollbar-width:none;padding:1px;scroll-snap-type:x proximity}
+.dates::-webkit-scrollbar{display:none}
+.date{flex:0 0 auto;width:46px;height:50px;border:1px solid var(--line-strong);border-radius:12px;background:transparent;display:grid;place-content:center;line-height:1.15;padding:0;scroll-snap-align:start}
+.date span{font-size:11px;color:var(--muted)}
+.date b{font-weight:700;font-size:16px}
+.date:hover{border-color:var(--gold)}
+.date[aria-pressed="true"]{border-color:var(--gold);background:var(--gold);color:var(--gold-ink)}
+.date[aria-pressed="true"] span{color:inherit;opacity:.75}
+.pickers{display:flex;gap:6px;flex:none}
+.pill{height:50px;border:1px solid var(--line-strong);border-radius:12px;display:flex;align-items:center;background:transparent}
+.mini{font-size:11px;color:var(--muted);line-height:1;display:block}
+.timebox{position:relative;display:grid;align-content:center}
+.timebox label{padding:0 0 3px 10px}
+.timebox select{appearance:none;-webkit-appearance:none;border:0;background:transparent;font-weight:700;font-size:16px;padding:0 22px 0 10px;cursor:pointer;color:var(--ink)}
+.timebox select option{background:var(--raise)}
+.timebox::after{content:"";position:absolute;right:10px;bottom:18px;width:5px;height:5px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:rotate(45deg);pointer-events:none}
+.stepper button{width:34px;height:46px;border:0;background:transparent;font-size:18px}
+.gv{display:grid;justify-items:center;min-width:34px}
+.gv output{font-weight:700;font-size:16px;line-height:1.15}
+button:disabled,select:disabled{opacity:.35;cursor:not-allowed}
+@media (min-width:900px){
+  .bar{grid-template-columns:auto minmax(0,1fr);align-items:center;gap:10px 28px;padding:14px 24px}
+  .venue{display:block}
+  .venue .brand{display:block;margin-bottom:4px}
+  .venue h1{font-size:28px}
+  .venue p{display:block;margin:6px 0 0;color:var(--muted);font-size:14px}
+  .controls{justify-content:flex-end;gap:10px}
+  .dates{flex:0 1 auto}
+  .date{width:50px;height:54px}
+  .pill{height:54px}
+  .stepper button{width:40px}
+}
+
+/* Map stage */
+.stage{position:relative;flex:1;min-height:0;background:var(--sand);overflow:hidden}
+svg.map{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+svg.map.dragging{cursor:grabbing}
+svg.map .spot.unavailable{cursor:not-allowed}
+.float{position:absolute;z-index:2}
+.glass{background:var(--glass);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid var(--line-strong)}
+.legend{top:10px;left:10px;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;padding:7px 14px;border-radius:999px;font-size:12px;font-weight:600;color:var(--muted);max-width:calc(100% - 150px)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.lg-free{border:1.5px solid var(--gold)}
+.lg-taken{border:1.5px solid var(--line-strong)}
+.lg-yours{background:var(--gold)}
+.live{display:inline-flex;align-items:center;gap:6px;color:var(--gold)}
+.live::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--gold);animation:pulse 2s infinite}
+@keyframes pulse{50%{opacity:.25}}
+@media (min-width:900px){.legend{top:14px;left:14px;font-size:13px}}
+.tools{top:10px;right:10px;display:grid;gap:8px;justify-items:end}
+@media (min-width:900px){.tools{right:calc(var(--panelW) + 40px)}}
+.seg{display:inline-flex;border-radius:12px;overflow:hidden;padding:3px}
+.seg button{border:0;background:transparent;padding:6px 14px;border-radius:9px;font-weight:600;font-size:13px;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--gold);color:var(--gold-ink)}
+.zoom{display:none;border-radius:12px;overflow:hidden}
+@media (min-width:900px){.zoom{display:grid}}
+.zoom button{width:40px;height:40px;border:0;background:transparent;font-size:18px}
+.zoom button:hover{color:var(--gold)}
+.zoom button+button{border-top:1px solid var(--line)}
+.zoom .fit{font-size:11px;font-weight:700}
+
+/* List view */
+.list{position:absolute;inset:0;overflow:auto;background:var(--bg);padding:60px 14px 240px;z-index:1}
+@media (min-width:900px){.list{padding:72px calc(var(--panelW) + 48px) 32px 24px}}
+.list h3{font-weight:700;font-size:18px;margin:20px 0 10px}
+.chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.chip{min-height:56px;padding:8px 12px;border-radius:12px;border:1px solid var(--line-strong);background:transparent;text-align:left;line-height:1.3}
+.chip:hover{border-color:var(--gold)}
+.chip b{display:block;font-weight:600}
+.chip span{font-size:13px;color:var(--muted)}
+.chip[aria-pressed="true"]{border-color:var(--gold);background:var(--gold);color:var(--gold-ink)}
+.chip[aria-pressed="true"] span{color:inherit}
+.empty-list{color:var(--faint);margin:4px 0}
+
+/* Panel */
+.panel{position:absolute;z-index:3;overflow:auto;overscroll-behavior:contain;background:var(--raise)}
+@media (min-width:900px){.panel{top:16px;right:16px;width:var(--panelW);max-height:calc(100% - 32px);border-radius:18px;padding:22px}}
+@media (max-width:899px){
+  .panel{left:0;right:0;bottom:0;max-height:72%;border-radius:18px 18px 0 0;border-bottom:0;padding:8px 16px 16px}
+  .panel::before{content:"";display:block;width:36px;height:4px;border-radius:4px;background:var(--line-strong);margin:0 auto 12px}
+  .panel{transition:transform .2s ease,max-height .25s ease;touch-action:pan-x}
+  .panel.dragging{transition:none}
+  .panel.collapsed{max-height:58px;overflow:hidden;cursor:pointer}
+  .panel .big{font-size:34px}
+  .panel h2{font-size:21px}
+}
+.panel h2{font-weight:700;font-size:22px;line-height:1.15;margin:0 0 4px}
+.panel p{margin:0 0 12px}
+.muted{color:var(--muted)}
+.big{font-weight:800;font-size:40px;line-height:1;margin:0;color:var(--gold)}
+.countrow{display:flex;align-items:center;gap:14px;margin-bottom:10px}
+.countrow p{margin:0}
+.hint{font-size:14px;color:var(--muted)}
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:0;margin:14px 0 18px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.facts div{padding:10px 12px;border-bottom:1px solid var(--line)}
+.facts div:nth-child(odd){border-right:1px solid var(--line)}
+.facts div:nth-last-child(-n+2){border-bottom:0}
+.facts dt{font-size:12px;color:var(--muted)}
+.facts dd{margin:0;font-weight:600}
+.btn{display:block;width:100%;min-height:50px;border-radius:12px;border:0;background:var(--gold);color:var(--gold-ink);font-weight:700;font-size:15px;padding:10px 16px}
+.btn:hover:not(:disabled){filter:brightness(1.06)}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line-strong);margin-top:8px;font-weight:600}
+.btn.ghost:hover{border-color:var(--gold)}
+.notice{border:1px solid var(--warn);color:var(--warn);border-radius:12px;padding:10px 12px;margin:0 0 14px;font-weight:600;font-size:14px}
+.timer{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--gold);color:var(--gold);border-radius:12px;padding:8px 14px;margin-bottom:16px;font-weight:600;font-size:14px}
+.timer strong{font-weight:800;font-size:22px;font-variant-numeric:tabular-nums}
+.summary{font-weight:500;color:var(--muted);margin-bottom:14px}
+form{display:grid;gap:12px}
+form label{font-size:14px;font-weight:600;display:block}
+form label>input,form label>textarea{display:block;margin-top:6px}
+form label>.err{display:block;margin-top:4px}
+form input,form textarea{border:1px solid var(--line-strong);border-radius:12px;background:transparent;padding:10px 12px;min-height:48px;width:100%}
+form input:focus,form textarea:focus{border-color:var(--gold);outline:none}
+form textarea{min-height:72px;resize:vertical}
+form textarea::placeholder{color:var(--faint)}
+form .opt{font-weight:400;color:var(--faint)}
+form [aria-invalid="true"]{border-color:var(--err)}
+.err{color:var(--err);font-size:13px;font-weight:600}
+.pay{display:flex;justify-content:space-between;border-top:1px solid var(--line);padding-top:12px;font-weight:600}
+.pay span:last-child{color:var(--gold)}
+.fine{font-size:12px;color:var(--faint);margin-top:12px}
+.bookcode{font-weight:800;font-size:40px;line-height:1;letter-spacing:.04em;margin:6px 0 12px;color:var(--gold)}
+.suggest{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.suggest button{min-height:42px;padding:6px 16px;border-radius:12px;border:1px solid var(--gold);background:transparent;color:var(--gold);font-weight:700}
+@media (max-width:899px){.hide-sm{display:none}}
+.toast{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top,0px));transform:translate(-50%,-10px);background:var(--raise);border:1px solid var(--line-strong);color:var(--ink);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;max-width:min(92vw,440px);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:20}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+/* Phones: every pixel for the map — slimmer header, smaller floating
+   controls, a tighter sheet. */
+@media (max-width:899px){
+  .bar{gap:8px;padding:8px 10px}
+  .venue h1{font-size:18px}
+  .venue .brand{font-size:12px}
+  .date{width:42px;height:44px;border-radius:10px}
+  .date b{font-size:15px}
+  .date span{font-size:10px}
+  .pill{height:44px;border-radius:10px}
+  .timebox select{font-size:15px}
+  .gv output{font-size:15px}
+  .stepper button{width:30px;height:40px}
+  .legend{top:8px;left:8px;padding:5px 10px;gap:2px 10px;font-size:11px}
+  .tools{top:8px;right:8px}
+  .seg button{padding:5px 11px;font-size:12px}
+  .panel{max-height:62%;padding:6px 14px 12px}
+  .panel::before{margin-bottom:8px}
+  .panel h2{font-size:19px;margin:0}
+  .panel p{margin:0 0 8px}
+  .panel .big{font-size:30px}
+  .countrow{gap:10px;margin-bottom:6px}
+  .countrow p{font-size:14px}
+  .hint{font-size:13px}
+  .facts{margin:10px 0 12px;border-radius:10px}
+  .facts div{padding:7px 10px}
+  .facts dt{font-size:11px}
+  .facts dd{font-size:14px}
+  .btn{min-height:44px;font-size:14px;border-radius:11px}
+  .btn.ghost{min-height:38px;margin-top:6px;font-size:13px}
+  .timer{padding:6px 12px;margin-bottom:10px}
+  .timer strong{font-size:18px}
+  form{gap:9px}
+  form label{font-size:13px}
+  form input,form textarea{min-height:42px;padding:8px 11px}
+  form textarea{min-height:58px}
+  .summary{margin-bottom:8px;font-size:13px}
+  .bookcode{font-size:32px;margin:4px 0 8px}
+  .fine{margin-top:8px}
+}
+.closed{max-width:420px;margin:18vh auto 0;padding:24px;text-align:center;border:1px solid var(--line-strong);border-radius:18px;background:var(--raise)}
+.closed h2{margin:0 0 8px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+<link rel="stylesheet" href="/brand.css">
+<link rel="icon" href="/brand/icon.png">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<link rel="manifest" href="/manifest-site.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="{{ .VenueName }}">
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="venue">
+      <div class="brand">Table booking</div>
+      <h1><a href="/" class="venue-link"><span class="brand-logo" aria-hidden="true"></span><span class="brand-name">{{ .VenueName }}</span></a></h1>
+      <p>{{ if .Tagline }}{{ .Tagline }}. {{ end }}Pick the exact spot you want.</p>
+    </div>
+    {{ if .Enabled }}
+    <div class="controls" aria-label="Booking details" role="group">
+      <div class="dates" id="dates" role="group" aria-label="Date"></div>
+      <div class="pickers">
+        <div class="pill timebox"><label class="mini" for="time">Arrival</label><select id="time"></select></div>
+        <div class="pill stepper" role="group" aria-label="Guests">
+          <button type="button" id="gMinus" aria-label="Fewer guests">−</button>
+          <div class="gv"><span class="mini">Guests</span><output id="guests" aria-live="polite">2</output></div>
+          <button type="button" id="gPlus" aria-label="More guests">+</button>
+        </div>
+      </div>
+    </div>
+    {{ end }}
+  </header>
+
+  {{ if .Enabled }}
+  <main class="stage" id="stage">
+    <svg class="map" id="map" viewBox="0 0 720 1000" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Floor plan of {{ .VenueName }}. Use Tab to move between spots and Enter to pick one."></svg>
+    <div class="list" id="list" hidden></div>
+
+    <div class="float legend glass">
+      <span><i class="lg-free"></i>Free</span>
+      <span><i class="lg-taken"></i>Taken</span>
+      <span><i class="lg-yours"></i>Yours</span>
+      <span class="live hide-sm">Live</span>
+    </div>
+
+    <div class="float tools">
+      <div class="seg glass" role="group" aria-label="View">
+        <button type="button" id="vMap" aria-pressed="true">Map</button>
+        <button type="button" id="vList" aria-pressed="false">List</button>
+      </div>
+      <div class="zoom glass" id="zoomBox">
+        <button type="button" id="zIn" aria-label="Zoom in">+</button>
+        <button type="button" id="zOut" aria-label="Zoom out">−</button>
+        <button type="button" id="zFit" class="fit" aria-label="Show whole venue">Fit</button>
+      </div>
+    </div>
+
+    <aside class="panel glass" id="panel" aria-live="polite"></aside>
+  </main>
+  {{ else }}
+  <div class="closed">
+    <h2>Online booking is closed</h2>
+    <p class="muted">{{ if .Phone }}Call us to book: <a href="tel:{{ .Phone }}">{{ .Phone }}</a>{{ else }}Please try again later.{{ end }}</p>
+  </div>
+  {{ end }}
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+{{ if .Enabled }}
+<script src="/static/floor.js?v={{ .V }}"></script>
+<script type="application/json" id="pageData">{"data": {{ .Data }}, "phone": {{ .Phone }}}</script>
+<script src="/static/js/booking.js?v={{ .V }}"></script>
+{{ end }}
+</body>
+</html>

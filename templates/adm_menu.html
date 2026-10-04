@@ -1,0 +1,32 @@
+{{ define "title" }}Menu & stock{{ end }}
+
+{{ define "content" }}
+<div class="page-head">
+  <div>
+    <h1>Menu &amp; stock</h1>
+    <p>Tap an item to change its price, photo, stock or extras.</p>
+  </div>
+  <button type="button" class="act primary lg" data-modal="/admin/products/new">{{ template "i-plus" }}Add item</button>
+</div>
+
+<section class="card mcard">
+  <div class="mtools">
+    <label class="search">{{ template "i-search" }}<input class="input" type="search" id="menuSearch" placeholder="Search the menu" aria-label="Search the menu" autocomplete="off"></label>
+    <div class="menu-cat-tabs" role="tablist" aria-label="Menu categories">
+      <button type="button" class="menu-cat-tab active" data-cat="all" role="tab" aria-selected="true">All</button>
+      {{ range .CategoryTabs }}
+      <button type="button" class="menu-cat-tab" data-cat="{{ .Name }}" role="tab" aria-selected="false">{{ .Name }} <span class="menu-cat-tab-count">{{ len .Products }}</span></button>
+      {{ end }}
+    </div>
+  </div>
+  <div hx-ext="ws" ws-connect="/admin/menu/ws">
+    <div id="menuList" hx-get="/admin/products" hx-trigger="load" hx-swap="innerHTML">
+      <p class="empty-note" style="padding:16px">Loading menu…</p>
+    </div>
+  </div>
+</section>
+{{ end }}
+
+{{ define "scripts" }}
+<script src="/static/js/menu-admin.js?v={{ .V }}"></script>
+{{ end }}

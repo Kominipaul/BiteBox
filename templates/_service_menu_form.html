@@ -1,0 +1,124 @@
+{{/* Add / edit a scheduled menu (Menus & hours), loaded into the layer.
+     Two columns on wide screens: when (left) and what it serves (right).
+     Categories are chips; single dishes are a search-to-add picker, so the
+     form stays short however big the menu is. Saving re-renders this with a
+     message if something's off, or refreshes the page when it's saved. */}}
+{{ define "service-menu-form" }}
+{{ $m := .M }}
+<form class="bk-form sm-form" hx-post="/admin/menu/hours{{ if $m.ID }}/{{ $m.ID }}{{ end }}" hx-target="#bkModalBody" hx-swap="innerHTML">
+  <input type="hidden" name="kind" value="{{ $m.Kind }}">
+  <header class="modal-head">
+    <span class="modal-icon">{{ template "i-clock" }}</span>
+    <div>
+      {{ if eq $m.Kind "price" }}<h2>{{ if $m.ID }}Edit offer{{ else }}New offer{{ end }}</h2>
+      <p>While it's on, what it covers costs less, e.g. a happy hour.</p>
+      {{ else }}<h2>{{ if $m.ID }}Edit menu{{ else }}New menu{{ end }}</h2>
+      <p>When it's on, guests can order what it serves.</p>{{ end }}
+    </div>
+    <button type="button" class="modal-x" data-close aria-label="Close">
+      <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </header>
+
+  <div class="modal-body sm-body">
+    {{ if .Error }}<p class="modal-warn sm-full" role="alert">{{ .Error }}</p>{{ end }}
+
+    <div class="sm-col">
+      <label class="f">Name<input name="name" value="{{ $m.Name }}" maxlength="60" required placeholder="{{ if eq $m.Kind "price" }}e.g. Happy hour, Sunset cocktails{{ else }}e.g. Dinner, Beach day, Late night{{ end }}" autocomplete="off"></label>
+      {{ if eq $m.Kind "price" }}
+      <div>
+        <span class="f">Discount</span>
+        <div class="sm-disc">
+          <div class="segc" role="radiogroup" aria-label="Discount type">
+            <label><input type="radio" name="disc_type" value="percent" {{ if ne $m.DiscType "amount" }}checked{{ end }}><span>% off</span></label>
+            <label><input type="radio" name="disc_type" value="amount" {{ if eq $m.DiscType "amount" }}checked{{ end }}><span>€ off</span></label>
+          </div>
+          <input class="sm-disc-val" type="number" name="disc_value" value="{{ $m.DiscValue }}" min="0.1" step="0.1" inputmode="decimal" aria-label="How much off" required>
+        </div>
+      </div>
+      {{ end }}
+
+      <div>
+        <div class="sm-label-row"><span class="f">Days</span>
+          <span class="sm-quick">
+            <button type="button" data-sm-days="1234567">Every day</button>
+            <button type="button" data-sm-days="12345">Mon–Fri</button>
+            <button type="button" data-sm-days="67">Sat–Sun</button>
+          </span>
+        </div>
+        <div class="sm-days">
+          {{ range .Days }}<label class="sm-day"><input type="checkbox" name="days" value="{{ .ISO }}" {{ if .On }}checked{{ end }}><span>{{ .Label }}</span></label>{{ end }}
+        </div>
+      </div>
+
+      <div class="sm-times">
+        <label class="f">From<input type="time" name="start" value="{{ .StartClock }}" required></label>
+        <label class="f">Until<input type="time" name="end" value="{{ .EndClock }}" required></label>
+        {{ if ne $m.Kind "price" }}<label class="f">Last orders
+          <select name="last_orders">
+            {{ range .BufferChoices }}<option value="{{ . }}" {{ if eq . $m.LastOrders }}selected{{ end }}>{{ if eq . 0 }}At close{{ else }}{{ . }} min early{{ end }}</option>{{ end }}
+          </select>
+        </label>{{ end }}
+      </div>
+      <small class="sm-hint">Ends before it starts? It runs past midnight.</small>
+
+      {{ if .Zones }}
+      <div class="sm-where">
+        <span class="f">Where</span>
+        <div class="segc sm-serves" role="radiogroup" aria-label="Which areas">
+          <label><input type="radio" name="where" value="all" {{ if not $m.Zones }}checked{{ end }}><span>All areas</span></label>
+          <label><input type="radio" name="where" value="some" {{ if $m.Zones }}checked{{ end }}><span>Chosen areas</span></label>
+        </div>
+        <div class="sm-chips sm-zones">
+          {{ range .Zones }}<label class="sm-chip"><input type="checkbox" name="zones" value="{{ . }}" {{ if $m.InZone . }}checked{{ end }}><span>{{ . }}</span></label>{{ end }}
+        </div>
+      </div>
+      {{ end }}
+
+      <div>
+        <span class="f">{{ if eq $m.Kind "price" }}Applies to{{ else }}Serves{{ end }}</span>
+        <div class="segc sm-serves" role="radiogroup" aria-label="What it serves">
+          <label><input type="radio" name="serves" value="everything" {{ if $m.Everything }}checked{{ end }}><span>Everything</span></label>
+          <label><input type="radio" name="serves" value="pick" {{ if not $m.Everything }}checked{{ end }}><span>Chosen</span></label>
+        </div>
+      </div>
+    </div>
+
+    <div class="sm-col sm-pick">
+      <div class="sm-all-note">
+        <b>Serves the whole menu</b>
+        <span>Every dish and drink is orderable while this menu is on. Choose "Chosen categories &amp; dishes" to limit it, e.g. just the bar late at night.</span>
+      </div>
+      <div class="sm-dept">
+        <div class="sm-label-row"><b>Single dishes</b><small class="sm-hint">e.g. just the crêpes late at night</small></div>
+        <label class="rp-search">{{ template "i-search" }}<input type="search" class="sm-dish-q" placeholder="Add a dish: type its name" autocomplete="off" aria-label="Find a dish"></label>
+        <div class="sm-chips sm-dishes">
+          {{ range .Kitchen }}{{ range .Products }}<label class="sm-chip sm-dish" data-search="{{ .Name }} {{ .Category }}"><input type="checkbox" name="products" value="{{ .ID }}" {{ if $m.ServesProduct .ID }}checked{{ end }}><span>{{ .Name }}</span></label>{{ end }}{{ end }}
+          {{ range .Bar }}{{ range .Products }}<label class="sm-chip sm-dish" data-search="{{ .Name }} {{ .Category }}"><input type="checkbox" name="products" value="{{ .ID }}" {{ if $m.ServesProduct .ID }}checked{{ end }}><span>{{ .Name }}</span></label>{{ end }}{{ end }}
+        </div>
+      </div>
+      {{ if .Kitchen }}
+      <div class="sm-dept">
+        <div class="sm-label-row"><b>Kitchen</b><span class="sm-quick"><button type="button" data-sm-all="on">All</button><button type="button" data-sm-all="off">None</button></span></div>
+        <div class="sm-chips">
+          {{ range .Kitchen }}<label class="sm-chip"><input type="checkbox" name="categories" value="{{ .Name }}" {{ if $m.ServesCategory .Name }}checked{{ end }}><span>{{ .Name }} <small>{{ len .Products }}</small></span></label>{{ end }}
+        </div>
+      </div>
+      {{ end }}
+      {{ if .Bar }}
+      <div class="sm-dept">
+        <div class="sm-label-row"><b>Bar</b><span class="sm-quick"><button type="button" data-sm-all="on">All</button><button type="button" data-sm-all="off">None</button></span></div>
+        <div class="sm-chips">
+          {{ range .Bar }}<label class="sm-chip"><input type="checkbox" name="categories" value="{{ .Name }}" {{ if $m.ServesCategory .Name }}checked{{ end }}><span>{{ .Name }} <small>{{ len .Products }}</small></span></label>{{ end }}
+        </div>
+      </div>
+      {{ end }}
+    </div>
+  </div>
+
+  <footer class="modal-foot">
+    <button type="button" class="mbtn" data-close>Cancel</button>
+    <button type="submit" class="mbtn primary">{{ if eq $m.Kind "price" }}{{ if $m.ID }}Save offer{{ else }}Add offer{{ end }}{{ else }}{{ if $m.ID }}Save menu{{ else }}Add menu{{ end }}{{ end }}</button>
+  </footer>
+</form>
+{{ end }}

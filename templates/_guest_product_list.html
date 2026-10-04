@@ -1,44 +1,53 @@
+{{/* The live guest menu (#product-list, pushed over /menu/ws): notices
+     (kitchen closed, last orders), the category tabs, and every dish that
+     can be ordered right now, Recommended / Popular first. The tabs live in
+     here so they follow the schedule; filtering is client-side (host_menu.html). */}}
+{{ if .Notices }}<div class="svc-notices">{{ range .Notices }}<div class="svc-notice {{ .Kind }}" role="status"><svg viewBox="0 0 24 24" aria-hidden="true">{{ if eq .Kind "last" }}<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>{{ else }}<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/>{{ end }}</svg><span>{{ .Text }}</span></div>{{ end }}</div>{{ end }}
+{{ if .Groups }}
+<div class="cat-tabs" role="tablist" aria-label="Menu sections">
+  <button type="button" class="cat-tab active" data-cat="all">All</button>
+  {{ range .Groups }}<button type="button" class="cat-tab{{ if or (eq .Name "Recommended") (eq .Name "Popular") }} is-top{{ end }}" data-cat="{{ .Name }}">{{ if eq .Name "Recommended" }}★ {{ end }}{{ .Name }}</button>{{ end }}
+</div>
+{{ end }}
 {{ range .Groups }}
-<div class="menu-group-super" data-cat="{{ .Name }}">{{ .Name }}</div>
-<div class="menu-list" data-cat="{{ .Name }}">
+{{ $top := or (eq .Name "Recommended") (eq .Name "Popular") }}
+<div class="menu-group-super{{ if $top }} is-top{{ end }}" data-cat="{{ .Name }}">{{ if eq .Name "Recommended" }}★ {{ $.RecommendedTitle }}{{ else if eq .Name "Popular" }}{{ $.PopularTitle }}{{ else }}{{ .Name }}{{ end }}</div>
+<div class="menu-list{{ if $top }} is-top{{ end }}" data-cat="{{ .Name }}"{{ if $top }} data-top="1"{{ end }}>
   {{ range .Products }}
-  <div class="item-card" data-name="{{ .Name }}">
+  <div class="item-card{{ if eq .AvailableStock 0 }} is-out{{ end }}{{ if .Later }} is-later{{ end }}{{ if not .ImageURL }} no-photo{{ end }}" data-name="{{ .Name }}" data-search="{{ .Name }} {{ .Description }} {{ .Category }}">
     <div class="item-main">
-      <div class="item-top">
-        <span class="item-name">{{ .Name }}</span>
-        <span class="item-leader"></span>
+      <span class="item-name">{{ .Name }}</span>
+      {{ if .Deal }}<span class="item-deal">{{ .Deal }}</span>{{ end }}
+      {{ if .Description }}<div class="item-desc">{{ .Description }}</div>{{ end }}
+      <div class="item-foot">
         <span class="item-price">€{{ printf "%.2f" .Price }}</span>
-      </div>
-      {{ if eq .AvailableStock 0 }}
-      <div class="item-desc" style="color:var(--danger);">Sold out</div>
-      {{ else if and (ge .AvailableStock 0) (le .AvailableStock 5) }}
-      <div class="item-desc" style="color:var(--danger);">Only {{ .AvailableStock }} left</div>
-      {{ else if .Description }}
-      <div class="item-desc">{{ .Description }}</div>
-      {{ end }}
-      <div class="item-actions">
-        {{ if eq .AvailableStock 0 }}
-        <button class="add-btn" disabled style="opacity:.5;cursor:default;">Sold Out</button>
-        {{ else }}
-        <button class="add-btn" hx-post="/cart/add" hx-vals='{"product_id": "{{ .ID }}"}' hx-target="#cart-summary" hx-swap="innerHTML">+ Add</button>
-        {{ end }}
-        {{ if .HasCustomizableIngredient }}
+        {{ if .WasPrice }}<s class="item-was">€{{ printf "%.2f" .WasPrice }}</s>{{ end }}
+        {{ if eq .AvailableStock 0 }}<span class="item-flag">Sold out</span>
+        {{ else if and (ge .AvailableStock 0) (le .AvailableStock 5) }}<span class="item-flag">Only {{ .AvailableStock }} left</span>{{ end }}
+        {{ if and .HasCustomizableIngredient (ne .AvailableStock 0) (not .Later) }}
         <button type="button" class="customize-link" data-action="open-customize" data-product-id="{{ .ID }}" data-name="{{ .Name }}" data-price="{{ printf "%.2f" .Price }}">Customize</button>
         {{ end }}
       </div>
     </div>
-    {{ if .ImageURL }}
-    <div class="item-photo-wrap">
-      <!-- ThumbURL, not ImageURL: this box is ~110-130px — no reason to
-           make a guest's phone download the full ~1600px copy (see
-           imageproc.FullMaxDimension) just to show a thumbnail. Both are
-           always present together (writeProductPhoto/thumbURLFor, see
-           internal/handlers/photo.go) whenever ImageURL is our own
-           uploaded photo; ThumbURL just equals ImageURL for an admin-
-           pasted external URL, which never went through that pipeline. -->
-      <img class="item-photo" src="{{ .ThumbURL }}" alt="" loading="lazy" onerror="this.closest('.item-photo-wrap').remove()">
+    <!-- Photo on the right with the Add button sitting on its bottom edge;
+         no photo: just the button. ThumbURL, not ImageURL: this box is
+         ~100px, no reason to download the full ~1600px copy (see
+         imageproc.FullMaxDimension); for an admin-pasted external URL
+         ThumbURL simply equals ImageURL. -->
+    <div class="item-side">
+      {{ if .ImageURL }}
+      <div class="item-photo-wrap">
+        <img class="item-photo" src="{{ .ThumbURL }}" alt="" loading="lazy" data-fallback="card">
+      </div>
+      {{ end }}
+      {{ if .Later }}
+      <button class="add-btn later" disabled aria-label="{{ .Name }}: {{ .Later }}">{{ .Later }}</button>
+      {{ else if eq .AvailableStock 0 }}
+      <button class="add-btn" disabled aria-label="{{ .Name }} is sold out">Sold out</button>
+      {{ else }}
+      <button class="add-btn" hx-post="/cart/add" hx-vals='{"product_id": "{{ .ID }}"}' hx-target="#cart-summary" hx-swap="innerHTML" aria-label="Add {{ .Name }}"><span aria-hidden="true">+</span> Add</button>
+      {{ end }}
     </div>
-    {{ end }}
     {{ if .HasCustomizableIngredient }}
     <!-- Source chips for the customize modal: hidden here, cloned into
          #customizeChips on open (see host_menu.html) rather than requiring a
@@ -57,5 +66,5 @@
   {{ end }}
 </div>
 {{ else }}
-<p class="empty-note">No items on the menu right now.</p>
+<p class="empty-note">Nothing to order right now.</p>
 {{ end }}

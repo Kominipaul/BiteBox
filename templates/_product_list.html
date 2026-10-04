@@ -1,162 +1,46 @@
+{{/* Menu & stock list (adm_menu.html #menuList). One tidy row per item:
+     tap it to open the editor panel (_product_editor.html); stock −/+ and
+     the show/hide switch work right from the list. Re-rendered on every
+     change and pushed live over /admin/menu/ws. */}}
 {{ range .MenuGroups }}
-<div class="menu-category" data-category="{{ .Name }}">
-  <h3 class="category-label">{{ .Name }} <span class="category-count">{{ len .Products }}</span></h3>
-
+<section class="menu-category" data-category="{{ .Name }}">
+  <h3 class="mcat">{{ .Name }}<span>{{ len .Products }}</span></h3>
+  <div class="mitems">
   {{ range .Products }}
-  <div class="product-row-wrap">
-    <form class="product-row {{ if not .IsAvailable }}is-hidden{{ end }}" data-status="{{ if not .IsAvailable }}hidden{{ else if eq .AvailableStock -1 }}unlimited{{ else if eq .AvailableStock 0 }}out{{ else if le .AvailableStock 5 }}low{{ else }}available{{ end }}" hx-encoding="multipart/form-data">
-      <input type="hidden" name="name" value="{{ .Name }}">
-      <input type="hidden" name="price" value="{{ printf "%.2f" .Price }}">
-      <input type="hidden" name="category" value="{{ .Category }}">
-      <input type="hidden" name="description" value="{{ .Description }}">
-      <input type="hidden" name="image_url" value="{{ .ImageURL }}">
-      <div class="product-main">
-        <!-- What this row actually is: the product's current photo (if
-             any), a way to take/choose a new one, and — only once a photo
-             exists — a checkbox to remove it on next Save. Grouped into
-             one labeled, bordered cluster (same pattern as the add-item
-             form's own .photo-cluster) instead of 3-4 bare icons floating
-             above the name with no container of their own. -->
-        <div class="photo-field photo-row-cluster">
-          <span class="photo-row-cluster-label">Photo</span>
-          <!-- ThumbURL for this ~26px inline preview — see the same note
-               in _guest_product_list.html; the hidden "image_url" field
-               above still round-trips the *full* URL, since that's the
-               one column actually stored on the product. -->
-          <img class="photo-preview-thumb" src="{{ .ThumbURL }}" {{ if not .ImageURL }}hidden{{ end }} alt="" loading="lazy" onerror="this.hidden=true">
-          <input type="file" class="photo-file-input" name="photo" accept="image/*" hidden>
-          <!-- title alone only ever surfaces on :hover — invisible on a
-               touchscreen, which is what every admin device here actually
-               is. aria-label carries the same text as an always-present
-               accessible name (screen reader or not) for these icon-only
-               buttons. -->
-          <button type="button" class="btn btn-ghost photo-take-btn" title="Take a new photo with your camera" aria-label="Take a new photo with your camera">📷</button>
-          <button type="button" class="btn btn-ghost photo-choose-btn" title="Choose a new photo" aria-label="Choose a new photo">🖼️</button>
-          {{ if .ImageURL }}
-          <label class="checkbox-label photo-remove-label" title="Remove this product's photo">
-            <input type="checkbox" name="remove_photo" value="1" aria-label="Remove this product's photo"> ✕ Remove
-          </label>
-          {{ end }}
-        </div>
-        <span class="product-name">{{ .Name }}</span>
-        <span class="product-price">€{{ printf "%.2f" .Price }}</span>
-        {{ if gt .Reserved 0 }}
-        <span style="font-size:11px;color:var(--text-muted);">{{ .Reserved }} in {{ if eq .Reserved 1 }}a cart{{ else }}carts{{ end }} right now</span>
+  <div class="product-row-wrap mitem{{ if not .IsAvailable }} is-hidden{{ end }}">
+    <button type="button" class="mitem-open" data-modal="/admin/products/{{ .ID }}/edit" aria-label="Edit {{ .Name }}">
+      <span class="mthumb">{{ if .ImageURL }}<img src="{{ .ThumbURL }}" alt="" loading="lazy" data-fallback>{{ else }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v8a3 3 0 0 0 3 3v7M7 3v5M10 3v8a3 3 0 0 1-3 3M17 21V3c-2 0-4 3-4 7s2 5 4 5"/></svg>{{ end }}</span>
+      <span class="mtext">
+        <b class="product-name">{{ if .Recommended }}<span class="mrec" title="Recommended">★</span> {{ end }}{{ .Name }}</b>
+        <small>{{ if .Description }}{{ .Description }}{{ else }}No description{{ end }}</small>
+      </span>
+      <span class="mprice">€{{ printf "%.2f" .Price }}</span>
+    </button>
+    <div class="mctl">
+      {{ if .OffNow }}<span class="mbadge offnow" title="Menus & hours">{{ .OffNow }}</span>{{ end }}
+      {{ if not .IsAvailable }}<span class="mbadge off">Hidden</span>
+      {{ else if eq .AvailableStock -1 }}<span class="mbadge">Unlimited</span>
+      {{ else if eq .AvailableStock 0 }}<span class="mbadge out">Out of stock</span>
+      {{ else if le .AvailableStock 5 }}<span class="mbadge low">Low · {{ .AvailableStock }} left</span>
+      {{ else }}<span class="mbadge ok">{{ .AvailableStock }} in stock</span>{{ end }}
+      {{ if gt .Reserved 0 }}<span class="mnote">{{ .Reserved }} in carts</span>{{ end }}
+      <span class="mctl-right">
+        {{ if ne .Stock -1 }}
+        <span class="mstep" aria-label="Stock">
+          <button type="button" hx-post="/admin/products/{{ .ID }}/stock" hx-vals='{"delta":"-1"}' hx-target="#menuList" aria-label="One less {{ .Name }}">−</button>
+          <b>{{ .Stock }}</b>
+          <button type="button" hx-post="/admin/products/{{ .ID }}/stock" hx-vals='{"delta":"1"}' hx-target="#menuList" aria-label="One more {{ .Name }}">+</button>
+        </span>
         {{ end }}
-        {{ if .Description }}
-        <span style="font-size:11.5px;color:var(--text-muted);font-style:italic;">{{ .Description }}</span>
-        {{ end }}
-      </div>
-      <div class="stock-stepper">
-        <!-- Always renders the number input + steppers, just disabled while
-             the ∞ checkbox is on: a disabled input isn't submitted with the
-             form, so Save sends no "stock" field at all, and parseStock
-             (admin.go) already treats that as -1 — the same "blank means
-             unlimited" convention the add-product form uses. This is what
-             lets an admin flip an unlimited item back to a tracked count,
-             which the old unlimited-only markup below had no control for
-             at all. -->
-        <label class="checkbox-label stock-unlimited-toggle" title="Untracked stock — always shown as available">
-          <input type="checkbox" class="unlimited-toggle" {{ if eq .Stock -1 }}checked{{ end }}> ∞
-        </label>
-        <button type="button" class="stepper-btn" data-action="dec" {{ if eq .Stock -1 }}disabled{{ end }}>–</button>
-        <input class="stepper-input" type="number" name="stock" value="{{ if eq .Stock -1 }}0{{ else }}{{ .Stock }}{{ end }}" min="0" {{ if eq .Stock -1 }}disabled{{ end }} title="Raw inventory count (not counting cart reservations)">
-        <button type="button" class="stepper-btn" data-action="inc" {{ if eq .Stock -1 }}disabled{{ end }}>+</button>
-      </div>
-      <select class="field-select vat-rate-select" name="vat_rate" title="VAT rate — demo receipt structure only, not a real tax filing">
-        <option value="24" {{ if eq .VATRate 24.0 }}selected{{ end }}>VAT 24%</option>
-        <option value="13" {{ if eq .VATRate 13.0 }}selected{{ end }}>VAT 13%</option>
-        <option value="6" {{ if eq .VATRate 6.0 }}selected{{ end }}>VAT 6%</option>
-      </select>
-      <!-- Status + actions, grouped as one cluster: what the item's
-           availability currently is, and the two things you'd do about
-           it, read together instead of as two unrelated grid cells. -->
-      <div class="row-status-actions">
-        {{ if not .IsAvailable }}
-        <span class="status-pill status-hidden">Hidden</span>
-        {{ else if eq .AvailableStock -1 }}
-        <span class="status-pill status-unlimited">Unlimited</span>
-        {{ else if eq .AvailableStock 0 }}
-        <span class="status-pill status-out">Out of stock</span>
-        {{ else if le .AvailableStock 5 }}
-        <span class="status-pill status-low">Low stock</span>
-        {{ else }}
-        <span class="status-pill status-available">Available</span>
-        {{ end }}
-        <button type="button" class="btn btn-ghost btn-sm" hx-post="/admin/products/{{ .ID }}" hx-target="#menuList">Save</button>
-        <button type="button" class="btn btn-ghost btn-sm toggle-visibility" hx-post="/admin/products/{{ .ID }}/toggle" hx-target="#menuList">
-          {{ if .IsAvailable }}Hide from menu{{ else }}Show on menu{{ end }}
-        </button>
-        <!-- Genuinely destructive (unlike Hide, this can't be undone from
-             the menu) — styled apart from Save/Hide's ghost look, same
-             .btn-outline-danger convention as "Force release"/"Remove" on
-             the table grid, so it never reads as just another equal option. -->
-        <button type="button" class="btn btn-outline-danger btn-sm" hx-delete="/admin/products/{{ .ID }}" hx-target="#menuList" hx-confirm="Permanently delete &quot;{{ .Name }}&quot;? This can't be undone — past orders keep their own record, but it's gone from the menu for good.">Delete</button>
-      </div>
-    </form>
-
-    <details class="ingredient-panel" {{ if .Ingredients }}open{{ end }}>
-      <summary class="ingredient-summary">
-        <svg class="ingredient-summary-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 12.6 12 21.2a2 2 0 0 1-2.8 0L2.8 14.8a2 2 0 0 1 0-2.8L11.4 3.4a2 2 0 0 1 1.4-.6H19a1.6 1.6 0 0 1 1.6 1.6v6.2a2 2 0 0 1-.6 1.4Z"/><circle cx="16.5" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>
-        {{ if .Ingredients }}
-        <span>{{ len .Ingredients }} customizable ingredient{{ if ne (len .Ingredients) 1 }}s{{ end }}</span>
-        {{ else }}
-        <span class="ingredient-summary-empty">No customization set up — add one</span>
-        {{ end }}
-        <svg class="ingredient-summary-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-      </summary>
-      <div class="ingredient-panel-body">
-        {{ if .RemovableIngredients }}
-        <div class="ingredient-group">
-          <span class="ingredient-group-label"><span class="dot dot-removable"></span>Removable <span class="hint">— included by default, guests can leave these out</span></span>
-          <div class="ingredient-tags">
-            {{ range .RemovableIngredients }}
-            <span class="ingredient-tag">
-              {{ .Name }}
-              <button type="button" class="ingredient-tag-remove" hx-delete="/admin/ingredients/{{ .ID }}" hx-target="#menuList" title="Remove {{ .Name }}" aria-label="Remove {{ .Name }}">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-              </button>
-            </span>
-            {{ end }}
-          </div>
-        </div>
-        {{ end }}
-        {{ if .ExtraIngredients }}
-        <div class="ingredient-group">
-          <span class="ingredient-group-label"><span class="dot dot-extra"></span>Extra <span class="hint">— optional add-ons, not included by default</span></span>
-          <div class="ingredient-tags">
-            {{ range .ExtraIngredients }}
-            <span class="ingredient-tag is-extra">
-              {{ .Name }}
-              {{ if gt .Price 0.0 }}<span class="ingredient-tag-price">+€{{ printf "%.2f" .Price }}</span>{{ else }}<span class="ingredient-tag-price ingredient-tag-price-free">free</span>{{ end }}
-              <button type="button" class="ingredient-tag-remove" hx-delete="/admin/ingredients/{{ .ID }}" hx-target="#menuList" title="Remove {{ .Name }}" aria-label="Remove {{ .Name }}">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-              </button>
-            </span>
-            {{ end }}
-          </div>
-        </div>
-        {{ end }}
-        {{ if not .Ingredients }}
-        <p class="ingredient-empty-note">This item has no removable or extra ingredients yet — guests won't see a "Customize" option for it.</p>
-        {{ end }}
-        <form class="ingredient-add-form" hx-post="/admin/products/{{ .ID }}/ingredients" hx-target="#menuList" hx-on::after-request="if(event.detail.successful) this.reset()">
-          <input class="field-input" name="name" placeholder="e.g. Onion, Extra cheese" required>
-          <select class="field-select ingredient-kind-select" name="kind">
-            <option value="removable">Removable — on by default</option>
-            <option value="extra">Extra — optional add-on</option>
-          </select>
-          <!-- Only meaningful for "Extra" — hidden until that's picked (see
-               the delegated change listener in admin_dashboard.html). Blank
-               submits as 0, i.e. a free add-on, not "unset". -->
-          <input class="field-input ingredient-price-input" name="price" type="number" min="0" step="0.01" placeholder="Price (€), blank = free" style="display:none;width:170px;">
-          <button type="submit" class="btn btn-ghost btn-sm">+ Add ingredient</button>
-        </form>
-      </div>
-    </details>
+        <button type="button" class="mswitch{{ if .IsAvailable }} on{{ end }}" role="switch" aria-checked="{{ if .IsAvailable }}true{{ else }}false{{ end }}"
+          aria-label="Show {{ .Name }} on the menu" title="{{ if .IsAvailable }}On the menu, tap to hide{{ else }}Hidden, tap to show{{ end }}"
+          hx-post="/admin/products/{{ .ID }}/toggle" hx-target="#menuList"><i></i></button>
+      </span>
+    </div>
   </div>
   {{ end }}
-</div>
+  </div>
+</section>
 {{ else }}
-<p class="empty-note">No products yet.</p>
+<div class="empty"><b>No items yet</b>Tap "Add item" to create your first one.</div>
 {{ end }}

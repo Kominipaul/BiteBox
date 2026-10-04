@@ -1,15 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BiteBox Admin — {{ .VenueName }}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<script src="/static/vendor/htmx.min.js"></script>
-<script src="/static/vendor/htmx-ws.js"></script>
-<style>
+/* Admin tools (menu, tables, staff, orders, logs, settings) inside the
+   back-office shell (templates/bk_layout.html + static/staff.css). Moved
+   from the old one-page admin_dashboard.html; the variables below re-point
+   its palette and fonts at EGO's so every page matches. */
   :root{
     --bg-base:#14100D;
     --bg-surface:#1D1712;
@@ -40,98 +32,6 @@
        where this actually gets applied. */
     --tap-min:44px;
   }
-  *{box-sizing:border-box;}
-  /* touch-action:manipulation kills double-tap-to-zoom (the browser's
-     default response to two quick taps in the same spot — e.g. tapping a
-     toggle/button twice) sitewide, leaving pinch-zoom and normal
-     scrolling alone. Unlike disabling zoom via the viewport meta tag, this
-     doesn't take pinch-zoom away from anyone who actually needs it. */
-  html{-webkit-text-size-adjust:100%;touch-action:manipulation;}
-  /* Belt-and-suspenders: the actual overflow sources (inline-style grid
-     forms, unshrinkable flex children, an unwrapped currency string) are
-     fixed at the source below, but a phone should never be able to
-     side-scroll the whole dashboard because of whatever's fixed next —
-     nothing on this page needs horizontal scroll, so cut it off here too. */
-  body{
-    margin:0;
-    overflow-x:hidden;
-    background:
-      radial-gradient(1200px 500px at 15% -10%, rgba(217,164,65,.06), transparent 60%),
-      var(--bg-base);
-    color:var(--text-primary);
-    font-family:var(--font-body);
-    -webkit-font-smoothing:antialiased;
-    min-height:100vh;
-  }
-  button,input,select{font-family:inherit;}
-  h1,h2,h3{margin:0;font-family:var(--font-body);}
-  a{color:inherit;}
-
-  :focus-visible{outline:2px solid var(--accent-strong);outline-offset:2px;}
-
-  /* ---------- Topbar ---------- */
-  .topbar{
-    display:flex;align-items:center;justify-content:space-between;gap:12px;
-    padding:20px 32px;
-    border-bottom:1px solid var(--border-soft);
-    position:sticky;top:0;
-    background:rgba(20,16,13,.88);
-    backdrop-filter:blur(8px);
-    z-index:10;
-  }
-  /* min-width:0 lets this side of the topbar actually shrink below its
-     content size — the flex default (min-width:auto) is "as wide as the
-     venue name needs," which on a long venue name ("EGO Rooftop Bar &
-     Lounge") plus a narrow phone pushed .topbar-right (Live pill, Log out)
-     off-screen instead of the venue name ever truncating. */
-  .brand{display:flex;align-items:center;gap:14px;min-width:0;flex:1 1 auto;}
-  .brand-mark{
-    width:40px;height:40px;flex:none;
-    border-radius:11px;
-    background:linear-gradient(155deg,var(--bg-raised),var(--bg-surface));
-    border:1px solid var(--border);
-    display:flex;align-items:center;justify-content:center;
-    color:var(--accent);
-  }
-  .brand-text{display:flex;flex-direction:column;line-height:1.25;min-width:0;}
-  /* Same overflow:hidden/ellipsis treatment as .venue-name below it, for
-     the same reason: on a narrow phone with min-width:0 letting .brand
-     shrink, "BITEBOX ADMIN" (13 chars, letter-spaced, no wrap control of
-     its own) is wider than the space left once a real venue name and
-     .topbar-right have taken theirs — it wrapped to 2 lines, misaligning
-     against the single-line venue name directly under it. */
-  .brand-eyebrow{
-    font-size:11px;letter-spacing:.09em;text-transform:uppercase;
-    color:var(--text-muted);font-weight:700;
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;
-  }
-  /* Truncates instead of wrapping/overflowing — an admin can set an
-     arbitrarily long venue name (see AdminUpdateVenueName's 80-char cap),
-     and this is the one place it has to fit next to Live/Log out no matter
-     the screen width. */
-  .venue-name{font-size:19px;font-weight:800;letter-spacing:-.01em;
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;}
-  .topbar-right{display:flex;align-items:center;gap:14px;flex:none;}
-  .live-pill{
-    display:flex;align-items:center;gap:7px;
-    font-size:12.5px;font-weight:700;color:var(--success);
-    background:var(--success-soft);
-    border:1px solid rgba(95,167,119,.25);
-    padding:6px 12px 6px 10px;border-radius:99px;
-  }
-  .pulse-dot{
-    width:7px;height:7px;border-radius:50%;background:var(--success);
-    box-shadow:0 0 0 0 rgba(95,167,119,.6);
-    animation:pulse 2.2s ease-out infinite;
-  }
-  @keyframes pulse{
-    0%{box-shadow:0 0 0 0 rgba(95,167,119,.55);}
-    70%{box-shadow:0 0 0 7px rgba(95,167,119,0);}
-    100%{box-shadow:0 0 0 0 rgba(95,167,119,0);}
-  }
-  @media (prefers-reduced-motion: reduce){ .pulse-dot{animation:none;} }
-
-  /* ---------- Buttons ---------- */
   .btn{
     font-family:var(--font-body);font-weight:700;font-size:13.5px;
     border-radius:var(--radius-sm);border:1px solid transparent;
@@ -141,16 +41,15 @@
   }
   .btn:active{transform:translateY(1px);}
   .btn-sm{padding:7px 12px;font-size:12.5px;}
-  .btn-primary{background:var(--accent);color:#221805;}
+  .btn-primary{background:var(--accent);color:var(--on-accent,#221805);}
   .btn-primary:hover{filter:brightness(1.08);}
   .btn-ghost{background:transparent;color:var(--text-secondary);border-color:var(--border);}
   .btn-ghost:hover{color:var(--text-primary);border-color:var(--text-muted);}
   .btn-ghost[disabled]{opacity:.5;cursor:default;}
-  .btn-outline-danger{background:transparent;color:var(--danger);border-color:rgba(194,91,72,.4);}
+  .btn-outline-danger{background:transparent;color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,transparent);}
   .btn-outline-danger:hover{background:var(--danger-soft);}
 
   /* ---------- Layout ---------- */
-  .dashboard{max-width:1180px;margin:0 auto;padding:32px 32px 80px;}
   /* align-items:center, not baseline: heading-controls is a row of pills
      and buttons (not text), and a text baseline aligned against a
      non-text box's own fallback baseline (its bottom margin edge, per
@@ -175,7 +74,7 @@
     display:flex;flex-direction:column;gap:9px;
     position:relative;overflow:hidden;min-width:0;
   }
-  .kpi-card.is-primary{border-color:rgba(217,164,65,.3);}
+  .kpi-card.is-primary{border-color:color-mix(in srgb,var(--accent) 30%,transparent);}
   .kpi-top{display:flex;align-items:center;justify-content:space-between;}
   .kpi-icon{
     width:30px;height:30px;border-radius:8px;
@@ -197,8 +96,7 @@
   /* ---------- Alert banner ---------- */
   .alert{
     display:flex;align-items:flex-start;gap:12px;
-    background:var(--accent-soft);border:1px solid rgba(217,164,65,.3);
-    border-left:3px solid var(--accent);
+    background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);
     border-radius:var(--radius-md);padding:13px 16px;margin-bottom:26px;
     font-size:13.5px;color:var(--text-primary);
   }
@@ -211,7 +109,7 @@
     border-radius:99px;padding:3px;}
   .period-tab{background:none;border:none;color:var(--text-secondary);font-weight:700;
     font-size:12.5px;padding:6px 13px;border-radius:99px;cursor:pointer;}
-  .period-tab.active{background:var(--accent);color:#221805;}
+  .period-tab.active{background:var(--accent);color:var(--on-accent,#221805);}
   .export-btn{display:flex;align-items:center;gap:7px;text-decoration:none;}
 
   /* ---------- Revenue trend ---------- */
@@ -324,7 +222,7 @@
   }
   .settings-nav-item svg{flex:none;color:var(--text-muted);transition:color .12s ease;}
   .settings-nav-item:hover{background:var(--bg-raised);color:var(--text-primary);}
-  .settings-nav-item.active{background:var(--accent-soft);color:var(--accent-strong);border-color:rgba(217,164,65,.25);}
+  .settings-nav-item.active{background:var(--accent-soft);color:var(--accent-strong);border-color:color-mix(in srgb,var(--accent) 25%,transparent);}
   .settings-nav-item.active svg{color:var(--accent-strong);}
   .settings-nav-status{width:7px;height:7px;border-radius:50%;flex:none;margin-left:auto;}
   .settings-nav-status.is-on{background:var(--success);}
@@ -341,7 +239,8 @@
       padding-bottom:2px;scrollbar-width:none;width:100%;}
     .settings-nav::-webkit-scrollbar{display:none;}
     .settings-nav-item{flex:none;white-space:nowrap;width:auto;border-radius:99px;padding:8px 14px;}
-    .settings-content{width:100%;}
+    .settings-content{width:100%;padding:12px;}
+    .settings-content .add-form{background:none;border:0;padding:0;} /* no box inside the box */
   }
 
   /* ---------- Staff panel ---------- */
@@ -599,7 +498,7 @@
     background:none;border:none;color:var(--text-secondary);
     width:30px;cursor:pointer;font-size:15px;font-weight:700;
   }
-  .stepper-btn:hover{color:var(--text-primary);background:rgba(255,255,255,.04);}
+  .stepper-btn:hover{color:var(--text-primary);background:var(--hover,rgba(255,255,255,.04));}
   .stepper-input{
     /* width bumped alongside font-size so 3-digit stock counts still fit
        comfortably at the larger, zoom-safe size */
@@ -649,7 +548,7 @@
   .menu-cat-tab{flex:none;background:var(--bg-raised);border:1px solid var(--border);color:var(--text-secondary);
     font-weight:700;font-size:12.5px;padding:7px 8px 7px 14px;border-radius:99px;cursor:pointer;
     display:flex;align-items:center;gap:7px;transition:all .15s ease;}
-  .menu-cat-tab.active{background:var(--accent);color:#221805;border-color:var(--accent);}
+  .menu-cat-tab.active{background:var(--accent);color:var(--on-accent,#221805);border-color:var(--accent);}
   .menu-cat-tab:hover:not(.active){border-color:var(--text-muted);color:var(--text-primary);}
   .menu-cat-tab-count{background:rgba(0,0,0,.16);color:inherit;border-radius:99px;padding:2px 8px;font-size:11px;}
   .menu-cat-tab:not(.active) .menu-cat-tab-count{background:var(--bg-surface);color:var(--text-muted);}
@@ -696,9 +595,9 @@
   .ingredient-tag{
     display:inline-flex; align-items:center; gap:6px;
     font-size:12px; font-weight:700; padding:6px 6px 6px 13px; border-radius:99px;
-    background:var(--success-soft); color:var(--success); border:1px solid rgba(95,167,119,.25);
+    background:var(--success-soft); color:var(--success); border:1px solid color-mix(in srgb,var(--success) 25%,transparent);
   }
-  .ingredient-tag.is-extra{background:var(--info-soft); color:var(--info); border-color:rgba(107,140,174,.25);}
+  .ingredient-tag.is-extra{background:var(--info-soft); color:var(--info); border-color:color-mix(in srgb,var(--info) 25%,transparent);}
   .ingredient-tag-price{font-weight:800;opacity:.85;}
   .ingredient-tag-price-free{font-weight:600;text-transform:uppercase;font-size:10.5px;letter-spacing:.03em;opacity:.65;}
   /* Reported as "a stray bullet trailing the label" — the ✕ icon (a real,
@@ -726,22 +625,6 @@
   .ingredient-add-form .field-input{width:200px; padding:8px 11px; font-size:16px; margin:0;}
   .ingredient-add-form .field-select{padding:8px 10px; font-size:16px; margin:0; width:auto;}
 
-  /* ---------- Tables ---------- */
-  .add-table-form{display:flex;gap:10px;align-items:center;}
-  .add-table-form .field-input{width:110px;}
-  .table-grid{
-    display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
-    gap:12px;
-  }
-  .table-card{
-    border-radius:var(--radius-md);padding:16px;
-    display:flex;flex-direction:column;gap:10px;align-items:flex-start;
-    border:1px solid var(--border-soft);
-  }
-  .table-card.occupied{background:var(--danger-soft);border-color:rgba(194,91,72,.28);}
-  .table-card.available{background:var(--success-soft);border-color:rgba(95,167,119,.25);}
-  .table-number{font-family:var(--font-display);font-size:22px;font-weight:600;}
-  .table-card .btn{width:100%;text-align:center;justify-content:center;}
 
   .empty-note{color:var(--text-muted);font-size:13px;padding:8px 4px;}
 
@@ -787,8 +670,6 @@
     .add-form-staff{grid-template-columns:1fr 1fr;}
   }
   @media (max-width:640px){
-    .dashboard{padding:22px 16px 60px;}
-    .topbar{padding:16px 18px;}
     .panel{padding:16px;}
     .kpi-grid{grid-template-columns:1fr 1fr;gap:10px;}
     .product-row{grid-template-columns:1fr;gap:8px;align-items:flex-start;}
@@ -813,7 +694,11 @@
        real two-action bar instead of two natural-width buttons left-
        packed with a dead gap after them. */
     .row-status-actions .btn{flex:1;justify-content:center;}
-    .add-form-venue,.add-form-business,.add-form-staff,.add-form-category{grid-template-columns:1fr;}
+    /* Phones: short controls share a row; only the long name field gets one alone. */
+    .add-form{padding:10px;margin-bottom:12px;gap:8px;}
+    .add-form-staff{grid-template-columns:1fr;}
+    .add-form-business,.add-form-category{grid-template-columns:1fr auto;}
+    .add-form-business>:first-child,.add-form-category>:first-child{grid-column:1/-1;}
 
     /* Chart reads better full-width and stacked than squeezed sideways —
        .trend-bars already has min-width:0 so it wouldn't overflow either
@@ -904,540 +789,66 @@
   .ingredient-tag-remove::before{
     content:'';position:absolute;inset:-12px;
   }
-</style>
-</head>
-<body>
 
-<header class="topbar">
-  <div class="brand">
-    <span class="brand-mark">
-      <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M8,3 H16 A5,5 0 0 1 21,8 V16 A5,5 0 0 1 16,21 H8 A5,5 0 0 1 3,16 V8 A5,5 0 0 1 8,3 Z M14,7.2 A4.4,4.4 0 1 0 22.8,7.2 A4.4,4.4 0 1 0 14,7.2 Z"/><circle cx="21.6" cy="3.3" r="1"/></svg>
-    </span>
-    <div class="brand-text">
-      <span class="brand-eyebrow">BiteBox Admin</span>
-      <h1 class="venue-name" id="venue-name-admin">{{ .VenueName }}</h1>
-    </div>
-  </div>
-  <div class="topbar-right">
-    <span class="live-pill"><span class="pulse-dot"></span>Live</span>
-    <a class="btn btn-ghost" href="/change-password">Change password</a>
-    <form method="POST" action="/logout"><button class="btn btn-ghost" type="submit">Log out</button></form>
-  </div>
-</header>
+:root{
+  --bg-base:#110E0B; --bg-surface:#1A1511; --bg-raised:#211B15;
+  --border:#2B231B; --border-soft:#241D16;
+  --text-primary:#F3ECE2; --text-secondary:#C2B29B; --text-muted:#978876;
+  --accent:#CB9A5E; --accent-strong:#E8C084; --accent-soft:rgba(203,154,94,.13);
+  --success:#9CC27E; --success-soft:rgba(156,194,126,.13);
+  --danger:#E58B74; --danger-soft:rgba(229,139,116,.13);
+  --info:#8DB2D4; --info-soft:rgba(141,178,212,.13);
+  --font-display:"IBM Plex Mono",ui-monospace,monospace;
+  --font-body:"Archivo","Helvetica Neue",Arial,system-ui,sans-serif;
+}
+.panel h2{margin:0;font-size:18px;font-weight:800}
+.panel+.panel{margin-top:18px}
 
-<main class="dashboard">
+/* ---------- Guide (adm_guide.html) ---------- */
+.gd-tools{display:grid;gap:12px;margin-bottom:14px;padding:14px}
+.gd-q{max-width:none}
+.gd-filters{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between}
+.gd-start{margin-bottom:14px;border-color:var(--gold-line)}
+.gd-start h2{font-size:16px;margin:0 0 10px}
+.gd-steps{margin:0;padding-left:20px;display:grid;gap:6px;columns:2;column-gap:28px}
+.gd-steps li{break-inside:avoid;margin-bottom:6px}
+.gd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:12px;align-items:start}
+.gd{padding:0}
+.gd summary{list-style:none;cursor:pointer;padding:14px 16px;display:grid;gap:2px}
+.gd summary::-webkit-details-marker{display:none}
+.gd summary b{font-size:15px}
+.gd summary small{color:var(--muted);font-size:12.5px}
+.gd[open] summary{border-bottom:1px solid var(--line)}
+.gd-body{padding:12px 16px 16px;font-size:14px;color:var(--ink)}
+.gd-body p{margin:0 0 10px}
+.gd-body ul,.gd-body ol{margin:0 0 10px;padding-left:20px;display:grid;gap:6px}
+.gd-body em{color:var(--muted)}
+.gd-body code{font:500 12.5px var(--mono);background:var(--raise);padding:1px 6px;border-radius:5px}
+.gd-table{display:grid;gap:6px;margin-bottom:10px}
+.gd-table div{display:grid;grid-template-columns:120px 1fr;gap:10px;padding:8px 10px;border-radius:9px;background:var(--raise)}
+.gd-faq{margin:0;display:grid;gap:4px}
+.gd-faq dt{font-weight:700;margin-top:6px}
+.gd-faq dd{margin:0;color:var(--muted)}
+.gd-none{margin-top:16px}
+@media (max-width:760px){
+  .gd-grid{grid-template-columns:minmax(0,1fr)}
+  .gd-steps{columns:1}
+  .gd-table div{grid-template-columns:1fr;gap:2px}
+}
 
-  <div id="admin-stats-wrap" hx-get="/admin/stats?period=today" hx-trigger="load" hx-swap="innerHTML">
-    <p class="empty-note">Loading overview...</p>
-  </div>
-
-  <div class="trend-panel">
-    <div class="trend-info">
-      <span class="trend-title">Revenue, last 7 days</span>
-      <span class="trend-total">€{{ printf "%.2f" .TrendTotal }}</span>
-      {{ if .HasTrendDelta }}
-      <span class="trend-delta {{ if ge .TrendDeltaPercent 0.0 }}is-up{{ else }}is-down{{ end }}">
-        {{ if ge .TrendDeltaPercent 0.0 }}↑{{ else }}↓{{ end }} {{ printf "%.0f" .TrendDeltaPercent }}% vs. previous week
-      </span>
-      {{ end }}
-    </div>
-    <div class="trend-bars">
-      {{ range .Trend }}
-      <div class="trend-bar {{ if .IsToday }}is-today{{ end }}"><div class="trend-bar-fill" style="height:{{ .Percent }}%"></div><span class="trend-bar-label">{{ .Label }}</span></div>
-      {{ end }}
-    </div>
-  </div>
-
-  {{ if .HasLowStock }}
-  <div class="alert" id="stockAlert">
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 2.5 18a1.5 1.5 0 0 0 1.3 2.2h16.4a1.5 1.5 0 0 0 1.3-2.2L13.7 3.9a1.5 1.5 0 0 0-2.6 0Z"/><path d="M12 9v4"/><path d="M12 16.5h.01"/></svg>
-    <div><strong>Running low:</strong> {{ .LowStock.Name }} has {{ .LowStock.AvailableStock }} left. Consider restocking before tonight.</div>
-  </div>
-  {{ end }}
-
-  <section class="panel settings-panel">
-    <div class="panel-header">
-      <h2>Settings</h2>
-    </div>
-    <div class="settings-layout">
-      <div class="settings-nav" role="tablist" aria-label="Settings sections">
-        <button type="button" class="settings-nav-item active" data-pane="venue" role="tab" aria-selected="true">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/></svg>
-          Venue
-        </button>
-        <button type="button" class="settings-nav-item" data-pane="business" role="tab" aria-selected="false">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M9 12h6M9 16h6M9 8h2"/></svg>
-          Business details
-        </button>
-        <button type="button" class="settings-nav-item" data-pane="dj" role="tab" aria-selected="false">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
-          DJ requests
-          <span id="djNavStatus" class="settings-nav-status {{ if .DJRequestsEnabled }}is-on{{ else }}is-off{{ end }}"></span>
-        </button>
-        <button type="button" class="settings-nav-item" data-pane="payment" role="tab" aria-selected="false">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
-          Payment methods
-          <span id="paymentNavStatus" class="settings-nav-status {{ if .AllowCashOrders }}is-on{{ else }}is-off{{ end }}"></span>
-        </button>
-      </div>
-
-      <div class="settings-content">
-        <div class="settings-pane active" data-pane="venue">
-          <div id="venueSettingsPanel">
-            <form class="add-form add-form-venue" hx-post="/admin/settings/venue-name" hx-target="#venueSettingsPanel" hx-swap="innerHTML">
-              <input class="field-input" name="name" value="{{ .VenueName }}" maxlength="80" required>
-              <button type="submit" class="btn btn-primary">Save</button>
-            </form>
-            <p class="empty-note" style="margin-top:10px;">Shown to every guest on the menu page and in the browser tab title — updates live for anyone already browsing.</p>
-          </div>
-        </div>
-
-        <div class="settings-pane" data-pane="business">
-          <div id="businessSettingsPanel">
-            <form class="add-form add-form-business" hx-post="/admin/settings/business-details" hx-target="#businessSettingsPanel" hx-swap="innerHTML">
-              <input class="field-input" name="business_vat_number" value="{{ .BusinessVATNumber }}" maxlength="100" placeholder="ΑΦΜ (VAT number)" aria-label="VAT number">
-              <input class="field-input" name="tax_office" value="{{ .TaxOffice }}" maxlength="100" placeholder="Δ.Ο.Υ. (Tax office)" aria-label="Tax office">
-              <button type="submit" class="btn btn-primary">Save</button>
-            </form>
-            <p class="empty-note" style="margin-top:10px;">Shown on the demo receipt printout (see an order's "🧾 Receipt" link in Order history) — <strong>not a real tax registration</strong>, and never transmitted anywhere. Structure only.</p>
-          </div>
-        </div>
-
-        <div class="settings-pane" data-pane="dj">
-          <div id="djTogglePanel">
-            {{ if .DJRequestsEnabled }}
-            <span class="status-pill status-available">Enabled</span>
-            <p class="empty-note" style="margin:10px 0 14px;">Guests see the "Request a song to DJ" form on the menu page.</p>
-            <button type="button" class="btn btn-ghost btn-sm" hx-post="/admin/settings/dj-requests/toggle" hx-target="#djTogglePanel" hx-swap="innerHTML">Disable song requests</button>
-            {{ else }}
-            <span class="status-pill status-hidden">Disabled</span>
-            <p class="empty-note" style="margin:10px 0 14px;">Guests don't see any song-request option on the menu page.</p>
-            <button type="button" class="btn btn-primary btn-sm" hx-post="/admin/settings/dj-requests/toggle" hx-target="#djTogglePanel" hx-swap="innerHTML">Enable song requests</button>
-            {{ end }}
-          </div>
-        </div>
-
-        <div class="settings-pane" data-pane="payment">
-          <div id="cashTogglePanel">
-            {{ if .AllowCashOrders }}
-            <span class="status-pill status-available">Enabled</span>
-            <p class="empty-note" style="margin:10px 0 14px;">Guests can choose cash or card at checkout.</p>
-            <button type="button" class="btn btn-ghost btn-sm" hx-post="/admin/settings/cash-orders/toggle" hx-target="#cashTogglePanel" hx-swap="innerHTML">Disable cash orders</button>
-            {{ else }}
-            <span class="status-pill status-hidden">Disabled</span>
-            <p class="empty-note" style="margin:10px 0 14px;">Guests only see card at checkout — the cash option is hidden.</p>
-            <button type="button" class="btn btn-primary btn-sm" hx-post="/admin/settings/cash-orders/toggle" hx-target="#cashTogglePanel" hx-swap="innerHTML">Enable cash orders</button>
-            {{ end }}
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="panel">
-    <div class="panel-header">
-      <h2>Table configuration</h2>
-      <form class="add-table-form" hx-post="/admin/tables" hx-target="#table-grid" hx-on::after-request="if(event.detail.successful) this.reset()">
-        <input class="field-input" name="number" type="number" min="1" placeholder="Table #" required>
-        <button type="submit" class="btn btn-primary">Add table</button>
-      </form>
-    </div>
-    <div hx-ext="ws" ws-connect="/admin/tables/ws">
-      <div class="table-grid" id="table-grid" hx-get="/admin/tables" hx-trigger="load" hx-swap="innerHTML">
-        <p class="empty-note">Loading tables...</p>
-      </div>
-    </div>
-  </section>
-
-  <section class="panel">
-    <div class="panel-header">
-      <h2>Staff &amp; access</h2>
-    </div>
-
-    <form class="add-form add-form-staff" id="addStaffForm" hx-post="/admin/staff" hx-target="#staff-list" hx-on::after-request="if(event.detail.successful) this.reset()">
-      <input class="field-input" name="username" placeholder="Username" required>
-      <input class="field-input" name="password" type="password" placeholder="Password (min. 6 chars)" required minlength="6">
-      <select class="field-select" name="role">
-        <option value="waiter">Worker — Waiter</option>
-        <option value="bar">Worker — Bar</option>
-        <option value="kitchen">Worker — Kitchen</option>
-        <option value="dj">Worker — DJ</option>
-        <option value="superworker">Worker — Manager (sees everything)</option>
-        <option value="admin">Admin</option>
-      </select>
-      <button type="submit" class="btn btn-primary">Add account</button>
-    </form>
-
-    <div id="staff-list" hx-get="/admin/staff" hx-trigger="load" hx-swap="innerHTML">
-      <p class="empty-note">Loading staff...</p>
-    </div>
-  </section>
-
-  <section class="panel">
-    <div class="panel-header">
-      <h2>Menu categories</h2>
-      <span class="section-sub">What guests actually browse by — add as many as the menu needs, no fixed list</span>
-    </div>
-    <div class="category-pills">
-      {{ range .Categories }}
-      <span class="category-pill category-pill-{{ .Department }}">{{ .Name }}<span class="category-pill-dept">{{ if eq .Department "kitchen" }}Kitchen{{ else }}Bar{{ end }}</span></span>
-      {{ else }}
-      <p class="empty-note">No categories yet.</p>
-      {{ end }}
-    </div>
-    <form class="add-form add-form-category" hx-post="/admin/categories">
-      <input class="field-input" name="name" placeholder="Category name, e.g. Tapas" aria-label="Category name" required>
-      <select class="field-select" name="department" aria-label="Prepared by">
-        <option value="kitchen">Kitchen</option>
-        <option value="bar" selected>Bar</option>
-      </select>
-      <button type="submit" class="btn btn-primary">Add category</button>
-    </form>
-    <p class="empty-note" style="margin-top:10px;">Decides which order feed — kitchen or bar — products in this category route to for prep (see Staff &amp; access).</p>
-  </section>
-
-  <section class="panel">
-    <div class="panel-header">
-      <h2>Menu &amp; inventory</h2>
-      <div class="search-wrap">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-        <input type="text" id="menuSearch" placeholder="Search menu…">
-      </div>
-    </div>
-
-    <span class="form-heading">Add a new item</span>
-    <form class="add-form add-form-product" id="addProductForm" hx-post="/admin/products" hx-target="#menuList" hx-encoding="multipart/form-data" hx-on::after-request="if(event.detail.successful) this.reset(), clearPhotoPreview(this)">
-      <div class="product-form-row">
-        <input class="field-input field-item-name" name="name" placeholder="Item name" aria-label="Item name" required>
-        <input class="field-input field-price" name="price" type="number" step="0.50" min="0" placeholder="Price €" aria-label="Price in euros" required>
-        <select class="field-select field-category" name="category" aria-label="Category">
-          {{ range .Categories }}<option value="{{ .Name }}">{{ .Name }}</option>{{ end }}
-        </select>
-        <select class="field-select vat-rate-select" name="vat_rate" aria-label="VAT rate (demo receipt only)" title="Demo receipt structure only — not a real tax filing">
-          <option value="24" selected>VAT 24% (standard)</option>
-          <option value="13">VAT 13% (reduced)</option>
-          <option value="6">VAT 6% (super-reduced)</option>
-        </select>
-      </div>
-
-      <div class="product-form-row">
-        <input class="field-input field-description" name="description" placeholder="Description (optional, shown to guests)" aria-label="Description">
-      </div>
-
-      <div class="product-form-row">
-        <div class="photo-field photo-cluster">
-          <span class="photo-cluster-label">Photo</span>
-          <img class="photo-preview-thumb" hidden alt="">
-          <input type="file" class="photo-file-input" name="photo" accept="image/*" hidden>
-          <div class="photo-cluster-actions">
-            <button type="button" class="btn photo-take-btn" title="Take a photo with your camera" aria-label="Take a photo with your camera">📷 Take</button>
-            <button type="button" class="btn photo-choose-btn" title="Choose an existing photo" aria-label="Choose an existing photo">🖼️ Choose</button>
-          </div>
-          <input class="field-input photo-url-input" name="image_url" type="url" placeholder="...or paste a photo URL" aria-label="Photo URL">
-        </div>
-        <label class="checkbox-label"><input type="checkbox" id="newItemUnlimited"> Unlimited</label>
-        <input class="field-input field-stock" id="newItemStock" name="stock" type="number" min="0" placeholder="Stock qty" aria-label="Stock quantity">
-      </div>
-
-      <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Add product</button>
-      </div>
-    </form>
-
-    <div class="menu-cat-tabs" role="tablist" aria-label="Menu categories">
-      <button type="button" class="menu-cat-tab active" data-cat="all" role="tab" aria-selected="true">All</button>
-      {{ range .CategoryTabs }}
-      <button type="button" class="menu-cat-tab" data-cat="{{ .Name }}" role="tab" aria-selected="false">{{ .Name }} <span class="menu-cat-tab-count">{{ len .Products }}</span></button>
-      {{ end }}
-    </div>
-
-    <div hx-ext="ws" ws-connect="/admin/menu/ws">
-      <div class="menu-scroll-panel">
-        <div id="menuList" hx-get="/admin/products" hx-trigger="load" hx-swap="innerHTML">
-          <p class="empty-note">Loading menu...</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="panel">
-    <div class="panel-header">
-      <h2>📜 Order history</h2>
-      <span class="section-sub">Newest first — "Load more" fetches the next page</span>
-    </div>
-    <div class="scroll-panel" id="orderHistoryList">
-      {{ template "order-history-rows" . }}
-    </div>
-  </section>
-
-  <section class="panel">
-    <div class="panel-header">
-      <h2>🔔 Call-waiter log</h2>
-      <span class="section-sub">Who acknowledged each request, and how long it sat</span>
-    </div>
-    <div id="assistance-log" hx-get="/admin/assistance-log" hx-trigger="load" hx-swap="innerHTML">
-      <p class="empty-note">Loading call-waiter log...</p>
-    </div>
-  </section>
-
-  <section class="panel">
-    <div class="panel-header">
-      <h2>🗂️ Audit log</h2>
-      <span class="section-sub">Staff account changes — who did what, and when</span>
-    </div>
-    <div id="audit-log" hx-get="/admin/audit-log" hx-trigger="load" hx-swap="innerHTML">
-      <p class="empty-note">Loading audit log...</p>
-    </div>
-  </section>
-
-{{ define "order-history-rows" }}
-  {{ range .History }}
-  <div class="history-card">
-    <div style="display:flex;justify-content:space-between;align-items:center;">
-      <strong>Table #{{ .TableNumber }} — Order #{{ .ID }}</strong>
-      <span class="history-time">{{ .CreatedAt.Local.Format "2006-01-02 15:04" }}</span>
-    </div>
-    <ul>
-      {{ range .Items }}
-      <li>{{ .Quantity }}x {{ .Name }} (€{{ printf "%.2f" .Price }} each)</li>
-      {{ end }}
-    </ul>
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
-      <div class="row-actions">
-        {{ if eq .Status "cancelled" }}
-        <span class="status-pill status-out">cancelled</span>
-        {{ else }}
-        <span class="status-pill status-unlimited">{{ .Status }}</span>
-        {{ end }}
-        {{ if eq .PaymentStatus "paid" }}
-        <span class="status-pill status-available">paid</span>
-        {{ else }}
-        <span class="status-pill status-hidden">unpaid</span>
-        {{ end }}
-        {{ if .ServedBy }}
-        <span class="status-pill status-unlimited" style="background:var(--info-soft);color:var(--info);">served by {{ .ServedBy }}</span>
-        {{ end }}
-        {{ if gt .TipAmount 0.0 }}
-        <span class="status-pill status-available" style="background:var(--info-soft);color:var(--info);">+€{{ printf "%.2f" .TipAmount }} tip</span>
-        {{ end }}
-        {{ if gt .SplitCount 1 }}
-        <span class="status-pill status-unlimited">split {{ .SplitCount }} ways</span>
-        {{ end }}
-        <a class="btn btn-ghost btn-sm" href="/admin/orders/{{ .ID }}/receipt" target="_blank" title="Demo receipt printout — not a real fiscal document">🧾 Receipt</a>
-      </div>
-      <strong>€{{ printf "%.2f" .GrandTotal }}</strong>
-    </div>
-  </div>
-  {{ else }}
-  <p class="empty-note">No orders yet.</p>
-  {{ end }}
-  {{ if .HasMoreHistory }}
-  <button type="button" class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;"
-    hx-get="/admin/history/page?offset={{ .NextHistoryOffset }}" hx-target="this" hx-swap="outerHTML">
-    Load more
-  </button>
-  {{ end }}
-{{ end }}
-
-</main>
-
-<script>
-  // ---- settings tab rail: switches which .settings-pane is visible; the
-  // htmx forms/toggles inside each pane are untouched — only their shared
-  // wrapper's visibility changes, so hx-target ids (#djTogglePanel etc.)
-  // keep working exactly as before. ----
-  document.querySelectorAll('.settings-nav-item').forEach(item => {
-    item.addEventListener('click', () => {
-      document.querySelectorAll('.settings-nav-item').forEach(i => {
-        i.classList.remove('active'); i.setAttribute('aria-selected', 'false');
-      });
-      document.querySelectorAll('.settings-pane').forEach(p => p.classList.remove('active'));
-      item.classList.add('active');
-      item.setAttribute('aria-selected', 'true');
-      const pane = document.querySelector('.settings-pane[data-pane="' + item.dataset.pane + '"]');
-      if (pane) pane.classList.add('active');
-    });
-  });
-
-  // ---- stock steppers (local nudge only; Save persists it) ----
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest('.stepper-btn');
-    if (!btn) return;
-    const input = btn.parentElement.querySelector('.stepper-input');
-    let val = parseInt(input.value || '0', 10);
-    val = btn.dataset.action === 'inc' ? val + 1 : Math.max(0, val - 1);
-    input.value = val;
-  });
-
-  // ---- menu category tabs + search, combined (both must match) ----
-  // #menuList gets wholesale-replaced both by its own initial hx-get and by
-  // every /admin/menu/ws OOB push (any product/ingredient change anywhere
-  // re-renders the whole list), so the filter is re-applied after every
-  // swap rather than assumed to persist — same pattern as the guest menu's
-  // category tabs.
-  function applyMenuFilters(){
-    const activeTab = document.querySelector('.menu-cat-tab.active');
-    const cat = activeTab ? activeTab.dataset.cat : 'all';
-    const searchEl = document.getElementById('menuSearch');
-    const q = searchEl ? searchEl.value.trim().toLowerCase() : '';
-
-    document.querySelectorAll('#menuList .menu-category').forEach(catEl => {
-      const matchesCat = (cat === 'all' || catEl.dataset.category === cat);
-      let visibleCount = 0;
-      catEl.querySelectorAll('.product-row-wrap').forEach(wrap => {
-        const name = wrap.querySelector('.product-name').textContent.toLowerCase();
-        const show = matchesCat && (!q || name.includes(q));
-        wrap.style.display = show ? '' : 'none';
-        if (show) visibleCount++;
-      });
-      catEl.style.display = visibleCount > 0 ? '' : 'none';
-    });
-  }
-  document.querySelectorAll('.menu-cat-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.menu-cat-tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
-      tab.classList.add('active');
-      tab.setAttribute('aria-selected', 'true');
-      applyMenuFilters();
-    });
-  });
-  document.addEventListener('input', (e) => {
-    if (e.target.id !== 'menuSearch') return;
-    applyMenuFilters();
-  });
-  document.body.addEventListener('htmx:afterSwap', applyMenuFilters);
-  document.body.addEventListener('htmx:oobAfterSwap', applyMenuFilters);
-
-  // ---- unlimited checkbox disables stock qty on the add-product form ----
-  document.addEventListener('change', (e) => {
-    if (e.target.id !== 'newItemUnlimited') return;
-    const stockField = document.getElementById('newItemStock');
-    stockField.disabled = e.target.checked;
-    if (e.target.checked) stockField.value = '';
-    stockField.placeholder = e.target.checked ? 'Unlimited' : 'Stock qty';
-  });
-
-  // ---- same ∞/tracked toggle, per existing-product row (_product_list.html)
-  // ----  delegated, not bound per-row, since every row gets wholesale
-  // replaced on every menu re-render (Save, toggle, ingredient add/remove,
-  // another admin's edit pushed over /admin/menu/ws — all of them). Checking
-  // it disables the number input and both steppers so Save submits no
-  // "stock" field at all, which parseStock (admin.go) reads as -1; unchecking
-  // re-enables them starting from 0 so there's always something sane to bump.
-  document.addEventListener('change', (e) => {
-    if (!e.target.classList.contains('unlimited-toggle')) return;
-    const wrap = e.target.closest('.stock-stepper');
-    const input = wrap.querySelector('.stepper-input');
-    input.disabled = e.target.checked;
-    wrap.querySelectorAll('.stepper-btn').forEach(b => b.disabled = e.target.checked);
-    if (e.target.checked) input.value = '';
-    else if (!input.value) input.value = '0';
-  });
-
-  // ---- ingredient-add-form: price field only makes sense for "Extra" —
-  // hidden for "Removable" (always free) and cleared so a stray leftover
-  // value can't get submitted once it's hidden again.
-  document.addEventListener('change', (e) => {
-    if (!e.target.classList.contains('ingredient-kind-select')) return;
-    const priceInput = e.target.closest('.ingredient-add-form').querySelector('.ingredient-price-input');
-    const isExtra = e.target.value === 'extra';
-    priceInput.style.display = isExtra ? '' : 'none';
-    if (!isExtra) priceInput.value = '';
-  });
-
-  // ---- photo-field: two buttons sharing one hidden <input type=file>,
-  // toggling its `capture` attribute so "Take photo" opens the phone's
-  // camera directly while "Choose file" opens the normal picker/gallery —
-  // same element either way, no need to merge two separate inputs into
-  // one form field. Delegated from document since every product row's own
-  // edit form gets this same control too (see _product_list.html), each
-  // rendered/replaced live over /admin/menu/ws. ----
-  document.addEventListener('click', (e) => {
-    const takeBtn = e.target.closest('.photo-take-btn');
-    const chooseBtn = e.target.closest('.photo-choose-btn');
-    if (!takeBtn && !chooseBtn) return;
-    const field = e.target.closest('.photo-field');
-    const input = field.querySelector('.photo-file-input');
-    if (takeBtn) input.setAttribute('capture', 'environment');
-    else input.removeAttribute('capture');
-    input.click();
-  });
-  // HEIC/HEIF (what an iPhone camera submits by default) can't be decoded
-  // server-side here — see internal/imageproc's own doc comment on why
-  // (short version: real decoding needs a libheif/libvips system
-  // dependency this app's single-binary deploy story deliberately
-  // avoids). The one place that conversion CAN happen is the one browser
-  // that can actually decode a HEIC file at all: Safari, which is also
-  // the only browser that ever produces one in the first place (Android
-  // cameras are essentially always JPEG). So: detect it here, redraw it
-  // through a <canvas> into a real JPEG, and swap that in before the file
-  // ever leaves the browser. Anywhere else (a browser that can't decode
-  // HEIC either), this quietly fails and the original file goes through
-  // untouched — the server's own rejection message (imageproc.
-  // ErrHEICNotSupported) still explains what to do about it.
-  function looksLikeHEIC(file){
-    return /\.hei[cf]$/i.test(file.name) || /^image\/hei[cf]/i.test(file.type || '');
-  }
-  function heicFileToJPEG(file){
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        canvas.getContext('2d').drawImage(img, 0, 0);
-        canvas.toBlob((blob) => {
-          URL.revokeObjectURL(url);
-          if (!blob) { reject(new Error('canvas produced no blob')); return; }
-          resolve(new File([blob], file.name.replace(/\.hei[cf]$/i, '.jpg'), { type: 'image/jpeg' }));
-        }, 'image/jpeg', 0.92);
-      };
-      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('this browser cannot decode HEIC')); };
-      img.src = url;
-    });
-  }
-  document.addEventListener('change', async (e) => {
-    if (!e.target.classList.contains('photo-file-input')) return;
-    const input = e.target;
-    const field = input.closest('.photo-field');
-    const preview = field.querySelector('.photo-preview-thumb');
-    let file = input.files && input.files[0];
-    if (!file) { preview.hidden = true; return; }
-
-    if (looksLikeHEIC(file)) {
-      try {
-        file = await heicFileToJPEG(file);
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        input.files = dt.files;
-      } catch (err) {
-        // Can't convert here — let it through as-is; the server will
-        // reject it with a clear, actionable message.
-      }
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => { preview.src = reader.result; preview.hidden = false; };
-    reader.readAsDataURL(file);
-  });
-  // Called after a successful "Add product" submit (see hx-on::after-request
-  // on #addProductForm) — the native form.reset() clears the file input's
-  // value but not this preview <img>'s own src/hidden state.
-  function clearPhotoPreview(form){
-    const preview = form.querySelector('.photo-preview-thumb');
-    if (preview) { preview.hidden = true; preview.src = ''; }
-  }
-
-  // ---- kicked out live: the server closes any of our websockets with
-  // close code 4001 the moment our own account gets deactivated (checked
-  // every few seconds server-side), so we don't sit on a stale page ----
-  document.body.addEventListener('htmx:wsClose', (e) => {
-    if (e.detail && e.detail.event && e.detail.event.code === 4001) {
-      window.location.href = '/login';
-    }
-  });
-</script>
-
-</body>
-</html>
+/* Table QR codes (bk_qr.html): a sheet you print and cut up. */
+.qr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
+.qr-card{margin:0;padding:16px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+.qr-card img{width:100%;max-width:220px;height:auto;image-rendering:pixelated;background:#fff;border-radius:8px}
+.qr-card figcaption{display:flex;flex-direction:column;gap:2px}
+.qr-card figcaption small{color:var(--muted)}
+.qr-card code{font-size:10px;word-break:break-all;color:var(--muted)}
+.qr-warn{border-color:var(--red);margin:0 0 16px}
+@media print{
+  .side,.side-scrim,.mtop,.mtabs,.page-head .toolbar,.page-head p,.qr-new,.qr-warn{display:none!important}
+  .shell{display:block}
+  .main{padding:0}
+  body{background:#fff}
+  .qr-grid{grid-template-columns:repeat(3,1fr)}
+  .qr-card{break-inside:avoid;border:1px dashed #999;background:#fff;color:#000}
+}

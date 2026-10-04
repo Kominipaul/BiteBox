@@ -1,0 +1,131 @@
+{{/* Item editor, loaded into the layer from the Menu & stock list. The main
+     form saves the item (?from=editor answers 204 + productSaved, which
+     closes the panel). Ingredients and hide/show re-render only their own
+     part of the panel (hx-select), so unsaved edits above are kept. The
+     photo / stock / ingredient controls are wired by adm_menu.html's
+     delegated scripts. */}}
+{{ define "product-editor" }}
+{{ $p := .P }}
+<div class="bk-form">
+  <header class="modal-head">
+    <span class="modal-icon">{{ template "i-menu" }}</span>
+    <div>
+      <h2>{{ if .New }}New item{{ else }}Edit item{{ end }}</h2>
+      <p>{{ if .New }}It shows on the guest menu as soon as you save.{{ else }}{{ $p.Name }} · {{ $p.Category }} · €{{ printf "%.2f" $p.Price }}{{ end }}</p>
+    </div>
+    <button type="button" class="modal-x" data-close aria-label="Close">
+      <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </header>
+
+  <div class="modal-body">
+    <p class="modal-warn" data-error hidden role="alert"></p>
+
+    <form id="productForm" class="ped" hx-encoding="multipart/form-data" hx-swap="none"
+      hx-post="{{ if .New }}/admin/products?from=editor{{ else }}/admin/products/{{ $p.ID }}?from=editor{{ end }}">
+
+      <div class="ped-photo photo-field">
+        <div class="ped-photo-box">
+          <img class="photo-preview-thumb" src="{{ $p.ImageURL }}" {{ if not $p.ImageURL }}hidden{{ end }} alt="">
+          <svg class="i ped-photo-empty" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="2"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/></svg>
+        </div>
+        <div class="ped-photo-side">
+          <span class="f">Photo</span>
+          <input type="file" class="photo-file-input" name="photo" accept="image/*" hidden>
+          <div class="ped-photo-btns">
+            <button type="button" class="mbtn photo-take-btn" aria-label="Take a photo with the camera">Camera</button>
+            <button type="button" class="mbtn photo-choose-btn" aria-label="Choose a photo from the gallery">Gallery</button>
+          </div>
+          {{ if and $p.ImageURL (eq (slice $p.ImageURL 0 1) "/") }}
+          <input type="hidden" name="image_url" value="{{ $p.ImageURL }}">
+          {{ else }}
+          <input class="ped-url" name="image_url" value="{{ $p.ImageURL }}" placeholder="…or paste a photo link" aria-label="Photo link">
+          {{ end }}
+          {{ if $p.ImageURL }}<label class="ped-check"><input type="checkbox" name="remove_photo" value="1"> Remove this photo</label>{{ end }}
+        </div>
+      </div>
+
+      <div class="fgrid">
+        <label class="f span2 ph3">Name<input name="name" value="{{ $p.Name }}" maxlength="100" required placeholder="e.g. Freddo Espresso"></label>
+        <label class="f ph1">Price (€)<input type="number" name="price" min="0" step="0.10" value="{{ if not $.New }}{{ printf "%.2f" $p.Price }}{{ end }}" required placeholder="0.00"></label>
+        <label class="f ph2">Category
+          <select name="category">{{ range .Categories }}<option {{ if eq .Name $p.Category }}selected{{ end }}>{{ .Name }}</option>{{ end }}</select>
+        </label>
+        <label class="f ph2">VAT
+          <select name="vat_rate">
+            <option value="24" {{ if eq $p.VATRate 24.0 }}selected{{ end }}>24% standard</option>
+            <option value="13" {{ if eq $p.VATRate 13.0 }}selected{{ end }}>13% reduced</option>
+            <option value="6" {{ if eq $p.VATRate 6.0 }}selected{{ end }}>6% super-reduced</option>
+          </select>
+        </label>
+        <div class="f">Stock
+          <div class="stock-stepper ped-stock">
+            <button type="button" class="stepper-btn" data-action="dec" {{ if eq $p.Stock -1 }}disabled{{ end }} aria-label="One less">−</button>
+            <input class="stepper-input" type="number" name="stock" min="0" value="{{ if eq $p.Stock -1 }}{{ else }}{{ $p.Stock }}{{ end }}" {{ if eq $p.Stock -1 }}disabled{{ end }} aria-label="Stock count">
+            <button type="button" class="stepper-btn" data-action="inc" {{ if eq $p.Stock -1 }}disabled{{ end }} aria-label="One more">+</button>
+            <label class="ped-check ped-unl"><input type="checkbox" class="unlimited-toggle" {{ if eq $p.Stock -1 }}checked{{ end }}> Unlimited</label>
+          </div>
+          {{ if gt $p.Reserved 0 }}<small>{{ $p.Reserved }} sitting in guests' carts right now.</small>{{ end }}
+        </div>
+        <div class="f span3 ped-hours">Serving hours
+          <div class="ped-hours-row">
+            <div class="segc" role="radiogroup" aria-label="Serving hours">
+              <label><input type="radio" name="own_hours" value="" {{ if not $p.HasOwnHours }}checked{{ end }}><span>Whenever it's open</span></label>
+              <label><input type="radio" name="own_hours" value="1" {{ if $p.HasOwnHours }}checked{{ end }}><span>Only between</span></label>
+            </div>
+            <span class="ped-hours-times">
+              <input type="time" name="avail_start" value="{{ if $p.HasOwnHours }}{{ $p.OwnStartClock }}{{ else }}07:00{{ end }}" aria-label="From">
+              <span>–</span>
+              <input type="time" name="avail_end" value="{{ if $p.HasOwnHours }}{{ $p.OwnEndClock }}{{ else }}12:00{{ end }}" aria-label="Until">
+            </span>
+          </div>
+          <small>e.g. fresh juice only in the morning. Kitchen/bar hours still apply.</small>
+        </div>
+        <label class="ped-check ped-rec span3"><input type="checkbox" name="recommended" value="1" {{ if $p.Recommended }}checked{{ end }}> ★ Recommend it: shown first on the guest menu, under "Recommended by us"</label>
+        <label class="f span3">Description <span class="opt">shown to guests</span><textarea name="description" rows="2" maxlength="1000" placeholder="What's in it, how it's served…">{{ $p.Description }}</textarea></label>
+      </div>
+    </form>
+
+    {{ if not .New }}
+    <section class="ped-ing" id="ingSection">
+      <div class="ped-ing-head">
+        <span class="f">Customisation</span>
+        <small>Guests see a "Customize" option when an item has any of these.</small>
+      </div>
+      {{ if $p.Ingredients }}
+      <div class="ped-tags">
+        {{ range $p.RemovableIngredients }}
+        <span class="ped-tag">{{ .Name }}<em>can remove</em>
+          <button type="button" hx-delete="/admin/ingredients/{{ .ID }}?from=editor&product={{ $p.ID }}" hx-target="#ingSection" hx-select="#ingSection" hx-swap="outerHTML" aria-label="Delete {{ .Name }}">×</button></span>
+        {{ end }}
+        {{ range $p.ExtraIngredients }}
+        <span class="ped-tag extra">{{ .Name }}<em>{{ if gt .Price 0.0 }}+€{{ printf "%.2f" .Price }}{{ else }}free extra{{ end }}</em>
+          <button type="button" hx-delete="/admin/ingredients/{{ .ID }}?from=editor&product={{ $p.ID }}" hx-target="#ingSection" hx-select="#ingSection" hx-swap="outerHTML" aria-label="Delete {{ .Name }}">×</button></span>
+        {{ end }}
+      </div>
+      {{ else }}<p class="ped-none">None yet.</p>{{ end }}
+      <form class="ped-ing-add ingredient-add-form" hx-post="/admin/products/{{ $p.ID }}/ingredients?from=editor" hx-target="#ingSection" hx-select="#ingSection" hx-swap="outerHTML">
+        <input name="name" placeholder="e.g. Onion, Extra cheese" maxlength="60" required aria-label="Ingredient name">
+        <select name="kind" class="ingredient-kind-select" aria-label="Kind">
+          <option value="removable">Included, can remove</option>
+          <option value="extra">Extra add-on</option>
+        </select>
+        <input class="ingredient-price-input" name="price" type="number" min="0" step="0.10" placeholder="€ (blank = free)" style="display:none" aria-label="Extra price">
+        <button type="submit" class="mbtn">Add</button>
+      </form>
+    </section>
+    {{ end }}
+  </div>
+
+  <footer class="modal-foot ped-foot">
+    {{ if not .New }}
+    <button type="button" class="mbtn danger" hx-delete="/admin/products/{{ $p.ID }}?from=editor" hx-swap="none"
+      hx-confirm="Delete &quot;{{ $p.Name }}&quot; for good? Past orders keep their record. To take it off the menu for a while, use Hide instead.">Delete</button>
+    <span id="visBlock"><button type="button" class="mbtn" hx-post="/admin/products/{{ $p.ID }}/toggle?from=editor" hx-target="#visBlock" hx-select="#visBlock" hx-swap="outerHTML">{{ if $p.IsAvailable }}Hide from menu{{ else }}Show on menu{{ end }}</button></span>
+    {{ end }}
+    <span class="ped-foot-gap"></span>
+    <button type="button" class="mbtn" data-close>Cancel</button>
+    <button type="submit" form="productForm" class="mbtn primary">{{ if .New }}Add item{{ else }}Save{{ end }}</button>
+  </footer>
+</div>
+{{ end }}

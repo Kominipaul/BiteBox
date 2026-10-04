@@ -1,0 +1,31 @@
+{{/* Collect: every table with unpaid orders, longest-waiting first. */}}
+<div class="feed-meta" data-total="{{ .Count }}" hidden></div>
+{{ if .Tables }}
+<div class="pay-sum"><b>€{{ printf "%.2f" .Sum }}</b><span>to collect from {{ .Count }} {{ if eq .Count 1 }}table{{ else }}tables{{ end }}</span></div>
+<div class="stages one"><section class="stage">
+{{ range .Tables }}
+<article class="oc pt" data-since="{{ .OldestMs }}">
+  <header class="oc-head">
+    <span class="oc-table">{{ .Label }}</span>
+    <div class="oc-meta"><b class="pt-total">€{{ printf "%.2f" .Total }}</b><span class="oc-age" data-age>–</span></div>
+  </header>
+  <ul class="pt-orders">
+    {{ range .Orders }}
+    <li>
+      <div><b>#{{ .ID }}</b> <span class="pt-items">{{ .Items }}</span>
+        {{ if gt .Split 1 }}<small>Split {{ .Split }} ways · €{{ printf "%.2f" .PerPerson }} each</small>{{ end }}
+        <small>{{ if eq .Method "card" }}Card{{ else }}Cash{{ end }}{{ if ne .Status "served" }} · {{ .Status }}{{ end }}</small></div>
+      <span class="amt">€{{ printf "%.2f" .Total }}</span>
+      <button type="button" class="w-btn sm ghost" data-msg="#{{ .ID }} paid" data-undo-url="/worker/orders/{{ .ID }}/unpaid" data-undo-view="pay"
+        hx-post="/worker/orders/{{ .ID }}/paid" hx-vals='{"view":"pay"}' hx-target="#pay-list" hx-swap="innerHTML">Paid</button>
+    </li>
+    {{ end }}
+  </ul>
+  <button type="button" class="oc-go" data-msg="{{ .Label }} settled" data-undo-view="pay" data-undo-ids="{{ range $i, $o := .Orders }}{{ if $i }},{{ end }}{{ $o.ID }}{{ end }}"
+    hx-post="/worker/pay/table/{{ .Number }}/paid" hx-target="#pay-list" hx-swap="innerHTML">Table paid · €{{ printf "%.2f" .Total }}</button>
+</article>
+{{ end }}
+</section></div>
+{{ else }}
+<div class="w-empty"><span class="w-empty-ico">✓</span><b>Everyone's settled up.</b><small>Tables with unpaid orders show up here, longest-waiting first.</small></div>
+{{ end }}

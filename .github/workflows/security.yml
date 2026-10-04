@@ -1,0 +1,66 @@
+# Tests and security scans on every push and pull request.
+# Tool versions are pinned; Dependabot (dependabot.yml) keeps the Go modules
+# and these actions current.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      # -race: the booking holds and the live hub are concurrent code.
+      - run: go test -race ./...
+
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitleaks reads the whole history
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: govulncheck (known vulnerabilities in Go and our modules)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
+      # G104 (unchecked errors) is off: most are deliberate best-effort calls
+      # (audit log, writes to a client that already went away); the ones that
+      # matter for security are checked by hand. Every other finding is fixed
+      # or carries a "#nosec <rule> -- reason" comment.
+      - name: gosec
+        run: go run github.com/securego/gosec/v2/cmd/gosec@v2.29.0 -quiet -exclude=G104 ./...
+      - name: gitleaks (secrets in any commit)
+        run: go run github.com/zricethezav/gitleaks/v8@v8.30.1 detect --source . --no-banner --redact
+
+  # OWASP ZAP baseline: starts the real server on a fresh database and
+  # passively scans what an anonymous visitor can reach (headers, cookies,
+  # leaks). Report-only: the findings are attached to the run.
+  zap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Start BiteBox
+        run: |
+          go build -o bitebox ./cmd/server
+          ./bitebox > server.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:8080/ >/dev/null && break; sleep 1; done
+      - uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: http://localhost:8080/
+          allow_issue_writing: false
+          fail_action: false

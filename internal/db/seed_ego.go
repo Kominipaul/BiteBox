@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"log"
 
 	"bitebox/internal/models"
@@ -387,4 +388,80 @@ func seedDefaultCategories() {
 			log.Printf("seed: failed to create category %q: %v", c.name, err)
 		}
 	}
+}
+
+// egoFloorPreset is EGO on Navarinou, Kalamata: terrace lounges, garden
+// bar, pergola and front deck on the plot; beach sets and cabanas across the
+// road. Positions are in the /book map's 720x1180 world (north up, sea at
+// the bottom). Numbers are the QR table numbers.
+func egoFloorPreset() []models.Table {
+	var out []models.Table
+	add := func(n int, label, zone, shape string, minG, maxG int, x, y, fee, minSpend float64, dur int, from, until string, fullDay bool) {
+		out = append(out, models.Table{Number: n, Label: label, Zone: zone, Shape: shape, MinGuests: minG, MaxGuests: maxG,
+			PosX: x, PosY: y, Fee: fee, MinSpend: minSpend, Duration: dur, AvailFrom: from, AvailUntil: until, FullDay: fullDay, Bookable: true})
+	}
+	for i, x := range []float64{185, 285, 385, 485} {
+		add(1+i, fmt.Sprintf("F%02d", i+1), "Front deck", "round", 2, 4, x, 670, 0, 0, 120, "", "", false)
+	}
+	for r, y := range []float64{340, 400, 460, 520, 580} {
+		for i, x := range []float64{545, 645} {
+			n := r*2 + i + 1
+			add(10+n, fmt.Sprintf("P%02d", n), "Pergola", "rect4", 2, 4, x, y, 0, 0, 120, "", "", false)
+		}
+	}
+	for r, y := range []float64{400, 480} {
+		for i, x := range []float64{175, 265, 355, 440} {
+			n := r*4 + i + 1
+			add(20+n, fmt.Sprintf("G%02d", n), "Garden bar", "high", 1, 4, x, y, 0, 0, 120, "", "", false)
+		}
+	}
+	for i, y := range []float64{72, 150, 228} {
+		add(31+i, fmt.Sprintf("L%02d", i+1), "Terrace", "lounge", 4, 8, 612, y, 100, 300, 180, "18:00", "", false)
+	}
+	l4 := []float64{60, 135, 210, 285}
+	n := 0
+	for _, row := range []struct {
+		y  float64
+		xs []float64
+	}{{912, append(append([]float64{}, l4...), 435, 510, 585)}, {982, append(append([]float64{}, l4...), 435, 510, 585, 660)}, {1052, l4}} {
+		for _, x := range row.xs {
+			n++
+			add(100+n, fmt.Sprintf("B%02d", n), "Beach", "set", 1, 3, x, row.y, 20, 0, 240, "10:00", "19:00", true)
+		}
+	}
+	for i, x := range []float64{440, 545, 650} {
+		add(121+i, fmt.Sprintf("C%02d", i+1), "Beach", "cabana", 2, 4, x, 1052, 50, 120, 300, "10:00", "19:00", true)
+	}
+	return out
+}
+
+// ApplyEGOFloor loads egoFloorPreset: creates missing tables, overwrites the
+// layout of existing ones with the same numbers, and takes every other table
+// off the floor and out of online booking (kept, with its bookings, for
+// staff and QR ordering). Runs on startup while no table is placed yet, and
+// from the admin "Load EGO layout" button.
+func ApplyEGOFloor() error {
+	inPreset := map[int]bool{}
+	for _, t := range egoFloorPreset() {
+		inPreset[t.Number] = true
+		if err := ApplyTableLayout(t); err != nil {
+			return err
+		}
+	}
+	tables, err := GetAllTables()
+	if err != nil {
+		return err
+	}
+	for _, t := range tables {
+		if !inPreset[t.Number] {
+			t.Bookable = false
+			if err := UpdateTableLayout(t); err != nil {
+				return err
+			}
+			if err := SetTablePosition(t.Number, -1, -1); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

@@ -1,0 +1,113 @@
+/* Account pages (change password, two-step login): the same look as login. */
+:root{
+  --bg-base:#14100D; --bg-surface:#1D1712; --bg-raised:#261F18;
+  --border:#332920; --border-soft:#2A2119;
+  --text-primary:#F5EFE6; --text-secondary:#AB9C89; --text-muted:#75695C;
+  --accent:#D9A441; --accent-strong:#E8B85B; --accent-soft:rgba(217,164,65,.13);
+  --danger:#C25B48; --danger-soft:rgba(194,91,72,.15);
+  --radius-lg:16px; --radius-md:12px; --radius-sm:9px;
+  --font-body:system-ui,sans-serif; --on-accent:#221805;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { touch-action: manipulation; }
+body {
+  margin: 0;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+button, input { font-family: inherit; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+
+/* Same shell/brand/card/field/error/btn-submit component set as
+   login.html, on purpose — this page is reachable from mid-session
+   (forced or voluntary), but it's still an auth-adjacent screen, and
+   matching login's own look keeps that family visually consistent
+   instead of introducing a second "form page" style for one page. */
+.shell { width: 100%; max-width: 380px; padding: 24px; }
+.brand { display: flex; align-items: center; gap: 13px; justify-content: center; margin-bottom: 28px; }
+.brand-mark {
+  width: 40px; height: 40px; flex: none; border-radius: 11px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center; color: var(--accent);
+}
+.brand-text { display: flex; flex-direction: column; line-height: 1.25; }
+.brand-eyebrow { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--text-muted); font-weight: 700; }
+.brand-name { font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
+
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  padding: 28px 26px;
+}
+.card h2 { margin: 0 0 8px; font-size: 16px; font-weight: 800; text-align: center; }
+.card .sub { margin: 0 0 22px; font-size: 12.5px; color: var(--text-muted); text-align: center; line-height: 1.5; }
+
+.notice {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: var(--accent-soft); border: 1px solid color-mix(in srgb,var(--accent) 30%,transparent);
+  border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 20px;
+  color: var(--text-primary); font-size: 13px; line-height: 1.5;
+}
+.notice svg { color: var(--accent); flex: none; margin-top: 1px; }
+
+.field { margin-bottom: 16px; }
+.field label {
+  display: block; font-size: 12px; font-weight: 700; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: .05em; margin-bottom: 7px;
+}
+.field input {
+  width: 100%; background: var(--bg-raised); border: 1px solid var(--border);
+  color: var(--text-primary); border-radius: var(--radius-sm);
+  padding: 11px 13px; font-size: 16px; outline: none;
+}
+/* font-size must stay >=16px: iOS/Android auto-zoom the whole page on
+   focus for any text input under 16px, assuming it's too small to read. */
+.field input::placeholder { color: var(--text-muted); }
+.field input:focus { border-color: var(--accent); }
+.field .hint { font-size: 11.5px; color: var(--text-muted); margin-top: 6px; }
+
+.error {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--danger-soft); border: 1px solid color-mix(in srgb,var(--danger) 30%,transparent);
+  border-radius: var(--radius-md); padding: 11px 14px; margin-bottom: 18px;
+  color: var(--text-primary); font-size: 13.5px;
+}
+
+.btn-submit {
+  width: 100%; padding: 13px; font-size: 14.5px; font-weight: 800;
+  border-radius: var(--radius-sm); border: none; cursor: pointer;
+  background: var(--accent); color: var(--on-accent);
+  transition: filter .12s ease, transform .05s ease;
+}
+.btn-submit:hover { filter: brightness(1.08); }
+.btn-submit:active { transform: translateY(1px); }
+
+.back-link {
+  display: block; text-align: center; margin-top: 16px;
+  font-size: 12.5px; font-weight: 700; color: var(--text-muted); text-decoration: none;
+}
+.back-link:hover { color: var(--text-secondary); }
+/* iOS zooms into any field under 16px when you tap it: every field is 16px on touch screens. */
+@media (pointer:coarse){input,select,textarea{font-size:16px!important}}
+
+/* Two-step login pages */
+.code-input { letter-spacing: .3em; text-align: center; font-size: 22px !important; font-variant-numeric: tabular-nums; }
+.qr { display: block; margin: 0 auto 14px; width: 200px; height: 200px; background: #fff; border-radius: 10px; padding: 8px; image-rendering: pixelated; }
+.secret { display: block; text-align: center; font: 600 14px ui-monospace, monospace; letter-spacing: .08em; color: var(--text-secondary); margin: 0 0 18px; word-break: break-all; user-select: all; }
+.steps { margin: 0 0 18px; padding-left: 20px; font-size: 13px; color: var(--text-secondary); line-height: 1.55; }
+.status-on { display: flex; align-items: center; gap: 10px; justify-content: center; font-weight: 800; color: var(--accent); margin-bottom: 18px; }
+.btn-plain { width: 100%; padding: 12px; font-size: 13.5px; font-weight: 800; border-radius: var(--radius-sm); border: 1px solid var(--border); background: transparent; color: var(--text-secondary); cursor: pointer; }
+.btn-plain:hover { color: var(--text-primary); border-color: var(--text-muted); }
+details.off { margin-top: 18px; }
+details.off summary { cursor: pointer; text-align: center; font-size: 12.5px; font-weight: 700; color: var(--text-muted); list-style: none; }
+details.off summary::-webkit-details-marker { display: none; }
+details.off form { margin-top: 14px; }

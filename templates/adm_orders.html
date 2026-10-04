@@ -1,0 +1,157 @@
+{{ define "title" }}Orders{{ end }}
+
+{{ define "content" }}
+<div class="page-head">
+  <div>
+    <h1>Orders</h1>
+    <p>Every order from the tables. Tap one for its items, payment and receipt.</p>
+  </div>
+  {{ if .Can.settings }}<a class="act" id="exportCsv" href="/admin/export.csv" title="Exports the orders matching the filters below">{{ template "i-receipt" }}Export CSV</a>{{ end }}
+</div>
+
+<section class="card">
+  <form class="filters" id="orderFilters" hx-get="/admin/orders/rows" hx-target="#orderRows"
+    hx-trigger="input changed delay:300ms from:#oq, change" hx-sync="this:replace" data-nosubmit>
+    <label class="search">{{ template "i-search" }}<input class="input" id="oq" name="q" value="{{ .Q }}" placeholder="Search order #, table, item or staff" aria-label="Search orders" autocomplete="off"></label>
+    <select class="input" name="when" aria-label="When">
+      {{ $w := .When }}{{ range .Ranges }}<option value="{{ .Key }}" {{ if eq .Key $w }}selected{{ end }}>{{ .Label }}</option>{{ end }}
+    </select>
+    <select class="input" name="status" aria-label="Status">
+      {{ $s := .Status }}{{ range .Statuses }}<option value="{{ .Key }}" {{ if eq .Key $s }}selected{{ end }}>{{ .Label }}</option>{{ end }}
+    </select>
+    <select class="input" name="pay" aria-label="Payment">
+      {{ $p := .Pay }}{{ range .Pays }}<option value="{{ .Key }}" {{ if eq .Key $p }}selected{{ end }}>{{ .Label }}</option>{{ end }}
+    </select>
+  </form>
+  <div id="orderRows" hx-get="/admin/orders/rows" hx-include="#orderFilters" hx-trigger="ordersChanged from:body">
+    {{ template "order-rows" . }}
+  </div>
+</section>
+{{ end }}
+
+{{ define "order-rows" }}
+<div class="sumline">
+  <span><b>{{ .Sum.Count }}</b> orders</span>
+  <span><b>€{{ printf "%.2f" .Sum.Revenue }}</b> total</span>
+  {{ if gt .Sum.Tips 0.0 }}<span><b>€{{ printf "%.2f" .Sum.Tips }}</b> tips</span>{{ end }}
+  {{ if gt .Sum.UnpaidCount 0 }}<span class="sum-warn"><b>€{{ printf "%.2f" .Sum.Unpaid }}</b> unpaid ({{ .Sum.UnpaidCount }})</span>{{ end }}
+</div>
+{{ if .Rows }}
+<div class="table-wrap"><table class="list olist">
+  <thead><tr><th>Order</th><th>Table</th><th>Items</th><th>Status</th><th>Payment</th><th class="ta-r">Total</th></tr></thead>
+  <tbody>{{ template "order-trs" . }}</tbody>
+</table></div>
+{{ else }}
+<div class="empty"><b>No orders here</b>Try another date range or clear the search.</div>
+{{ end }}
+{{ end }}
+
+{{/* One page of rows; "Show more" swaps itself for the next page. */}}
+{{ define "order-trs" }}
+{{ range .Rows }}
+<tr class="orow{{ if eq .Status "cancelled" }} dim{{ end }}" data-modal="/admin/orders/{{ .ID }}" tabindex="0" role="button" aria-label="Order {{ .ID }}, table {{ .Table }}">
+  <td class="c-who"><div class="oid"><b>#{{ .ID }}</b><small>{{ .When }} · {{ .Day }}</small></div></td>
+  <td class="spot"><b>{{ .Table }}</b><small>Table</small></td>
+  <td class="when oitems"><b>{{ .ItemCount }} {{ if eq .ItemCount 1 }}item{{ else }}items{{ end }}</b><small>{{ .Summary }}</small></td>
+  <td class="c-status">{{ template "order-status" .Status }}</td>
+  <td class="c-actions">{{ template "order-pay" . }}</td>
+  <td class="num ta-r">€{{ printf "%.2f" .GrandTotal }}{{ if gt .TipAmount 0.0 }}<small>incl. €{{ printf "%.2f" .TipAmount }} tip</small>{{ end }}</td>
+</tr>
+{{ end }}
+{{ if .More }}
+<tr class="more-row"><td colspan="6">
+  <button type="button" class="more-btn" hx-trigger="click, intersect once" hx-get="/admin/orders/rows?before={{ .Next }}" hx-include="#orderFilters" hx-target="closest tr" hx-swap="outerHTML">Show more</button>
+</td></tr>
+{{ end }}
+{{ end }}
+
+{{ define "order-status" }}
+{{ if eq . "cancelled" }}<span class="pill cancelled">{{ template "i-ban" }}Cancelled</span>
+{{ else if eq . "completed" }}<span class="pill completed">{{ template "i-check" }}Completed</span>
+{{ else if eq . "served" }}<span class="pill seated">{{ template "i-check" }}Served</span>
+{{ else if eq . "ready" }}<span class="pill confirmed">{{ template "i-dot" }}Ready</span>
+{{ else if eq . "preparing" }}<span class="pill confirmed">{{ template "i-dot" }}Preparing</span>
+{{ else }}<span class="pill confirmed">{{ template "i-dot" }}New</span>{{ end }}
+{{ end }}
+
+{{ define "order-pay" }}
+{{ if eq .PaymentStatus "paid" }}<span class="pill completed">Paid · {{ .PaymentMethod }}</span>
+{{ else }}<span class="pill no_show">Unpaid · {{ .PaymentMethod }}</span>{{ end }}
+{{ if .RefundRequested }}<span class="pill no_show">Refund asked</span>{{ end }}
+{{ end }}
+
+{{ define "order-detail" }}
+{{ $o := .O }}
+<div class="bk-form">
+  <header class="modal-head">
+    <span class="modal-icon">{{ template "i-receipt" }}</span>
+    <div>
+      <h2>Order #{{ $o.ID }}</h2>
+      <p>Table {{ $o.Table }} · {{ $o.Day }}, {{ $o.When }}</p>
+    </div>
+    <button type="button" class="modal-x" data-close aria-label="Close">
+      <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </header>
+  <div class="modal-body">
+    <p class="modal-warn" data-error hidden role="alert"></p>
+    <div class="od-pills">{{ template "order-status" $o.Status }}{{ template "order-pay" $o }}
+      {{ if $o.ServedBy }}<span class="pill cancelled">Served by {{ $o.ServedBy }}</span>{{ end }}</div>
+
+    <div class="od-lines">
+      {{ range $o.Lines }}
+      <div class="od-line">
+        <span class="od-qty">{{ .Quantity }}×</span>
+        <div class="od-name"><b>{{ .Name }}</b>
+          {{ if .Excluded }}<small>No {{ range $i, $x := .Excluded }}{{ if $i }}, {{ end }}{{ $x }}{{ end }}</small>{{ end }}
+          {{ if .Extras }}<small>+ {{ range $i, $x := .Extras }}{{ if $i }}, {{ end }}{{ $x }}{{ end }}</small>{{ end }}
+          <small>€{{ printf "%.2f" .Price }} each</small>
+        </div>
+        <span class="od-amt">€{{ printf "%.2f" .Total }}</span>
+      </div>
+      {{ end }}
+    </div>
+
+    <div class="od-totals">
+      <div><span>Items</span><span>€{{ printf "%.2f" $o.TotalAmount }}</span></div>
+      {{ if gt $o.TipAmount 0.0 }}<div><span>Tip</span><span>€{{ printf "%.2f" $o.TipAmount }}</span></div>{{ end }}
+      <div class="od-grand"><span>Total</span><span>€{{ printf "%.2f" $o.GrandTotal }}</span></div>
+      {{ if gt $o.SplitCount 1 }}<div class="od-split"><span>Split {{ $o.SplitCount }} ways</span><span>€{{ printf "%.2f" $o.PerPersonTotal }} each</span></div>{{ end }}
+    </div>
+
+    {{ if or (eq $o.Status "pending") (eq $o.Status "preparing") (eq $o.Status "ready") (eq $o.Status "served") }}
+    <details class="od-fix">
+      <summary>Fix this order</summary>
+      <p class="ped-hint">Something went wrong? Move it to the right stage, or cancel it while it's still New or Preparing. Every change is written to the staff activity log.</p>
+      <div class="od-steps" role="group" aria-label="Move to">
+        {{ $id := $o.ID }}
+        <button type="button" class="mbtn{{ if eq $o.Status "pending" }} primary{{ end }}" {{ if eq $o.Status "pending" }}disabled{{ end }} hx-post="/admin/orders/{{ $id }}/status" hx-vals='{"status":"pending"}' hx-target="#bkModalBody" hx-confirm="Move order #{{ $id }} back to New?">New</button>
+        <button type="button" class="mbtn{{ if eq $o.Status "preparing" }} primary{{ end }}" {{ if eq $o.Status "preparing" }}disabled{{ end }} hx-post="/admin/orders/{{ $id }}/status" hx-vals='{"status":"preparing"}' hx-target="#bkModalBody" hx-confirm="Move order #{{ $id }} to Preparing?">Preparing</button>
+        <button type="button" class="mbtn{{ if eq $o.Status "ready" }} primary{{ end }}" {{ if eq $o.Status "ready" }}disabled{{ end }} hx-post="/admin/orders/{{ $id }}/status" hx-vals='{"status":"ready"}' hx-target="#bkModalBody" hx-confirm="Move order #{{ $id }} to Ready?">Ready</button>
+        <button type="button" class="mbtn{{ if eq $o.Status "served" }} primary{{ end }}" {{ if eq $o.Status "served" }}disabled{{ end }} hx-post="/admin/orders/{{ $id }}/status" hx-vals='{"status":"served"}' hx-target="#bkModalBody" hx-confirm="Mark order #{{ $id }} as served?">Served</button>
+      </div>
+      {{ if or (eq $o.Status "pending") (eq $o.Status "preparing") }}
+      <button type="button" class="mbtn danger od-cancel" hx-post="/admin/orders/{{ $id }}/cancel" hx-target="#bkModalBody"
+        hx-confirm="Cancel order #{{ $id }}? Its items go back into stock. This can't be undone.">Cancel this order</button>
+      {{ end }}
+    </details>
+    {{ end }}
+
+    {{ if $o.Note }}<div class="od-note"><span class="f">Note from the table</span><p>{{ $o.Note }}</p></div>{{ end }}
+  </div>
+  <footer class="modal-foot od-foot">
+    <a class="mbtn" href="/admin/orders/{{ $o.ID }}/receipt" target="_blank" rel="noopener">Receipt</a>
+    {{ if ne $o.Status "cancelled" }}
+    {{ if eq $o.PaymentStatus "paid" }}
+    <button type="button" class="mbtn" hx-post="/admin/orders/{{ $o.ID }}/payment" hx-vals='{"paid":"0"}' hx-target="#bkModalBody">Mark unpaid</button>
+    {{ else }}
+    <button type="button" class="mbtn primary" hx-post="/admin/orders/{{ $o.ID }}/payment" hx-vals='{"paid":"1"}' hx-target="#bkModalBody">Mark paid</button>
+    {{ end }}
+    {{ end }}
+  </footer>
+</div>
+{{ end }}
+
+{{ define "scripts" }}
+<script src="/static/js/orders-admin.js?v={{ .V }}"></script>
+{{ end }}

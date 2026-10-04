@@ -1,0 +1,29 @@
+{{ define "title" }}{{ if .Limited }}Staff help{{ else }}Staff{{ end }}{{ end }}
+
+{{ define "content" }}
+<div class="page-head">
+  <div>
+    <h1>{{ if .Limited }}Staff help{{ else }}Staff{{ end }}</h1>
+    <p>{{ if .Limited }}Someone forgot their password or lost a phone? Tap them to set a new password or sign them out everywhere.{{ else }}Who can log in, what they see, and their passwords. Tap someone to change them.{{ end }}</p>
+  </div>
+  {{ if not .Limited }}<button type="button" class="act primary lg" data-modal="/admin/staff/new">{{ template "i-plus" }}Add account</button>{{ end }}
+</div>
+
+<section class="card">
+  <div class="filters sfilters">
+    <label class="search">{{ template "i-search" }}<input class="input" type="search" id="staffSearch" placeholder="Search by name" aria-label="Search staff" autocomplete="off"></label>
+    <div class="chips-row" role="tablist" aria-label="Filter by role">
+      <button type="button" class="menu-cat-tab active" data-role="">All</button>
+      {{ range .Roles }}<button type="button" class="menu-cat-tab" data-role="{{ .Key }}">{{ .Name }}</button>{{ end }}
+      <button type="button" class="menu-cat-tab" data-role="off">Deactivated</button>
+    </div>
+  </div>
+  <div id="staff-list" hx-get="/admin/staff" hx-trigger="load, staffChanged from:body, staffSaved from:body" hx-swap="innerHTML">
+    <p class="empty-note" style="padding:16px">Loading staff…</p>
+  </div>
+</section>
+{{ end }}
+
+{{ define "scripts" }}
+<script src="/static/js/team.js?v={{ .V }}"></script>
+{{ end }}

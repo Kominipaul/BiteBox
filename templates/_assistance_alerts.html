@@ -1,6 +1,8 @@
-{{ range .Tables }}
-<div class="assistance-banner">
-  <span>🙋 <strong>Table #{{ .Number }}</strong> is asking for help</span>
-  <button type="button" class="btn btn-ghost btn-sm" hx-post="/worker/tables/{{ .Number }}/assist/clear" hx-swap="none">Got it</button>
+<div class="feed-meta" data-total="{{ len .Calls }}" hidden></div>
+{{ range .Calls }}
+<div class="help-call" data-help="{{ .Number }}" data-since="{{ .SinceMs }}">
+  <span class="hc-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></span>
+  <div class="hc-text"><b>{{ .Label }} · {{ if .Reason }}{{ .Reason }}{{ else }}needs you{{ end }}</b><small data-age>just now</small></div>
+  <button type="button" class="w-btn sm" hx-post="/worker/tables/{{ .Number }}/assist/clear" hx-swap="none">On my way</button>
 </div>
 {{ end }}

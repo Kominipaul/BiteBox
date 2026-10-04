@@ -1,0 +1,76 @@
+{{/* "Kitchen & bar": each station's hours (the simple way to run the day),
+     close early, and busy mode. Used on Menus & hours (with the hours
+     editor) and the staff app's Sold-out board. Re-rendered by its own
+     buttons and live; .Target is the endpoint prefix for the page it's on. */}}
+<div class="stations" id="stations">
+  {{ range .Stations }}
+  <div class="station{{ if .Closed }} is-closed{{ else if .OffHours }} is-off{{ end }}">
+    <div class="station-head">
+      <span class="station-dot" aria-hidden="true"></span>
+      <b>{{ .Name }}</b>
+      <span class="station-state">{{ if .Closed }}Closed{{ if .Until }} until {{ .Until }}{{ end }}{{ else if .OffHours }}Outside hours{{ else if .Busy }}Busy{{ else }}Open{{ end }}</span>
+    </div>
+    <p class="station-now">{{ .Serving }}</p>
+    {{ if .Today }}<p class="station-today">{{ .Today }}</p>{{ end }}
+
+    {{ if $.EditHours }}
+    <details class="station-hours">
+      <summary><span class="sh-label">Hours</span><b>{{ if .Hours.Set }}{{ .HoursText }}{{ else }}Open all day{{ end }}</b><span class="sh-edit">{{ if .Hours.Set }}Change{{ else }}Set hours{{ end }}</span></summary>
+      <form class="sh-form" hx-post="{{ $.Target }}{{ .Dept }}/hours" hx-target="#stations" hx-swap="outerHTML"
+        data-alert-errors>
+        <div class="segc sh-mode" role="radiogroup" aria-label="Same hours every day?">
+          <label><input type="radio" name="per_day" value="0" {{ if not .Hours.PerDay }}checked{{ end }}><span>Same every day</span></label>
+          <label><input type="radio" name="per_day" value="1" {{ if .Hours.PerDay }}checked{{ end }}><span>Different by day</span></label>
+        </div>
+        <div class="sh-same">
+          <label class="f">Opens<input type="time" name="open" value="{{ if .Hours.Set }}{{ .Hours.OpenClock }}{{ else }}12:00{{ end }}"></label>
+          <label class="f">Closes<input type="time" name="close_at" value="{{ if .Hours.Set }}{{ .Hours.CloseClock }}{{ else }}22:00{{ end }}"></label>
+        </div>
+        <div class="sh-week">
+          {{ range .Hours.WeekRows }}
+          <div class="sh-day">
+            <b>{{ .Label }}</b>
+            <input type="time" name="d{{ .ISO }}_open" value="{{ .OpenAt }}" aria-label="{{ .Label }} opens">
+            <input type="time" name="d{{ .ISO }}_close" value="{{ .CloseAt }}" aria-label="{{ .Label }} closes">
+            <label class="sh-off"><input type="checkbox" name="d{{ .ISO }}_closed" value="1" {{ if .Closed }}checked{{ end }}>Closed</label>
+          </div>
+          {{ end }}
+        </div>
+        <label class="f sh-last">Last orders
+          <select name="last_orders">{{ $cur := .Hours.LastOrders }}{{ range $.LastChoices }}<option value="{{ . }}" {{ if eq . $cur }}selected{{ end }}>{{ if eq . 0 }}At close{{ else }}{{ . }} min early{{ end }}</option>{{ end }}</select>
+        </label>
+        <div class="sh-acts">
+          <button type="submit" class="act primary sm">Save hours</button>
+          {{ if .Hours.Set }}<button type="submit" name="clear" value="1" class="linkbtn" formnovalidate>Remove hours</button>{{ end }}
+        </div>
+      </form>
+    </details>
+    {{ else if .Hours.Set }}<p class="station-now">Hours {{ .HoursText }}</p>{{ end }}
+
+    {{ if .Closed }}
+    <button type="button" class="station-reopen" hx-post="{{ $.Target }}{{ .Dept }}" hx-vals='{"close":"open"}' hx-target="#stations" hx-swap="outerHTML">Reopen {{ .Name }} now</button>
+    {{ else }}
+    <div class="station-row" role="group" aria-label="Close the {{ .Name }}">
+      <span class="station-row-label">Close for</span>
+      <div class="station-opts">
+        <button type="button" hx-post="{{ $.Target }}{{ .Dept }}" hx-vals='{"close":"30"}' hx-target="#stations" hx-swap="outerHTML">30 min</button>
+        <button type="button" hx-post="{{ $.Target }}{{ .Dept }}" hx-vals='{"close":"60"}' hx-target="#stations" hx-swap="outerHTML">1 hour</button>
+        <button type="button" hx-post="{{ $.Target }}{{ .Dept }}" hx-vals='{"close":"today"}' hx-target="#stations" hx-swap="outerHTML" hx-confirm="Close the {{ .Name }} for the rest of today? It reopens by itself tomorrow at 05:00.">Today</button>
+        <button type="button" hx-post="{{ $.Target }}{{ .Dept }}" hx-vals='{"close":"manual"}' hx-target="#stations" hx-swap="outerHTML" hx-confirm="Close the {{ .Name }} until someone reopens it?">Until reopened</button>
+      </div>
+    </div>
+    <!-- Busy: stay open, but tell guests to expect a longer wait (for 1 hour). -->
+    {{ $b := .Busy }}{{ $t := $.Target }}{{ $d := .Dept }}
+    <div class="station-row station-busy{{ if $b }} on{{ end }}" role="group" aria-label="Busy mode">
+      <span class="station-row-label">{{ if $b }}Busy +{{ $b }}′{{ else }}Busy?{{ end }}</span>
+      <div class="station-opts">
+        <button type="button" class="{{ if eq $b 15 }}on{{ end }}" hx-post="{{ $t }}{{ $d }}/busy" hx-vals='{"minutes":"15"}' hx-target="#stations" hx-swap="outerHTML">+15 min</button>
+        <button type="button" class="{{ if eq $b 30 }}on{{ end }}" hx-post="{{ $t }}{{ $d }}/busy" hx-vals='{"minutes":"30"}' hx-target="#stations" hx-swap="outerHTML">+30 min</button>
+        <button type="button" class="{{ if eq $b 45 }}on{{ end }}" hx-post="{{ $t }}{{ $d }}/busy" hx-vals='{"minutes":"45"}' hx-target="#stations" hx-swap="outerHTML">+45 min</button>
+        {{ if $b }}<button type="button" hx-post="{{ $t }}{{ $d }}/busy" hx-vals='{"minutes":"0"}' hx-target="#stations" hx-swap="outerHTML">Not busy</button>{{ else }}<span class="station-opts-gap" aria-hidden="true"></span>{{ end }}
+      </div>
+    </div>
+    {{ end }}
+  </div>
+  {{ end }}
+</div>

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Two-step login · {{ .VenueName }}</title>
+  <link rel="stylesheet" href="/static/auth.css">
+  <link rel="stylesheet" href="/brand.css">
+  <link rel="icon" href="/brand/icon.png">
+  <meta name="robots" content="noindex">
+</head>
+<body>
+  <div class="shell">
+    <div class="brand">
+      <div class="brand-text">
+        <span class="brand-eyebrow">{{ .VenueName }}</span>
+        <span class="brand-name">Two-step login</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Enter your code</h2>
+      <p class="sub">Open your authenticator app and type the 6-digit code for {{ .VenueName }}.</p>
+      {{ if .Error }}<div class="error" role="alert">{{ .Error }}</div>{{ end }}
+      <form method="POST" action="/login/code">
+        <div class="field">
+          <label for="code">Code</label>
+          <input class="code-input" type="text" id="code" name="code" inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7" autocomplete="one-time-code" required autofocus>
+        </div>
+        <button type="submit" class="btn-submit">Log in</button>
+      </form>
+      <a class="back-link" href="/login">← Start again</a>
+    </div>
+  </div>
+</body>
+</html>

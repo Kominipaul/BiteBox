@@ -1,0 +1,76 @@
+{{ define "title" }}Logs{{ end }}
+
+{{ define "content" }}
+<div class="page-head">
+  <div>
+    <h1>Logs</h1>
+    <p>Call-waiter response times and staff account changes.</p>
+  </div>
+</div>
+
+<section class="card">
+  <form class="filters" id="logFilters" hx-get="/admin/logs/rows" hx-target="#logRows"
+    hx-trigger="input changed delay:300ms from:#lq, change" hx-sync="this:replace" data-nosubmit>
+    <div class="seg" role="group" aria-label="Log">
+      <label><input type="radio" name="tab" value="help" {{ if eq .Tab "help" }}checked{{ end }}>Calls</label>
+      <label><input type="radio" name="tab" value="staff" {{ if eq .Tab "staff" }}checked{{ end }}>Staff</label>
+    </div>
+    <label class="search">{{ template "i-search" }}<input class="input" id="lq" name="q" value="{{ .Q }}" placeholder="Search table or staff name" aria-label="Search the log" autocomplete="off"></label>
+    <select class="input" name="when" aria-label="When">
+      {{ $w := .When }}{{ range .Ranges }}<option value="{{ .Key }}" {{ if eq .Key $w }}selected{{ end }}>{{ .Label }}</option>{{ end }}
+    </select>
+    <select class="input only-staff" name="action" aria-label="Action">
+      {{ $a := .Action }}{{ range .Actions }}<option value="{{ .Key }}" {{ if eq .Key $a }}selected{{ end }}>{{ .Label }}</option>{{ end }}
+    </select>
+  </form>
+  <div id="logRows">{{ template "log-rows" . }}</div>
+</section>
+{{ end }}
+
+{{ define "log-rows" }}
+{{ if eq .Tab "help" }}
+<div class="sumline">
+  <span><b>{{ .Sum.Count }}</b> calls answered</span>
+  {{ if .Sum.Count }}<span><b>{{ .Avg }}</b> average wait</span><span><b>{{ .Slow }}</b> slowest</span>{{ end }}
+</div>
+{{ end }}
+{{ if .Rows }}
+<div class="table-wrap"><table class="list olist llist{{ if eq .Tab "help" }} llist-help{{ end }}">
+  {{ if eq .Tab "help" }}<thead><tr><th>Answered</th><th>Table</th><th>By</th><th class="ta-r">Wait</th></tr></thead>
+  {{ else }}<thead><tr><th>When</th><th>Who</th><th>What</th><th class="ta-r">Account</th></tr></thead>{{ end }}
+  <tbody>{{ template "log-trs" . }}</tbody>
+</table></div>
+{{ else }}
+<div class="empty"><b>Nothing logged here</b>Try another date range or clear the search.</div>
+{{ end }}
+{{ end }}
+
+{{/* One page of rows; "Show more" swaps itself for the next page. */}}
+{{ define "log-trs" }}
+{{ if eq .Tab "help" }}
+{{ range .Rows }}
+<tr>
+  <td class="c-who"><div class="oid"><b>{{ .When }}</b><small>{{ .Day }}</small></div></td>
+  <td class="spot"><b>{{ .Table }}</b>{{ if .ReasonLabel }}<small class="why">{{ .ReasonLabel }}</small>{{ else }}<small>Table</small>{{ end }}</td>
+  <td class="when">{{ if eq .Outcome "cancelled" }}<b class="log-cancelled">Cancelled</b><small>by the guest</small>{{ else }}<b>{{ if .AcknowledgedBy }}{{ .AcknowledgedBy }}{{ else }}—{{ end }}</b>{{ end }}</td>
+  <td class="num ta-r{{ if and (ne .Outcome "cancelled") (ge .WaitSeconds 180) }} sum-warn{{ end }}">{{ .WaitLabel }}</td>
+</tr>
+{{ end }}
+{{ else }}
+{{ range .Rows }}
+<tr>
+  <td class="c-who"><div class="oid"><b>{{ .When }}</b><small>{{ .Day }}</small></div></td>
+  <td class="spot"><b>{{ .Actor }}</b><small>By</small></td>
+  <td class="when"><b>{{ .Text }}</b>{{ if .Detail }}<small>{{ .Detail }}</small>{{ end }}</td>
+  <td class="num ta-r"><b>{{ .Target }}</b><small>Account</small></td>
+</tr>
+{{ end }}
+{{ end }}
+{{ if .More }}
+<tr class="more-row"><td colspan="4">
+  <button type="button" class="more-btn" hx-trigger="click, intersect once" hx-get="/admin/logs/rows?before={{ .Next }}" hx-include="#logFilters" hx-target="closest tr" hx-swap="outerHTML">Show more</button>
+</td></tr>
+{{ end }}
+{{ end }}
+
+{{ define "scripts" }}{{ end }}

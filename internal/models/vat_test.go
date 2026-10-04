@@ -72,7 +72,7 @@ func TestReceiptNumberAndDemoMARKAreDeterministic(t *testing.T) {
 	if o.ReceiptNumber() != "000042" {
 		t.Errorf("ReceiptNumber() = %q, want %q", o.ReceiptNumber(), "000042")
 	}
-	if o.ReceiptNumber() != o.ReceiptNumber() {
+	if first, again := o.ReceiptNumber(), o.ReceiptNumber(); first != again {
 		t.Error("ReceiptNumber() should be deterministic for the same order")
 	}
 	mark1 := o.DemoMARK()

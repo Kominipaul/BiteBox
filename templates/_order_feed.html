@@ -1,78 +1,82 @@
-{{ range .Orders }}
-<!-- data-status backs worker_dashboard.html's new-order/ready-for-pickup alert
-     chime — it needs the real status, not the decorative NEW/READY badge
-     below (client-side JS prunes that after 5 minutes). -->
-<div class="order-card" data-order-id="{{ .ID }}" data-ordered-at="{{ .CreatedAt.UnixMilli }}" data-status="{{ .Status }}">
-  <div class="order-top">
-    <span class="table-tag">Table {{ printf "%02d" .TableNumber }}</span>
-    <div class="order-meta">
-      {{ if eq .Status "ready" }}
-      <span class="new-flag" style="background:var(--purple);color:#fff;">READY</span>
-      {{ else }}
-      <span class="new-flag">NEW</span>
+{{/* One bucket's live order feed (worker.go buildFeed): stage columns, oldest
+     first inside each. Swapped whole into #order-feed on every change; the
+     .feed-meta count feeds the tab badge, the .oc data-* attributes feed the
+     timers and new/ready alerts in static/worker.js. */}}
+<div class="feed-meta" data-total="{{ .Total }}" hidden></div>
+{{ if .Prep }}
+<div class="prep" aria-label="Everything to make right now">
+  <b>To make</b>
+  <div class="prep-chips">{{ range .Prep }}<span><i>{{ .Qty }}×</i>{{ .Name }}</span>{{ end }}</div>
+</div>
+{{ end }}
+{{ if not .Total }}
+<div class="w-empty"><span class="w-empty-ico">✓</span><b>{{ .Empty }}</b><small>New orders appear here the moment a guest sends them.</small></div>
+{{ else }}
+<div class="stages{{ if eq (len .Groups) 1 }} one{{ end }}" style="--cols:{{ len .Groups }}">
+  {{ range .Groups }}
+  <section class="stage st-{{ .Key }}" aria-label="{{ .Title }}">
+    <h3>{{ .Title }}<span>{{ len .Orders }}</span></h3>
+    {{ range .Orders }}
+    <article class="oc" data-order-id="{{ .ID }}" data-ordered-at="{{ .CreatedAt.UnixMilli }}" data-status="{{ .Status }}">
+      <header class="oc-head">
+        <span class="oc-table" title="Table">{{ .Table }}</span>
+        <div class="oc-meta"><span class="oc-id">#{{ .ID }}</span><span class="oc-age" data-age>–</span></div>
+      </header>
+      <ul class="oc-lines">
+        {{ range .Lines }}
+        <li{{ if not .Mine }} class="other"{{ end }}>
+          <b class="q">{{ .Quantity }}×</b>
+          <div><span class="n">{{ .Name }}</span>
+            {{ if .Excluded }}<em class="mod no">no {{ range $i, $e := .Excluded }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}</em>{{ end }}
+            {{ if .Extras }}<em class="mod add">+ {{ range $i, $e := .Extras }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}</em>{{ end }}
+          </div>
+        </li>
+        {{ end }}
+      </ul>
+      {{ if .Others }}<p class="oc-others">+ {{ .Others }} more {{ if eq .Others 1 }}item{{ else }}items{{ end }} on this order, made elsewhere</p>{{ end }}
+      {{ if .Note }}<p class="oc-note"><b>Note</b> {{ .Note }}</p>{{ end }}
+      {{ if or (gt .TipAmount 0.0) (gt .SplitCount 1) (and .RefundRequested (eq .PaymentStatus "paid")) }}
+      <div class="oc-flags">
+        {{ if and .RefundRequested (eq .PaymentStatus "paid") }}<span class="flag warn">Refund requested</span>{{ end }}
+        {{ if gt .TipAmount 0.0 }}<span class="flag">+€{{ printf "%.2f" .TipAmount }} tip</span>{{ end }}
+        {{ if gt .SplitCount 1 }}<span class="flag">Split {{ .SplitCount }} ways</span>{{ end }}
+      </div>
       {{ end }}
-      <span class="timer-badge">— min</span>
-    </div>
-  </div>
-  <div class="order-items">
-    {{ range .Items }}
-    <div class="order-item">
-      <span class="qty">{{ .Quantity }}×</span> {{ .Name }}
-      {{ if .Excluded }}<div class="po-excl" style="font-size:11.5px;color:var(--text-muted);font-weight:500;">without {{ range $i, $e := .Excluded }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}</div>{{ end }}
-      {{ if .Extras }}<div class="po-excl" style="font-size:11.5px;color:var(--info);font-weight:500;">+ {{ range $i, $e := .Extras }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}</div>{{ end }}
-    </div>
-    {{ end }}
-  </div>
-  {{ if .Note }}<div class="po-note" style="font-size:12.5px;color:var(--text-secondary);font-style:italic;">Note: {{ .Note }}</div>{{ end }}
-  {{ if and .RefundRequested (eq .PaymentStatus "paid") }}
-  <div class="po-note" style="font-size:12.5px;color:var(--accent-strong);font-weight:700;">💰 Refund requested</div>
-  {{ end }}
-  <button class="no-print print-btn" onclick="printOrder({{ .ID }})">🖨️ Print for kitchen</button>
-  <!-- Kitchen ticket: rendered server-side from this same order's real data
-       (no client-side re-population needed), stays hidden on screen and is
-       revealed only inside @media print when printOrder() marks this card
-       .printing-ticket — see the print stylesheet + printOrder() in
-       worker_dashboard.html. Deliberately excludes price/payment info:
-       the kitchen needs what to make, not what it costs. -->
-  <div class="print-ticket">
-    <div class="pt-header">
-      <span>TABLE {{ printf "%02d" .TableNumber }}</span>
-      <span>Order #{{ .ID }}</span>
-    </div>
-    <div class="pt-time">{{ .CreatedAt.Format "02 Jan 2006 · 15:04" }}</div>
-    <div class="pt-divider"></div>
-    {{ range .Items }}
-    <div class="pt-item-line">{{ .Quantity }}x {{ .Name }}</div>
-    {{ if .Excluded }}<div class="pt-mod">without {{ range $i, $e := .Excluded }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}</div>{{ end }}
-    {{ if .Extras }}<div class="pt-mod">+ {{ range $i, $e := .Extras }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}</div>{{ end }}
-    {{ end }}
-    {{ if .Note }}
-    <div class="pt-divider"></div>
-    <div class="pt-note">NOTE: {{ .Note }}</div>
-    {{ end }}
-  </div>
-  {{ if gt .TipAmount 0.0 }}<div class="po-note" style="font-size:12.5px;color:var(--info);font-weight:700;">+€{{ printf "%.2f" .TipAmount }} tip</div>{{ end }}
-  {{ if gt .SplitCount 1 }}<div class="po-note" style="font-size:11.5px;color:var(--text-muted);">Guest is splitting this {{ .SplitCount }} ways</div>{{ end }}
-  <div class="pay-row">
-    {{ if eq .PaymentStatus "paid" }}
-    <span class="pay-badge pay-cash-paid">{{ if eq .PaymentMethod "card" }}Card{{ else }}Cash{{ end }} · paid ✓</span>
-    {{ else }}
-    <span class="pay-badge pay-cash-unpaid">Cash · unpaid</span>
-    <button class="mark-paid-btn" hx-post="/worker/orders/{{ .ID }}/paid" hx-target="#order-feed" hx-swap="innerHTML">Mark paid</button>
-    {{ end }}
-  </div>
-  {{ if .HasNext }}
-  <button class="btn-primary-action action-{{ .NextStatus }}" data-next="{{ .NextStatus }}" data-undo-status="{{ .Status }}"
-    hx-post="/worker/orders/{{ .ID }}/status" hx-vals='{"status": "{{ .NextStatus }}"}' hx-target="#order-feed" hx-swap="innerHTML">
-    {{ .NextLabel }}
-  </button>
-  {{ end }}
-  {{ if or (eq .Status "pending") (eq .Status "preparing") }}
-  <div class="order-footer">
-    <button class="cancel-link" hx-post="/worker/orders/{{ .ID }}/cancel" hx-target="#order-feed" hx-swap="innerHTML" hx-confirm="Cancel this order? This cannot be undone.">Cancel order</button>
-  </div>
+      {{ if .ShowPay }}
+      <div class="oc-pay">
+        {{ if eq .PaymentStatus "paid" }}<span class="flag ok">{{ if eq .PaymentMethod "card" }}Card{{ else }}Cash{{ end }} · paid ✓</span>
+        {{ else }}<span class="flag bad">{{ if eq .PaymentMethod "card" }}Card{{ else }}Cash{{ end }} · unpaid · €{{ printf "%.2f" .GrandTotal }}</span>
+        <button type="button" class="w-btn sm" data-msg="{{ .Table }} paid" data-undo-url="/worker/orders/{{ .ID }}/unpaid"
+          hx-post="/worker/orders/{{ .ID }}/paid" hx-target="#order-feed" hx-swap="innerHTML">Mark paid</button>{{ end }}
+      </div>
+      {{ end }}
+      {{ if .HasNext }}
+      <button type="button" class="oc-go go-{{ .NextStatus }}" data-msg="{{ .Table }} · {{ .NextLabel }}" data-undo-url="/worker/orders/{{ .ID }}/status" data-undo-status="{{ .Status }}"
+        hx-post="/worker/orders/{{ .ID }}/status" hx-vals='{"status": "{{ .NextStatus }}"}' hx-target="#order-feed" hx-swap="innerHTML">{{ .NextLabel }}</button>
+      {{ end }}
+      {{ if or .CanPrint (or (eq .Status "pending") (eq .Status "preparing")) }}
+      <footer class="oc-foot">
+        {{ if .CanPrint }}<button type="button" class="w-link" data-print="{{ .ID }}">Print ticket</button>{{ end }}
+        {{ if or (eq .Status "pending") (eq .Status "preparing") }}<button type="button" class="w-link danger" hx-post="/worker/orders/{{ .ID }}/cancel" hx-target="#order-feed" hx-swap="innerHTML" hx-confirm="Cancel this order? This cannot be undone.">Cancel order</button>{{ end }}
+      </footer>
+      {{ end }}
+      {{/* Kitchen ticket: hidden on screen, shown by the print stylesheet for
+           the one card marked .printing. No prices: the kitchen needs what to
+           make, not what it costs. */}}
+      <div class="print-ticket">
+        <div class="pt-header"><span>{{ .Table }}</span><span>Order #{{ .ID }}</span></div>
+        <div class="pt-time">{{ .CreatedAt.Format "02 Jan 2006 · 15:04" }}</div>
+        <div class="pt-divider"></div>
+        {{ range .Lines }}{{ if .Mine }}
+        <div class="pt-item-line">{{ .Quantity }}x {{ .Name }}</div>
+        {{ if .Excluded }}<div class="pt-mod">without {{ range $i, $e := .Excluded }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}</div>{{ end }}
+        {{ if .Extras }}<div class="pt-mod">+ {{ range $i, $e := .Extras }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}</div>{{ end }}
+        {{ end }}{{ end }}
+        {{ if .Note }}<div class="pt-divider"></div><div class="pt-note">NOTE: {{ .Note }}</div>{{ end }}
+      </div>
+    </article>
+    {{ else }}<p class="stage-empty">Nothing here</p>{{ end }}
+  </section>
   {{ end }}
 </div>
-{{ else }}
-<p class="empty-note">No active orders.</p>
 {{ end }}

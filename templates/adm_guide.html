@@ -1,0 +1,401 @@
+{{/* The guide (/admin/guide): how the whole software works, for the owner and
+     every staff role, basics first and the advanced tools after. One card per
+     topic; the role chips, the Basics/Advanced switch and the search narrow
+     them down (data-for = roles it matters to, data-lv = basic/adv), so it
+     stays short on a phone. Opens on the reader's own role. */}}
+{{ define "title" }}Guide{{ end }}
+
+{{ define "content" }}
+<div class="page-head">
+  <div>
+    <h1>How it works</h1>
+    <p>Everything you need to run the venue with this app, from the first order to the advanced tools.</p>
+  </div>
+</div>
+
+<div class="gd-tools card card-body">
+  <label class="rp-search gd-q">{{ template "i-search" }}<input type="search" id="gdQ" placeholder="Search the guide, e.g. password, sold out, happy hour" autocomplete="off" aria-label="Search the guide"></label>
+  <div class="gd-filters">
+    <div class="segc" role="radiogroup" aria-label="Who is reading">
+      <label><input type="radio" name="gdWho" value="all" {{ if eq .Who "all" }}checked{{ end }}><span>Everyone</span></label>
+      <label><input type="radio" name="gdWho" value="owner" {{ if eq .Who "owner" }}checked{{ end }}><span>Owner</span></label>
+      <label><input type="radio" name="gdWho" value="manager" {{ if eq .Who "manager" }}checked{{ end }}><span>Manager</span></label>
+      <label><input type="radio" name="gdWho" value="station" {{ if eq .Who "station" }}checked{{ end }}><span>Kitchen &amp; bar</span></label>
+      <label><input type="radio" name="gdWho" value="waiter" {{ if eq .Who "waiter" }}checked{{ end }}><span>Waiter</span></label>
+      <label><input type="radio" name="gdWho" value="dj" {{ if eq .Who "dj" }}checked{{ end }}><span>DJ</span></label>
+    </div>
+    <div class="segc" role="radiogroup" aria-label="Level">
+      <label><input type="radio" name="gdLv" value="basic" checked><span>Basics</span></label>
+      <label><input type="radio" name="gdLv" value="adv"><span>Advanced</span></label>
+      <label><input type="radio" name="gdLv" value="all"><span>All</span></label>
+    </div>
+  </div>
+</div>
+
+<!-- Start here: a few steps per role, the first thing a new person reads. -->
+<section class="gd-start card card-body" data-for="owner" data-lv="basic">
+  <h2>Start here: setting up a new venue</h2>
+  <ol class="gd-steps">
+    <li><b>Change the default password</b> you got with the software. You're asked to on the first login.</li>
+    <li><b>Settings</b>: your venue name, payment methods (cash on or off) and your business details for receipts.</li>
+    <li><b>Categories</b>: create the sections guests browse (Coffee, Salads, Cocktails…). For each one, choose if the <b>kitchen</b> or the <b>bar</b> makes it. That decides who receives the order.</li>
+    <li><b>Menu &amp; stock</b>: add your items with price, photo and description.</li>
+    <li><b>Map editor</b>: place your tables and give each one a zone (Terrace, Beach, Inside…). Print each table's QR code.</li>
+    <li><b>Staff</b>: create an account for each person and pick their role.</li>
+    <li><b>Menus &amp; hours</b>: set when the kitchen and bar open. That's all most venues ever need there.</li>
+    <li><b>Test it</b>: scan a table's QR with your own phone, order something, and follow it through the staff app.</li>
+  </ol>
+</section>
+<section class="gd-start card card-body" data-for="manager" data-lv="basic">
+  <h2>Start here: your shift as a manager</h2>
+  <ol class="gd-steps">
+    <li>Sign in. You land in the <b>staff app</b> (Work). The <b>Work / Admin</b> switch at the top takes you to the back office and back.</li>
+    <li><b>Orders</b> shows every order from every station. <b>Collect</b> lists tables that still owe money.</li>
+    <li><b>Floor</b> shows who is sitting where and who called for help. <b>Bookings</b> shows today's arrivals.</li>
+    <li>Something runs out? <b>More → Sold out</b>, tap the item. Kitchen swamped? Mark it <b>Busy</b> or close it for 30 minutes.</li>
+    <li>A staff member forgot their password? <b>Admin → Staff help</b> lets you set a new one.</li>
+  </ol>
+</section>
+<section class="gd-start card card-body" data-for="station" data-lv="basic">
+  <h2>Start here: kitchen and bar</h2>
+  <ol class="gd-steps">
+    <li>Sign in on the station tablet or your phone. You see the <b>Queue</b>: only the items your station makes.</li>
+    <li>A new order chimes. Tap <b>Start preparing</b> when you begin, then <b>Mark ready</b> when it's done. The waiter gets it straight away.</li>
+    <li><b>To make</b> at the top adds up everything still open (e.g. 4× Freddo), so you can batch.</li>
+    <li>Ran out of something? <b>Sold out</b> tab, tap the item. Guests stop seeing it at once.</li>
+    <li>On a mounted tablet: open the menu (your initials) and switch on <b>Keep screen on</b>.</li>
+  </ol>
+</section>
+<section class="gd-start card card-body" data-for="waiter" data-lv="basic">
+  <h2>Start here: waiters</h2>
+  <ol class="gd-steps">
+    <li>Sign in on your phone and switch on <b>Phone alerts</b> in the menu (your initials). You get a buzz even with the screen off.</li>
+    <li><b>Deliver</b> shows orders the kitchen or bar marked ready. Take them to the table and tap <b>Delivered</b>.</li>
+    <li>A guest pressed <b>Call waiter</b>? It shows at the top with the reason (bill, water, help). Tap <b>On my way</b>.</li>
+    <li><b>Collect</b> lists tables that still owe cash. Take the money, tap <b>Mark paid</b>.</li>
+    <li><b>Floor</b> and <b>Bookings</b>: seat arriving guests, free tables when people leave.</li>
+  </ol>
+</section>
+<section class="gd-start card card-body" data-for="dj" data-lv="basic">
+  <h2>Start here: DJ</h2>
+  <ol class="gd-steps">
+    <li>Sign in. You see <b>Requests</b>: songs guests asked for from their table, with the tip they left.</li>
+    <li>Tap <b>Play it</b> to accept or <b>Skip</b> to decline. The guest sees your answer on their phone.</li>
+    <li>The owner can switch song requests on or off in Settings.</li>
+  </ol>
+</section>
+
+<div class="gd-grid" id="gdGrid">
+
+  <!-- ================= BASICS ================= -->
+
+  <details class="gd card" data-for="owner manager station waiter dj" data-lv="basic" open>
+    <summary><b>The whole thing in one minute</b><small>How an order travels</small></summary>
+    <div class="gd-body">
+      <ol class="gd-flow">
+        <li><b>Guest</b> scans the QR code on the table. The menu opens in their phone's browser, with no app to install.</li>
+        <li>They order and choose how to pay. The order goes <b>straight to the staff app</b>.</li>
+        <li><b>Kitchen</b> gets the food, <b>bar</b> gets the drinks. A mixed order is split automatically.</li>
+        <li>The station taps <b>Start preparing</b>, then <b>Mark ready</b>.</li>
+        <li>The <b>waiter</b> is alerted, delivers it and taps <b>Delivered</b>.</li>
+        <li>Cash is collected at the table (<b>Collect</b> → <b>Mark paid</b>).</li>
+      </ol>
+      <p>Every screen updates <b>live</b>: you never need to refresh. The guest follows the progress on their phone (Received → Preparing → Ready → Delivered).</p>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="owner manager station waiter dj" data-lv="basic">
+    <summary><b>Signing in and your phone</b><small>Password, alerts, home screen</small></summary>
+    <div class="gd-body">
+      <ul>
+        <li><b>Sign in</b> at <code>/login</code> with the username and password the owner gave you. A new account may ask you to pick your own password first.</li>
+        <li><b>Change your password</b> any time: menu (your initials) → <b>Change password</b>, or <b>Password</b> in the sidebar.</li>
+        <li><b>Install it like an app</b>: in your phone's browser, use <b>Add to Home Screen</b>. It then opens full screen with the venue's icon. On iPhone this is required for phone alerts.</li>
+        <li><b>Sound alerts</b>: a chime for new and ready orders. The bell at the top turns it on or off.</li>
+        <li><b>Phone alerts</b>: notifications on the lock screen. Allow notifications when the phone asks.</li>
+        <li><b>Keep screen on</b>: for a tablet mounted in the kitchen or at the bar.</li>
+        <li>The <b>Live</b> dot at the top shows the connection. If it drops, a bar says <em>Connection lost</em> and it reconnects by itself.</li>
+        <li>Finished your shift on a shared device? <b>Sign out</b>.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="owner manager" data-lv="basic">
+    <summary><b>Roles: who sees what</b><small>Owner, manager, waiter, kitchen, bar, DJ</small></summary>
+    <div class="gd-body">
+      <div class="gd-table">
+        <div><b>Owner (admin)</b><span>Everything, including settings, staff accounts, look &amp; brand, backups and the sales export.</span></div>
+        <div><b>Manager</b><span>Every station in the staff app, plus Dashboard, Bookings, Floor, Menu, Orders, Logs and Staff help. No settings, accounts or branding.</span></div>
+        <div><b>Waiter</b><span>Deliver (ready orders), Collect (payments), help calls, Floor and Bookings.</span></div>
+        <div><b>Kitchen / Bar</b><span>The queue of their own items and the Sold out list. They can close or mark busy their own station.</span></div>
+        <div><b>DJ</b><span>Song requests only.</span></div>
+      </div>
+      <p>Need something in between, e.g. a waiter who may edit the menu? In <b>Staff</b>, open the account, tick <b>Custom</b> under <b>Page access</b> and choose the pages. Settings, accounts, branding and the order feed always stay with the owner.</p>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="station manager owner" data-lv="basic">
+    <summary><b>Working the queue</b><small>Kitchen and bar, step by step</small></summary>
+    <div class="gd-body">
+      <ul>
+        <li>Each card is one order: the <b>table</b>, the order <b>#</b>, how long ago it came in, and the items.</li>
+        <li><em>no onion</em> (red) means remove it, <em>+ extra cheese</em> (blue) means add it. A <b>Note</b> is the guest's own words. Read it.</li>
+        <li><em>+ 2 more items made elsewhere</em> means the other station is making the rest of the order.</li>
+        <li><b>Start preparing</b> → <b>Mark ready</b>. Pressed it by mistake? Tap <b>Undo</b> in the message at the bottom.</li>
+        <li><b>Print ticket</b> prints a kitchen ticket without prices.</li>
+        <li><b>Cancel order</b> only works before the order is ready. It puts the stock back. Talk to the guest or a manager first.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="station waiter manager owner" data-lv="basic">
+    <summary><b>Sold out, close early, busy</b><small>When the night doesn't go to plan</small></summary>
+    <div class="gd-body">
+      <ul>
+        <li><b>Sold out</b> tab: tap an item to hide it from guests at once. Tap again when it's back. Items with a stock count turn sold out by themselves when they hit 0.</li>
+        <li><b>Close for</b> 30 min, 1 hour, today or until reopened: guests can't order anything from that station. Drinks keep selling if only the kitchen is closed.</li>
+        <li><b>Busy</b> +15 / +30 / +45 min: you stay open, but guests are told to expect a longer wait. It switches itself off after an hour.</li>
+        <li>Kitchen staff can switch the kitchen, bar staff the bar, and managers both. Owners do the same on <b>Menus &amp; hours</b>.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="waiter manager owner" data-lv="basic">
+    <summary><b>Delivering and help calls</b><small>Ready orders, Call waiter</small></summary>
+    <div class="gd-body">
+      <ul>
+        <li><b>Deliver</b> lists everything marked ready, oldest first. Deliver, then tap <b>Delivered</b>. The guest's phone updates.</li>
+        <li><b>Call waiter</b> from a table shows at the top of every waiter's and manager's screen, with the reason: <em>Wants the bill</em>, <em>Wants water / napkins / cutlery</em> or <em>Needs help</em>. Tap <b>On my way</b> so colleagues know it's handled.</li>
+        <li>How fast calls were answered is kept in <b>Logs</b>.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="waiter manager owner" data-lv="basic">
+    <summary><b>Payments, tips and refunds</b><small>Cash, card, splitting the bill</small></summary>
+    <div class="gd-body">
+      <ul>
+        <li>The guest chooses <b>cash</b> or <b>card</b> when ordering. The owner can turn cash off (card only) in Settings.</li>
+        <li><b>Cash</b>: the order shows <em>Cash · unpaid · €</em>. <b>Collect</b> groups unpaid orders by table. Take the money, tap <b>Mark paid</b>. Wrong table? <b>Undo</b>.</li>
+        <li><b>Card</b> orders are marked paid as soon as they're placed.</li>
+        <li><b>Tip</b> and <b>Split N ways</b> show on the order so you know before you reach the table.</li>
+        <li>A guest can cancel an order that hasn't started. If it was already paid, it becomes <b>Refund requested</b>. A manager settles it and fixes the order in <b>Orders</b>.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="waiter manager owner" data-lv="basic">
+    <summary><b>Floor and bookings</b><small>Seating, walk-ins, freeing tables</small></summary>
+    <div class="gd-body">
+      <ul>
+        <li><b>Floor</b> is the live map: free, reserved, seated, and tables where a guest is ordering by QR or needs help. Tap a spot for details.</li>
+        <li><b>New booking</b> (the + button): pick <b>Phone booking</b> when they call ahead, or <b>Walk-in</b> when they're standing there (seats them right now).</li>
+        <li>When booked guests arrive: <b>Seat them</b>. When they leave: <b>Finish · free spot</b>.</li>
+        <li>Didn't show? Mark <b>No-show</b>. Running late shows as <em>late</em> with the minutes.</li>
+        <li>A QR table that left without closing: <b>Release table (guest left)</b>. Tables nobody used for 45 minutes free up by themselves.</li>
+        <li>Broken or closed spot: <b>Out of service</b>. It can't be booked or ordered from.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="owner manager waiter station" data-lv="basic">
+    <summary><b>What guests can do</b><small>So you can answer their questions</small></summary>
+    <div class="gd-body">
+      <ul>
+        <li>Browse the menu by category, search, and see photos and prices.</li>
+        <li><b>Customize</b> an item: remove ingredients or add paid extras.</li>
+        <li>Leave a <b>note for the kitchen</b>, add a <b>tip</b>, and say if they're <b>splitting the bill</b>.</li>
+        <li>Follow the order live, get an <b>alert when it's ready</b>, and open the <b>receipt</b>.</li>
+        <li><b>Call waiter</b> with a reason, cancel an order before it's started, and request a song (if switched on).</li>
+        <li>Book a table online at <code>/book</code> (if switched on). No payment is taken online.</li>
+        <li><b>One phone orders per table</b>: the first to scan becomes the host. Others see <em>hosted by another guest</em>. The host can tap <b>Leave Table</b>, or a waiter can release the table, to hand it over.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="owner manager" data-lv="basic">
+    <summary><b>Menu and stock</b><small>Items, prices, photos, extras</small></summary>
+    <div class="gd-body">
+      <ul>
+        <li><b>Menu &amp; stock</b>: tap an item to change its name, price, description, photo (camera, gallery or a link) and stock.</li>
+        <li><b>Stock</b>: a number counts down with every order and turns <em>sold out</em> at 0. <b>Unlimited</b> for things you don't count.</li>
+        <li><b>Customisation</b>: <em>Included, can remove</em> (onion, sauce) and <em>Extra add-on</em> with a price (extra cheese €1). Guests then see <b>Customize</b>.</li>
+        <li><b>Serving hours</b> → <em>Only between</em>: e.g. fresh juice only until 12:00.</li>
+        <li><b>Categories</b>: what guests browse by. The kitchen/bar choice routes the order, so a wrong choice sends the item to the wrong screen.</li>
+        <li>Changes show on every guest's phone immediately.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="owner manager" data-lv="basic">
+    <summary><b>Opening hours and special days</b><small>Menus &amp; hours, the simple part</small></summary>
+    <div class="gd-body">
+      <ul>
+        <li><b>Menus &amp; hours → Opening hours</b>: tap <b>Set hours</b> on the kitchen or bar. Choose <em>Same every day</em> or <em>Different by day</em>, and <b>Last orders</b> (e.g. 15 min before closing).</li>
+        <li>Without hours, it's <em>Open all day</em>: guests can always order.</li>
+        <li><b>Special days</b> → <b>Add</b>: a date or a range that's <em>closed</em> (holiday, private event) or has different hours (winter season). A note tells guests why.</li>
+        <li>Outside opening hours, guests can still browse the menu but can't order.</li>
+      </ul>
+    </div>
+  </details>
+
+  <!-- ================= ADVANCED ================= -->
+
+  <details class="gd card" data-for="owner manager" data-lv="adv">
+    <summary><b>Areas: different rules for each part of the venue</b><small>Pause an area, give it its own hours</small></summary>
+    <div class="gd-body">
+      <p>Areas are the <b>zones</b> you give tables in the Map editor (Beach, Terrace, Rooftop, VIP…). With two or more, <b>Menus &amp; hours</b> shows an <b>Areas</b> list.</p>
+      <ul>
+        <li><b>1 h / Today / Pause</b>: stop orders from that area only, e.g. the beach when it's windy. Everyone else keeps ordering.</li>
+        <li><b>+ Own hours</b>: create a menu just for that area: its own days, times and dishes (e.g. Beach 10:00–19:00, drinks and salads only).</li>
+        <li>Each area lists the menus and offers that apply only to it, so you see its rules at a glance.</li>
+      </ul>
+      <p>One area or none? The list stays hidden. Kitchen and bar hours cover the whole venue.</p>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="owner manager" data-lv="adv">
+    <summary><b>Custom menus</b><small>Brunch, late night, a menu per area</small></summary>
+    <div class="gd-body">
+      <p>For anything opening hours can't do. A custom menu has days, a time window, last orders, the areas it applies to, and what it serves: <b>everything</b>, chosen <b>categories</b> or single <b>dishes</b>.</p>
+      <ul>
+        <li><em>Weekend brunch</em> Sat–Sun 10:00–13:00, only the Brunch category.</li>
+        <li><em>Late night</em> Fri–Sat 23:00–03:00, bar plus crêpes. A menu that ends before it starts runs past midnight.</li>
+        <li><em>Rooftop</em>: drinks only, in the Rooftop area.</li>
+      </ul>
+      <p><b>Important:</b> once a switched-on menu covers an area, tables there can <b>only</b> order what a running menu serves. Areas no menu mentions keep ordering everything. Each menu has an on/off switch, so you can keep seasonal menus and switch them on when needed.</p>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="owner manager" data-lv="adv">
+    <summary><b>How the rules combine</b><small>Why an item is or isn't orderable</small></summary>
+    <div class="gd-body">
+      <p>For a dish to be orderable at a table, all of these must allow it, in this order:</p>
+      <ol class="gd-flow">
+        <li>Its station isn't <b>closed by hand</b>.</li>
+        <li>The table's <b>area isn't paused</b>.</li>
+        <li>No <b>special day</b> closes it, and the station is within its <b>opening hours</b> (minus last orders).</li>
+        <li>The dish's own <b>serving hours</b>, if it has any.</li>
+        <li>If custom menus cover that area: a <b>running menu serves it</b>.</li>
+        <li>It's not <b>sold out</b>.</li>
+      </ol>
+      <p>Not sure? Use <b>Check what guests see</b> on Menus &amp; hours: pick an area, a day and a time to see exactly what's orderable. The <b>Check your set-up</b> box warns you about rules that don't fit together (e.g. a menu running when the kitchen is closed).</p>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="owner manager" data-lv="adv">
+    <summary><b>Happy hour and offers</b><small>Lower prices at set times</small></summary>
+    <div class="gd-body">
+      <ul>
+        <li><b>Menus &amp; hours → Happy hour &amp; offers → Add offer</b>: days, times, % or € off, areas, and what it covers.</li>
+        <li>While it runs, guests see the old price crossed out and how long the offer lasts.</li>
+        <li>If two offers cover the same item, the lower price wins. The price never goes below €0.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="owner manager" data-lv="adv">
+    <summary><b>Guest suggestions</b><small>Recommended, Popular, best sellers first</small></summary>
+    <div class="gd-body">
+      <ul>
+        <li><b>Recommended</b>: your own picks at the top of the menu, under your heading (e.g. Chef's picks).</li>
+        <li><b>Popular</b>: what sells most at this time of day, from the last 7, 30 or 90 days. Only items being served right now are shown.</li>
+        <li><b>Best sellers first</b>: sorts categories and items by sales for the time of day, so drinks rise at night. It's a monthly snapshot, not reshuffled after every order. <b>Re-rank now</b> refreshes it.</li>
+        <li><b>Show dishes coming later</b>: greys out items that open later (<em>From 19:00</em>) instead of hiding them.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="owner manager" data-lv="adv">
+    <summary><b>Staff accounts and security</b><small>Create, reset, lost phone, leaving staff</small></summary>
+    <div class="gd-body">
+      <ul>
+        <li><b>Staff → New</b>: username, password (6+ characters), role, and optional custom page access. Tell the person their password in person.</li>
+        <li><b>Forgot password</b>: open the account, set a new one, tell them. They're signed out everywhere. Managers can do this from <b>Staff help</b>.</li>
+        <li><b>Lost or stolen phone</b>: <b>Sign out everywhere</b> on that account.</li>
+        <li><b>Someone leaves</b>: <b>Deactivate</b>. They're thrown out immediately, and their history stays. <b>Activate again</b> if they come back.</li>
+        <li><b>History</b> on each account shows what was changed, and by whom.</li>
+        <li>Give each person their own account. Shared logins make the logs useless.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="owner manager" data-lv="adv">
+    <summary><b>Reports and your data</b><small>Dashboard, orders, logs, export, backup</small></summary>
+    <div class="gd-body">
+      <ul>
+        <li><b>Dashboard</b>: revenue, orders, bookings, guests expected, free spots and items running low, live.</li>
+        <li><b>Orders</b>: every order, searchable by number, table, item or staff. Tap one to see items, payment and receipt, or to <b>Fix this order</b> (mark paid or unpaid, change the status, cancel).</li>
+        <li><b>Logs</b>: call-waiter response times and every staff-account change.</li>
+        <li><b>Export CSV</b> (owner): the orders matching your filters, for your accountant or spreadsheet.</li>
+        <li><b>Backup</b> (owner, on the Dashboard): downloads a full copy of everything: menu, orders and accounts. Do it regularly and keep it somewhere safe.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="owner" data-lv="adv">
+    <summary><b>Map editor and QR tables</b><small>Spots, zones, booking rules</small></summary>
+    <div class="gd-body">
+      <ul>
+        <li>Drag spots to move them. Tap one to edit its <b>label</b>, <b>zone</b>, <b>min / max guests</b>, <b>minimum spend</b>, <b>booking length</b> and online hours.</li>
+        <li>Changes save straight away and show on the guest page.</li>
+        <li>The <b>zone</b> is the area used by Menus &amp; hours, so name zones the way you'd talk about them (Beach, Terrace).</li>
+        <li>Print each table's QR code from <b>Map editor → QR codes</b> and stick it where guests see it. Each code holds a secret link, so nobody can order for a table without scanning it. Lost or copied sticker? Press <b>New code</b> on that table and reprint it.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="owner" data-lv="adv">
+    <summary><b>Settings, booking and brand</b><small>Make it yours</small></summary>
+    <div class="gd-body">
+      <ul>
+        <li><b>Settings → Venue</b>: the name guests see. <b>Business details</b>: VAT number and tax office on receipts.</li>
+        <li><b>DJ requests</b> and <b>Payment methods</b> (cash on or off): one switch each.</li>
+        <li><b>Online booking</b>: on or off, first and last arrival time, default length, how many days ahead, and a phone number for guests who'd rather call.</li>
+        <li><b>Look &amp; brand</b>: start from a preset, then adjust colours, logos, fonts, the login page and the welcome text. A live preview shows it, and nothing changes for anyone until you save.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="owner" data-lv="adv">
+    <summary><b>Good to know before going live</b><small>Limits of this version</small></summary>
+    <div class="gd-body">
+      <ul>
+        <li><b>Card payments</b> aren't connected to a payment provider yet: choosing card marks the order paid without charging anyone. Take card payments on your own terminal.</li>
+        <li><b>Receipts</b> are for the guest's information. They aren't sent to the tax authority and don't replace your legal fiscal receipts.</li>
+        <li>Stations are <b>kitchen</b> and <b>bar</b>. A venue with only one sees only that one.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="gd card" data-for="owner manager station waiter dj" data-lv="adv">
+    <summary><b>Something's wrong: quick fixes</b><small>Common problems</small></summary>
+    <div class="gd-body">
+      <dl class="gd-faq">
+        <dt>A guest says an item is missing or greyed out</dt>
+        <dd>Check Sold out, then the station's hours and close switch. A manager can use <b>Check what guests see</b> for that area and time.</dd>
+        <dt>No orders are arriving</dt>
+        <dd>Look at the <b>Live</b> dot. If it's off, check the Wi-Fi. Then check that the station isn't closed and the item's category belongs to your station.</dd>
+        <dt>No sound or phone alerts</dt>
+        <dd>Turn on <b>Sound alerts</b> and <b>Phone alerts</b> in your menu and allow notifications. On iPhone, add the app to the Home Screen first. Keep the phone off silent.</dd>
+        <dt>I forgot my password, or lost the phone with my login codes</dt>
+        <dd>Ask a manager (<b>Staff help</b>) or the owner to reset it. The password they give you works once: you pick your own straight after, and two-step login starts over.</dd>
+        <dt>The owner forgot the admin password or lost their phone</dt>
+        <dd>Whoever runs the server can reset it with <code>go run ./cmd/resetpassword admin</code>. It prints a one-time password; the next login asks for a new password and sets up two-step login again.</dd>
+        <dt>What is two-step login?</dt>
+        <dd>After your password, the login asks for a 6-digit code from an authenticator app on your phone, so a stolen password alone isn't enough. Admin accounts must use it; anyone else can turn it on from <b>Two-step login</b> in their menu.</dd>
+        <dt>A table shows occupied but nobody's there</dt>
+        <dd>On Floor, <b>Release table (guest left)</b>. Otherwise it frees itself after 45 minutes of no activity.</dd>
+        <dt>Marked the wrong order</dt>
+        <dd>Tap <b>Undo</b> straight away, or fix it later in <b>Orders → Fix this order</b>.</dd>
+      </dl>
+    </div>
+  </details>
+
+</div>
+<p class="gd-none hours-note" id="gdNone" hidden>Nothing in the guide matches. Try another word, or pick <b>Everyone</b> and <b>All</b>.</p>
+{{ end }}
+
+{{ define "scripts" }}
+<script src="/static/js/guide.js?v={{ .V }}"></script>
+{{ end }}

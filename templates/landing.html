@@ -3,37 +3,50 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BiteBox</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
-  <style>
-    *, *::before, *::after {
-      box-sizing: border-box;
-    }
-    html { touch-action: manipulation; }
-    body {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 90vh;
-      text-align: center;
-    }
-    .card {
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 2rem;
-      background: var(--background-alt);
-    }
-  </style>
+  <title>{{ .VenueName }}</title>
+  <link rel="stylesheet" href="/static/site.css?v={{ .V }}">
+  <link rel="stylesheet" href="/brand.css">
+  <link rel="icon" href="/brand/icon.png">
+  <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest-site.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="{{ .VenueName }}">
 </head>
 <body>
+  <header class="topbar">
+    <a class="wordmark" href="/"><span class="brand-logo" aria-hidden="true"></span><span class="brand-name">{{ .VenueName }}</span></a>
+    {{ if .Booking }}<a class="btn sm" href="/book">Book now</a>{{ end }}
+  </header>
 
-  <div class="card">
-    <h2>🍽️ {{ .VenueName }}</h2>
-    <p>Scan the QR code on your table to see the menu and order.</p>
-    <p style="font-size: 0.9rem; color: var(--text-muted);">
-      <a href="/login">Staff &amp; admin login</a>
-    </p>
-  </div>
-
+  <main class="wrap">
+    <div class="hero">
+      <h1>{{ .VenueName }}</h1>
+      {{ if .Tagline }}<p class="tagline">{{ .Tagline }}</p>{{ end }}
+      <p class="lead">Order from your table with your phone{{ if .Booking }}, or reserve a spot ahead{{ end }}.</p>
+      <div class="actions">
+        {{ if .Booking }}<a class="btn" href="/book">Book now</a>{{ end }}
+        <a class="btn ghost" href="#how">Order at your table</a>
+      </div>
+    </div>
+    {{ if .Categories }}
+    <section>
+      <h2>Menu</h2>
+      <ul class="chips">{{ range .Categories }}<li>{{ .Name }}</li>{{ end }}</ul>
+    </section>
+    {{ end }}
+    <section id="how">
+      <h2>How to order</h2>
+      <ol class="steps">
+        <li>Scan the QR code on your table.</li>
+        <li>Pick what you like. No app needed.</li>
+        <li>We bring it to your table.</li>
+      </ol>
+    </section>
+    <footer>
+      <p>{{ .VenueName }}{{ if .Phone }} &middot; <a href="tel:{{ .Phone }}">{{ .Phone }}</a>{{ end }} &middot; <a href="/privacy">Privacy</a> &middot; <a href="/login">Staff login</a></p>
+    </footer>
+  </main>
 </body>
 </html>

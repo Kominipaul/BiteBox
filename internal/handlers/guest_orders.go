@@ -25,7 +25,17 @@ func renderPlacedOrdersHTML(sessionID string) []byte {
 	if err != nil {
 		orders = nil
 	}
-	tmpl.Execute(&buf, map[string]interface{}{"Orders": orders})
+	// Each line's dish photo (thumbnail), looked up by product: an order only
+	// snapshots name/price, and a dish deleted since just shows no photo.
+	thumbs := map[int]string{}
+	if products, err := db.GetAllProducts(); err == nil {
+		for _, p := range products {
+			if p.ImageURL != "" {
+				thumbs[p.ID] = thumbURLFor(p.ImageURL)
+			}
+		}
+	}
+	tmpl.Execute(&buf, map[string]interface{}{"Orders": orders, "Thumbs": thumbs})
 	return buf.Bytes()
 }
 
@@ -47,6 +57,9 @@ func BroadcastPlacedOrders(tableNumber int, sessionID string) {
 // instead this flags the order for staff (RefundRequested), who complete
 // the actual cancellation themselves once they've handled the refund.
 func GuestCancelOrder(w http.ResponseWriter, r *http.Request) {
+	if tooMany(orderLimiter, w, r) {
+		return
+	}
 	sessionCookie, err := r.Cookie(GuestSessionCookieName)
 	if err != nil {
 		http.Error(w, "Not authorized", http.StatusForbidden)

@@ -1,0 +1,124 @@
+{{ define "title" }}Settings{{ end }}
+
+{{ define "content" }}
+<div class="page-head">
+  <div>
+    <h1>Settings</h1>
+    <p>Venue details, ordering options and online booking.</p>
+  </div>
+  <a class="act" href="/admin/guide">{{ template "i-help" }}Guide: how it all works</a>
+</div>
+  <section class="panel settings-panel">
+    <div class="panel-header">
+      <h2>Venue &amp; ordering</h2>
+    </div>
+    <div class="settings-layout">
+      <div class="settings-nav" role="tablist" aria-label="Settings sections">
+        <button type="button" class="settings-nav-item active" data-pane="venue" role="tab" aria-selected="true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/></svg>
+          Venue
+        </button>
+        <button type="button" class="settings-nav-item" data-pane="business" role="tab" aria-selected="false">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M9 12h6M9 16h6M9 8h2"/></svg>
+          Business details
+        </button>
+        <button type="button" class="settings-nav-item" data-pane="dj" role="tab" aria-selected="false">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
+          DJ requests
+          <span id="djNavStatus" class="settings-nav-status {{ if .DJRequestsEnabled }}is-on{{ else }}is-off{{ end }}"></span>
+        </button>
+        <button type="button" class="settings-nav-item" data-pane="payment" role="tab" aria-selected="false">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+          Payment methods
+          <span id="paymentNavStatus" class="settings-nav-status {{ if .AllowCashOrders }}is-on{{ else }}is-off{{ end }}"></span>
+        </button>
+      </div>
+
+      <div class="settings-content">
+        <div class="settings-pane active" data-pane="venue">
+          <div id="venueSettingsPanel">
+            <form class="add-form add-form-venue" hx-post="/admin/settings/venue-name" hx-target="#venueSettingsPanel" hx-swap="innerHTML">
+              <input class="field-input" name="name" value="{{ .VenueName }}" maxlength="80" required>
+              <button type="submit" class="btn btn-primary">Save</button>
+            </form>
+            <p class="empty-note" style="margin-top:10px;">Shown to every guest on the menu page and in the browser tab title. Updates live for anyone already browsing.</p>
+          </div>
+        </div>
+
+        <div class="settings-pane" data-pane="business">
+          <div id="businessSettingsPanel">
+            <form class="add-form add-form-business" hx-post="/admin/settings/business-details" hx-target="#businessSettingsPanel" hx-swap="innerHTML">
+              <input class="field-input" name="business_vat_number" value="{{ .BusinessVATNumber }}" maxlength="100" placeholder="ΑΦΜ (VAT number)" aria-label="VAT number">
+              <input class="field-input" name="tax_office" value="{{ .TaxOffice }}" maxlength="100" placeholder="Δ.Ο.Υ. (Tax office)" aria-label="Tax office">
+              <button type="submit" class="btn btn-primary">Save</button>
+            </form>
+            <p class="empty-note" style="margin-top:10px;">Shown on the demo receipt printout (see an order's Receipt link in Order history). <strong>Not a real tax registration</strong>, and never transmitted anywhere. Structure only.</p>
+          </div>
+        </div>
+
+        <div class="settings-pane" data-pane="dj">
+          <div id="djTogglePanel">
+            {{ if .DJRequestsEnabled }}
+            <span class="status-pill status-available">Enabled</span>
+            <p class="empty-note" style="margin:10px 0 14px;">Guests see the "Request a song to DJ" form on the menu page.</p>
+            <button type="button" class="btn btn-ghost btn-sm" hx-post="/admin/settings/dj-requests/toggle" hx-target="#djTogglePanel" hx-swap="innerHTML">Disable song requests</button>
+            {{ else }}
+            <span class="status-pill status-hidden">Disabled</span>
+            <p class="empty-note" style="margin:10px 0 14px;">Guests don't see any song-request option on the menu page.</p>
+            <button type="button" class="btn btn-primary btn-sm" hx-post="/admin/settings/dj-requests/toggle" hx-target="#djTogglePanel" hx-swap="innerHTML">Enable song requests</button>
+            {{ end }}
+          </div>
+        </div>
+
+        <div class="settings-pane" data-pane="payment">
+          <div id="cashTogglePanel">
+            {{ if .AllowCashOrders }}
+            <span class="status-pill status-available">Enabled</span>
+            <p class="empty-note" style="margin:10px 0 14px;">Guests can choose cash or card at checkout.</p>
+            <button type="button" class="btn btn-ghost btn-sm" hx-post="/admin/settings/cash-orders/toggle" hx-target="#cashTogglePanel" hx-swap="innerHTML">Disable cash orders</button>
+            {{ else }}
+            <span class="status-pill status-hidden">Disabled</span>
+            <p class="empty-note" style="margin:10px 0 14px;">Guests only see card at checkout. The cash option is hidden.</p>
+            <button type="button" class="btn btn-primary btn-sm" hx-post="/admin/settings/cash-orders/toggle" hx-target="#cashTogglePanel" hx-swap="innerHTML">Enable cash orders</button>
+            {{ end }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <section class="panel" id="booking">
+    <div class="panel-header"><h2>Online booking</h2><a class="btn btn-ghost btn-sm" href="/book" target="_blank" rel="noopener">Open guest page</a></div>
+    {{ template "booking-settings" . }}
+  </section>
+
+  <section class="panel">
+    <div class="panel-header"><h2>Floor layout</h2></div>
+    <p class="empty-note" style="margin:0 0 14px">Start over from EGO's standard layout: front deck F01–F04 (QR tables 1–4), pergola P01–P10 (11–20), garden bar G01–G08 (21–28), terrace lounges L01–L03 (31–33), beach sets B01–B19 (101–119) and cabanas C01–C03 (121–123). Any other spot is taken off the map. Bookings are kept.</p>
+    <button class="btn btn-outline-danger" hx-post="/admin/map/preset" hx-swap="none"
+      hx-confirm="Reset the floor to EGO's standard layout? Your own changes to those spots are overwritten.">Reset to EGO layout</button>
+  </section>
+{{ end }}
+
+{{ define "scripts" }}
+<script src="/static/js/settings.js?v={{ .V }}"></script>
+{{ end }}
+
+{{ define "booking-settings" }}
+<form class="stack" hx-post="/admin/settings/booking" hx-swap="outerHTML">
+  <label class="check"><input type="checkbox" name="enabled" value="1" {{ if .Settings.BookingEnabled }}checked{{ end }}> Guests can book online</label>
+  <div class="grid">
+    <label class="field">First arrival<input class="input" type="time" name="open" value="{{ .Settings.BookingOpen }}" required></label>
+    <label class="field">Last arrival<input class="input" type="time" name="close" value="{{ .Settings.BookingClose }}" required></label>
+    <label class="field">Default length (min)<input class="input" type="number" name="duration" min="15" max="1440" step="15" value="{{ .Settings.BookingDuration }}" required></label>
+    <label class="field">Days ahead<input class="input" type="number" name="days_ahead" min="1" max="365" value="{{ .Settings.BookingDaysAhead }}" required></label>
+  </div>
+  <label class="field">Venue phone <span class="opt">shown to guests who'd rather call</span><input class="input" type="tel" name="phone" value="{{ .Settings.VenuePhone }}" maxlength="30" placeholder="+30 27210 00000"></label>
+  <div class="toolbar">
+    <button class="act primary" type="submit">Save settings</button>
+    {{ if .Msg }}<span class="err-text">{{ .Msg }}</span>{{ else if .Saved }}<span class="ok-text">Saved.</span>{{ end }}
+  </div>
+</form>
+{{ end }}
+

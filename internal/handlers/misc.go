@@ -3,11 +3,10 @@ package handlers
 import (
 	"encoding/json"
 	"html/template"
-	"io"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"bitebox/internal/db"
 )
@@ -15,7 +14,7 @@ import (
 // IconVersion returns a cache-busting value derived from
 // static/icons/icon-192.png's own last-modified time — appended as
 // ?v=<this> to every apple-touch-icon URL (see host_menu.html and
-// worker_dashboard.html).
+// worker_app.html).
 //
 // Exists because of a real, live-diagnosed iOS bug: Safari's "Add to Home
 // Screen" reads the apple-touch-icon link tag, not the web manifest's icons
@@ -36,20 +35,6 @@ func IconVersion() string {
 	return strconv.FormatInt(info.ModTime().Unix(), 10)
 }
 
-// DebugPushClientState is TEMPORARY diagnostic-only instrumentation — logs
-// whatever sw.js's push handler observed about open window clients
-// (focused/visibilityState) at the exact moment a push arrived, so a
-// "still got notified with the app open" report can be checked against
-// real device data instead of guessed at. Remove this (and the matching
-// fetch() call in static/sw.js) once the on-screen-suppression logic is
-// confirmed actually working on a real iPhone.
-func DebugPushClientState(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
-	body, _ := io.ReadAll(r.Body)
-	log.Printf("push-debug: client state at push time: %s", body)
-	w.WriteHeader(http.StatusNoContent)
-}
-
 // Landing serves the bare domain root — anyone who lands here typed the
 // address directly or bookmarked it; every real guest arrives via a
 // table's own QR code straight into TableHandlers.View instead. Point them
@@ -57,16 +42,33 @@ func DebugPushClientState(w http.ResponseWriter, r *http.Request) {
 // entire first impression of the app.
 func Landing(w http.ResponseWriter, r *http.Request) {
 	settings, _ := db.GetSettings()
+	t, _, _ := currentTheme()
+	cats, _ := db.GetCategories()
+	if len(cats) > 8 {
+		cats = cats[:8]
+	}
 	tmpl := template.Must(template.ParseFiles("templates/landing.html"))
-	tmpl.Execute(w, map[string]interface{}{"VenueName": settings.VenueName})
+	tmpl.Execute(w, map[string]interface{}{"VenueName": settings.VenueName, "V": assetVersion, "Tagline": t.Tagline,
+		"Categories": cats, "Booking": settings.BookingEnabled, "Phone": settings.VenuePhone})
+}
+
+// Privacy is the public privacy notice, linked from the landing footer and
+// the booking form. Its wording mirrors what the app actually stores: keep
+// it in step with db.Maintain's retention rules.
+func Privacy(w http.ResponseWriter, r *http.Request) {
+	settings, _ := db.GetSettings()
+	tmpl := template.Must(template.ParseFiles("templates/privacy.html"))
+	tmpl.Execute(w, map[string]interface{}{"V": assetVersion, "VenueName": settings.VenueName,
+		"Phone": settings.VenuePhone, "VAT": settings.BusinessVATNumber, "TaxOffice": settings.TaxOffice})
 }
 
 // NotFound renders a branded 404 in place of net/http's plain-text default,
 // for any route (guest, staff, or a stale/mistyped link) that doesn't match.
 func NotFound(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotFound)
+	settings, _ := db.GetSettings()
 	tmpl := template.Must(template.ParseFiles("templates/not_found.html"))
-	tmpl.Execute(w, nil)
+	tmpl.Execute(w, map[string]interface{}{"V": assetVersion, "VenueName": settings.VenueName})
 }
 
 // ServiceWorker serves the phone-notification service worker at the origin
@@ -104,20 +106,45 @@ func ServiceWorker(w http.ResponseWriter, r *http.Request) {
 // (scripts/gen-icons.go) never reaches a device that already cached the
 // old one at this exact URL.
 func WebManifest(w http.ResponseWriter, r *http.Request) {
-	v := IconVersion()
+	settings, _ := db.GetSettings()
+	t, _, _ := currentTheme()
 	m := webManifest{
-		Name:            "BiteBox Worker",
-		ShortName:       "BiteBox",
+		Name:            settings.VenueName + " staff",
+		ShortName:       settings.VenueName,
 		Description:     "Live order feed and phone alerts for kitchen, bar, and waitstaff.",
 		StartURL:        "/worker",
 		Scope:           "/",
 		Display:         "standalone",
-		BackgroundColor: "#14100D",
-		ThemeColor:      "#D9A441",
-		Icons: []webManifestIcon{
-			{Src: "/static/icons/icon-192.png?v=" + v, Sizes: "192x192", Type: "image/png", Purpose: "any"},
-			{Src: "/static/icons/icon-512.png?v=" + v, Sizes: "512x512", Type: "image/png", Purpose: "any"},
-		},
+		BackgroundColor: t.HeaderBg(),
+		ThemeColor:      t.Background,
+		Icons:           manifestIcons(),
+	}
+	w.Header().Set("Content-Type", "application/manifest+json")
+	json.NewEncoder(w).Encode(m)
+}
+
+// manifestIcons are the venue's generated app icons (see brand.RenderIcon):
+// its own logo or monogram, never a shared placeholder. The version in the URL
+// changes with the theme, so a new logo reaches devices that cached the old one.
+func manifestIcons() []webManifestIcon {
+	_, _, etag := currentTheme()
+	v := strings.Trim(etag, `"`)
+	return []webManifestIcon{
+		{Src: "/brand/icon.png?s=192&v=" + v, Sizes: "192x192", Type: "image/png", Purpose: "any"},
+		{Src: "/brand/icon.png?s=512&v=" + v, Sizes: "512x512", Type: "image/png", Purpose: "any"},
+	}
+}
+
+// SiteManifest is the manifest for the public pages (home, booking): saving
+// one to the home screen opens the venue's own start page as a full-screen app.
+func SiteManifest(w http.ResponseWriter, r *http.Request) {
+	settings, _ := db.GetSettings()
+	t, _, _ := currentTheme()
+	m := webManifest{
+		ID: "/", Name: settings.VenueName, ShortName: settings.VenueName,
+		Description: "Order and book at " + settings.VenueName + ".",
+		StartURL:    "/", Scope: "/", Display: "standalone",
+		BackgroundColor: t.Background, ThemeColor: t.Background, Icons: manifestIcons(),
 	}
 	w.Header().Set("Content-Type", "application/manifest+json")
 	json.NewEncoder(w).Encode(m)
@@ -127,6 +154,7 @@ func WebManifest(w http.ResponseWriter, r *http.Request) {
 // GuestWebManifest (generated, below) emit — see the W3C Web App Manifest
 // spec for what each field does; kept to just what this app actually sets.
 type webManifest struct {
+	ID              string            `json:"id,omitempty"`
 	Name            string            `json:"name"`
 	ShortName       string            `json:"short_name"`
 	Description     string            `json:"description"`
@@ -171,24 +199,17 @@ func GuestWebManifest(w http.ResponseWriter, r *http.Request) {
 		startURL = "/table/" + strconv.Itoa(n)
 	}
 	settings, _ := db.GetSettings()
-	name := settings.VenueName
-	if name == "" {
-		name = "BiteBox"
-	}
-	v := IconVersion()
+	t, _, _ := currentTheme()
 	m := webManifest{
-		Name:            name,
+		Name:            settings.VenueName,
 		ShortName:       "Menu",
 		Description:     "Order from your table and get notified the moment it's ready.",
 		StartURL:        startURL,
 		Scope:           "/",
 		Display:         "standalone",
-		BackgroundColor: "#211D18",
-		ThemeColor:      "#211D18",
-		Icons: []webManifestIcon{
-			{Src: "/static/icons/icon-192.png?v=" + v, Sizes: "192x192", Type: "image/png", Purpose: "any"},
-			{Src: "/static/icons/icon-512.png?v=" + v, Sizes: "512x512", Type: "image/png", Purpose: "any"},
-		},
+		BackgroundColor: t.Background,
+		ThemeColor:      t.Background,
+		Icons:           manifestIcons(),
 	}
 	w.Header().Set("Content-Type", "application/manifest+json")
 	json.NewEncoder(w).Encode(m)

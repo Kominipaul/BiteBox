@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"html/template"
+	"log"
 	"net/http"
 
 	"bitebox/internal/auth"
@@ -18,22 +19,34 @@ func homePathFor(role string) string {
 	return "/worker"
 }
 
-func LoginPage(w http.ResponseWriter, r *http.Request) {
+// renderLogin draws /login in the venue's look (brand.Theme login fields).
+func renderLogin(w http.ResponseWriter, errMsg string) {
+	settings, _ := db.GetSettings()
+	t, _, _ := currentTheme()
+	logo := t.LoginLogoURL
+	if logo == "" {
+		logo = t.LogoURL
+	}
 	tmpl := template.Must(template.ParseFiles("templates/login.html"))
-	tmpl.Execute(w, nil)
+	tmpl.Execute(w, map[string]interface{}{"Error": errMsg, "T": t, "Logo": logo, "VenueName": settings.VenueName})
 }
+
+func LoginPage(w http.ResponseWriter, r *http.Request) { renderLogin(w, "") }
+
+var dummyHash, _ = auth.HashPassword("not-a-real-account")
 
 func LoginSubmit(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
-	renderError := func(msg string) {
-		tmpl := template.Must(template.ParseFiles("templates/login.html"))
-		tmpl.Execute(w, map[string]interface{}{"Error": msg})
-	}
+	renderError := func(msg string) { renderLogin(w, msg) }
 
 	user, err := db.GetUserByUsername(username)
-	if err != nil || !auth.CheckPassword(user.PasswordHash, password) {
+	if err != nil {
+		// Same bcrypt cost as a real miss, so timing doesn't reveal which usernames exist.
+		user.PasswordHash = dummyHash
+	}
+	if !auth.CheckPassword(user.PasswordHash, password) || err != nil {
 		renderError("Invalid username or password")
 		return
 	}
@@ -42,22 +55,12 @@ func LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionID := auth.GenerateSessionID()
-	if err := db.CreateAuthSession(sessionID, user.ID); err != nil {
-		renderError("Something went wrong, please try again")
+	if user.TwoFactor {
+		startPendingLogin(w, r, user.ID)
+		renderLoginCode(w, "")
 		return
 	}
-
-	auth.SetSessionCookie(w, r, sessionID)
-
-	// RequireRole redirects here on the very next request anyway if this
-	// account still needs to change its password — going there directly
-	// just skips that one extra round trip.
-	if user.MustChangePassword {
-		http.Redirect(w, r, "/change-password", http.StatusSeeOther)
-		return
-	}
-	http.Redirect(w, r, homePathFor(user.Role), http.StatusSeeOther)
+	finishLogin(w, r, user)
 }
 
 // ChangePasswordPage serves both the forced flow (RequireRole redirects
@@ -67,8 +70,9 @@ func LoginSubmit(w http.ResponseWriter, r *http.Request) {
 // page's own copy explaining *why* it's here.
 func ChangePasswordPage(w http.ResponseWriter, r *http.Request) {
 	user, _ := UserFromContext(r)
+	settings, _ := db.GetSettings()
 	tmpl := template.Must(template.ParseFiles("templates/change_password.html"))
-	tmpl.Execute(w, map[string]interface{}{"Forced": user.MustChangePassword})
+	tmpl.Execute(w, map[string]interface{}{"Forced": user.MustChangePassword, "VenueName": settings.VenueName})
 }
 
 func ChangePasswordSubmit(w http.ResponseWriter, r *http.Request) {
@@ -91,8 +95,8 @@ func ChangePasswordSubmit(w http.ResponseWriter, r *http.Request) {
 		renderError("Current password is incorrect")
 		return
 	}
-	if len(newPassword) < 6 {
-		renderError("New password must be at least 6 characters")
+	if msg := auth.CheckNewPassword(user.Username, newPassword); msg != "" {
+		renderError(msg)
 		return
 	}
 	if newPassword != confirm {
@@ -113,13 +117,23 @@ func ChangePasswordSubmit(w http.ResponseWriter, r *http.Request) {
 		renderError("Something went wrong, please try again")
 		return
 	}
+	// Sign out every other device (a stolen session dies with the old
+	// password); this one gets a fresh session.
+	if err := keepOnlyThisSession(w, r, user.ID); err != nil {
+		log.Printf("change password for %q: signing other devices out: %v", user.Username, err)
+		renderError("Your password was changed, but other devices couldn't be signed out. Please try again.")
+		return
+	}
+	db.LogAudit(user.Username, "change_password", user.Username, "")
 
 	http.Redirect(w, r, homePathFor(user.Role), http.StatusSeeOther)
 }
 
 func Logout(w http.ResponseWriter, r *http.Request) {
 	if sessionID, ok := auth.SessionIDFromRequest(r); ok {
-		db.DeleteAuthSession(sessionID)
+		if err := db.DeleteAuthSession(sessionID); err != nil {
+			log.Printf("logout: %v", err) // it still expires within 24h
+		}
 	}
 	auth.ClearSessionCookie(w, r)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)

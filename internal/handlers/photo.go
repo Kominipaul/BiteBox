@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -39,15 +40,15 @@ const (
 // precisely because its content can never change under a guest's nose.
 func writeProductPhoto(productID int, result imageproc.Result) (url string, err error) {
 	dir := filepath.Join(productPhotoDir, strconv.Itoa(productID))
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0755); err != nil { // #nosec G703 G301 -- dir is productPhotoDir + an integer id; public static content
 		return "", err
 	}
 	fullPath := filepath.Join(dir, result.Hash+fullSuffix)
 	thumbPath := filepath.Join(dir, result.Hash+thumbSuffix)
-	if err := os.WriteFile(fullPath, result.Full.JPEG, 0644); err != nil {
+	if err := os.WriteFile(fullPath, result.Full.JPEG, 0644); err != nil { // #nosec G703 G306 -- name is a content hash; public static content
 		return "", err
 	}
-	if err := os.WriteFile(thumbPath, result.Thumb.JPEG, 0644); err != nil {
+	if err := os.WriteFile(thumbPath, result.Thumb.JPEG, 0644); err != nil { // #nosec G703 G306 -- name is a content hash; public static content
 		return "", err
 	}
 	return "/" + dir + "/" + result.Hash + fullSuffix, nil
@@ -79,7 +80,8 @@ func thumbURLFor(imageURL string) string {
 // successful edit. Removes both variants, not just the full one passed in.
 func deleteLocalPhotoIfAny(url string) {
 	prefix := "/" + productPhotoDir + "/"
-	if !strings.HasPrefix(url, prefix) {
+	// Clean check: a stored "../" path must never reach os.Remove.
+	if !strings.HasPrefix(url, prefix) || path.Clean(url) != url {
 		return
 	}
 	os.Remove(strings.TrimPrefix(url, "/"))
@@ -121,7 +123,7 @@ func photoUploadErrorMessage(err error) string {
 // not the expected path.
 func allowMultipartUpload(w http.ResponseWriter, r *http.Request) error {
 	r.Body = http.MaxBytesReader(w, r.Body, imageproc.MaxUploadBytes)
-	if err := r.ParseMultipartForm(imageproc.MaxUploadBytes); err != nil && err != http.ErrNotMultipart {
+	if err := r.ParseMultipartForm(imageproc.MaxUploadBytes); err != nil && err != http.ErrNotMultipart { // #nosec G120 -- body capped by MaxBytesReader just above
 		return err
 	}
 	return nil

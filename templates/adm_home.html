@@ -1,0 +1,45 @@
+{{ define "title" }}Dashboard{{ end }}
+
+{{ define "content" }}
+<div class="page-head">
+  <div>
+    <h1>Dashboard</h1>
+    <p>Sales, orders and bookings, live.</p>
+  </div>
+</div>
+
+<div class="stats" style="margin-bottom:18px">
+  <a class="stat" href="/admin/bookings" style="text-decoration:none;color:inherit"><b>{{ .BookingsToday }}</b><span>Bookings today</span></a>
+  <a class="stat" href="/admin/bookings" style="text-decoration:none;color:inherit"><b>{{ .CoversToday }}</b><span>Guests expected</span></a>
+  <a class="stat" href="/admin/floor" style="text-decoration:none;color:inherit"><b>{{ .FreeNow }}</b><span>Spots free now</span></a>
+</div>
+  <div id="admin-stats-wrap" hx-get="/admin/stats?period=today" hx-trigger="load" hx-swap="innerHTML">
+    <p class="empty-note">Loading overview...</p>
+  </div>
+
+  <div class="trend-panel">
+    <div class="trend-info">
+      <span class="trend-title">Revenue, last 7 days</span>
+      <span class="trend-total">€{{ printf "%.2f" .TrendTotal }}</span>
+      {{ if .HasTrendDelta }}
+      <span class="trend-delta {{ if ge .TrendDeltaPercent 0.0 }}is-up{{ else }}is-down{{ end }}">
+        {{ if ge .TrendDeltaPercent 0.0 }}↑{{ else }}↓{{ end }} {{ printf "%.0f" .TrendDeltaPercent }}% vs. previous week
+      </span>
+      {{ end }}
+    </div>
+    <div class="trend-bars">
+      {{ range .Trend }}
+      <div class="trend-bar {{ if .IsToday }}is-today{{ end }}"><div class="trend-bar-fill" style="height:{{ .Percent }}%"></div><span class="trend-bar-label">{{ .Label }}</span></div>
+      {{ end }}
+    </div>
+  </div>
+
+  {{ if .HasLowStock }}
+  <div class="alert" id="stockAlert">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 2.5 18a1.5 1.5 0 0 0 1.3 2.2h16.4a1.5 1.5 0 0 0 1.3-2.2L13.7 3.9a1.5 1.5 0 0 0-2.6 0Z"/><path d="M12 9v4"/><path d="M12 16.5h.01"/></svg>
+    <div><strong>Running low:</strong> {{ .LowStock.Name }} has {{ .LowStock.AvailableStock }} left. Consider restocking before tonight.</div>
+  </div>
+  {{ end }}
+{{ end }}
+
+{{ define "scripts" }}{{ end }}

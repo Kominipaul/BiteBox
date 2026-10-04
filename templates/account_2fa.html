@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Two-step login · {{ .VenueName }}</title>
+  <link rel="stylesheet" href="/static/auth.css">
+  <link rel="stylesheet" href="/brand.css">
+  <link rel="icon" href="/brand/icon.png">
+  <meta name="robots" content="noindex">
+</head>
+<body>
+  <div class="shell">
+    <div class="brand">
+      <div class="brand-text">
+        <span class="brand-eyebrow">Account · {{ .Username }}</span>
+        <span class="brand-name">Two-step login</span>
+      </div>
+    </div>
+    <div class="card">
+      {{ if .Error }}<div class="error" role="alert">{{ .Error }}</div>{{ end }}
+      {{ if .On }}
+        <div class="status-on">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6Z"/><path d="m9 12 2 2 4-4"/></svg>
+          Two-step login is on
+        </div>
+        <p class="sub">Logging in asks for your password and a code from your authenticator app.</p>
+        <a class="btn-submit" style="display:block;text-align:center;text-decoration:none" href="{{ .Home }}">Continue</a>
+        <details class="off">
+          <summary>{{ if .Required }}Moving to a new phone?{{ else }}Turn two-step login off{{ end }}</summary>
+          <form method="POST" action="/account/2fa/off">
+            <p class="sub">{{ if .Required }}This turns it off; you set it up on the new phone straight after.{{ else }}Your account will be protected by your password alone.{{ end }}</p>
+            <div class="field">
+              <label for="password">Password</label>
+              <input type="password" id="password" name="password" required autocomplete="current-password">
+            </div>
+            <div class="field">
+              <label for="offcode">Code from your app</label>
+              <input class="code-input" type="text" id="offcode" name="code" inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7" autocomplete="one-time-code" required>
+            </div>
+            <button type="submit" class="btn-plain">{{ if .Required }}Turn off and set up again{{ else }}Turn off{{ end }}</button>
+          </form>
+        </details>
+      {{ else }}
+        <h2>Set up two-step login</h2>
+        <p class="sub">{{ if .Required }}Required for admin accounts. {{ end }}After your password, logging in will ask for a code from an app on your phone, so a stolen password isn't enough.</p>
+        <ol class="steps">
+          <li>Install an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password, Authy…).</li>
+          <li>In the app, add an account and scan this code.</li>
+          <li>Type the 6-digit code it shows.</li>
+        </ol>
+        <img class="qr" src="{{ .QR }}" alt="Setup QR code for your authenticator app" width="200" height="200">
+        <p class="sub" style="margin-bottom:6px">Can't scan? Enter this key instead:</p>
+        <code class="secret">{{ .Secret }}</code>
+        <form method="POST" action="/account/2fa">
+          <div class="field">
+            <label for="code">Code from your app</label>
+            <input class="code-input" type="text" id="code" name="code" inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7" autocomplete="one-time-code" required autofocus>
+          </div>
+          <button type="submit" class="btn-submit">Turn on</button>
+        </form>
+        {{ if not .Required }}<a class="back-link" href="{{ .Home }}">← Not now</a>{{ end }}
+      {{ end }}
+    </div>
+  </div>
+</body>
+</html>

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"bitebox/internal/db"
+	"bitebox/internal/models"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -35,8 +36,39 @@ func AdminOrderReceipt(w http.ResponseWriter, r *http.Request) {
 	}
 	order.Items = items
 
-	settings, _ := db.GetSettings()
+	renderReceipt(w, order)
+}
 
+// GuestOrderReceipt is the same printout for a guest's own order ("Receipt"
+// on Your orders): only ever an order placed from the caller's own guest
+// session, the same ownership rule as GuestCancelOrder.
+func GuestOrderReceipt(w http.ResponseWriter, r *http.Request) {
+	sessionCookie, err := r.Cookie(GuestSessionCookieName)
+	if err != nil {
+		http.Error(w, "Not authorized", http.StatusForbidden)
+		return
+	}
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid order id", http.StatusBadRequest)
+		return
+	}
+	order, err := db.GetOrderByID(id)
+	if err != nil || order.SessionID != sessionCookie.Value {
+		http.Error(w, "Order not found", http.StatusNotFound)
+		return
+	}
+	items, err := db.GetOrderItems(id)
+	if err != nil {
+		http.Error(w, "Failed to load order items", http.StatusInternalServerError)
+		return
+	}
+	order.Items = items
+	renderReceipt(w, order)
+}
+
+func renderReceipt(w http.ResponseWriter, order models.Order) {
+	settings, _ := db.GetSettings()
 	tmpl := template.Must(template.ParseFiles("templates/_receipt.html"))
 	tmpl.Execute(w, map[string]interface{}{
 		"Order":    order,
