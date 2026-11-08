@@ -8,7 +8,7 @@ require (
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/gorilla/websocket v1.5.3
-	github.com/mattn/go-sqlite3 v1.14.52
+	github.com/mattn/go-sqlite3 v1.14.53
 	golang.org/x/crypto v0.57.0
 	golang.org/x/image v0.46.0
 	rsc.io/qr v0.2.0
